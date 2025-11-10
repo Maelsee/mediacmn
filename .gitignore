@@ -49,3 +49,10 @@ Thumbs.db
 
 # 构建产物
 /fvm/
+mediaclient/build/
+mediaclient/.dart_tool/
+mediaclient/.packages
+mediaclient/android/app/outputs/
+mediaclient/**/intermediates/
+mediaclient/**/generated/
+mediaclient/**/.gradle/
