@@ -1,0 +1,1 @@
+在 `services/scraper/base.py#L194-202` 为 `get_season_details` 添加清晰的文档注释，说明用途、参数、返回与典型行为：用于获取季详情并填充 `episodes[]`，常用于剧集分层与季缓存预热，不强制实现（默认返回 None）。不修改其他逻辑。
