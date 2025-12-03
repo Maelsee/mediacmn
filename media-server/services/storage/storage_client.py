@@ -31,6 +31,7 @@ class StorageInfo:
     free_space: Optional[int] = None
     readonly: bool = False
     supports_resume: bool = False
+    supports_range: bool = False
     max_file_size: Optional[int] = None
 
 
@@ -164,13 +165,18 @@ class StorageClient(ABC):
         pass
     
     @abstractmethod
-    async def download_iter(self, path: str, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
+    async def stat(self, path: str) -> StorageEntry:
+        pass
+    
+    @abstractmethod
+    async def download_iter(self, path: str, chunk_size: int = 64 * 1024, offset: int = 0) -> Iterator[bytes]:
         """
         流式下载文件
         
         Args:
             path: 文件路径
             chunk_size: 块大小（字节）
+            offset: 起始偏移量（字节）
             
         Returns:
             文件数据迭代器

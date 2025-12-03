@@ -45,6 +45,15 @@ class WebDAVStorageClient(StorageClient):
 
     async def connect(self) -> bool:
         """建立WebDAV连接"""
+        # 如果已经连接且会话有效，直接返回
+        if self._connected and self._session and not self._session.closed:
+            return True
+
+        # 如果存在旧会话，先关闭
+        if self._session:
+            await self._session.close()
+            self._session = None
+
         try:
             # 创建HTTP会话
             connector = aiohttp.TCPConnector(
@@ -63,6 +72,9 @@ class WebDAVStorageClient(StorageClient):
             # 测试连接
             success, error = await self.check_connection()
             if not success:
+                # 连接失败，关闭会话
+                await self._session.close()
+                self._session = None
                 raise StorageConnectionError(error or "连接测试失败")
             
             self._connected = True
@@ -70,6 +82,11 @@ class WebDAVStorageClient(StorageClient):
             return True
             
         except Exception as e:
+            # 发生异常，确保会话关闭
+            if self._session:
+                await self._session.close()
+                self._session = None
+            self._connected = False
             logger.error(f"WebDAV连接失败: {e}")
             raise StorageConnectionError(f"WebDAV连接失败: {e}")
     
@@ -196,9 +213,10 @@ class WebDAVStorageClient(StorageClient):
         """获取WebDAV系统信息"""
         # WebDAV协议本身不直接提供空间信息，返回基础信息
         return StorageInfo(
-            readonly=False,  # WebDAV通常支持读写
-            supports_resume=True,  # 支持断点续传
-            max_file_size=None  # 无明确限制
+            readonly=False,
+            supports_resume=True,
+            supports_range=True,
+            max_file_size=None
         )
     
     def replace_base_path(self, base_url: str, path: str) -> str:

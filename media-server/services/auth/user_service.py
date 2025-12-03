@@ -5,7 +5,6 @@ import hashlib
 from typing import Optional
 
 from sqlmodel import Session, select
-from sqlalchemy.exc import IntegrityError
 from starlette import status
 from passlib.context import CryptContext
 from core.errors import AppError

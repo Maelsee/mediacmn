@@ -16,8 +16,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 from collections import defaultdict, deque
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlmodel import select
 
 from core.db import get_session as get_db_session
 from services.task import (

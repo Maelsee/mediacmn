@@ -7,7 +7,7 @@
 import asyncio
 import logging
 from typing import Dict, Any, Optional, List, Tuple
-from sqlalchemy.orm import Session
+from sqlmodel import Session, select
 
 from .storage_client import (
     StorageClient, StorageClientFactory, StorageEntry, StorageInfo,
@@ -41,13 +41,13 @@ class StorageService:
         storage_type = self._get_storage_type(storage_config)
         
         if storage_type == "webdav":
-            webdav_config = session.query(WebdavStorageConfig).filter_by(
-                storage_config_id=storage_config.id
+            webdav_config = session.exec(
+                select(WebdavStorageConfig).where(WebdavStorageConfig.storage_config_id == storage_config.id)
             ).first()
             if not webdav_config:
                 raise ValueError(f"WebDAV配置不存在: {storage_config.id}")
             
-            # 直接使用明文配置，不再加密解密
+           
             return {
                 "url": webdav_config.hostname,
                 "username": webdav_config.login,
@@ -58,25 +58,28 @@ class StorageService:
             }
         
         elif storage_type == "smb":
-            smb_config = session.query(SmbStorageConfig).filter_by(
-                storage_config_id=storage_config.id
+            smb_config = session.exec(
+                select(SmbStorageConfig).where(SmbStorageConfig.storage_config_id == storage_config.id)
             ).first()
             if not smb_config:
                 raise ValueError(f"SMB配置不存在: {storage_config.id}")
             
             # 直接使用明文配置，不再加密解密
             return {
-                "server": smb_config.server,
-                "share": smb_config.share,
+                "server": smb_config.server_host,
+                "share": smb_config.share_name,
                 "username": smb_config.username,
                 "password": smb_config.password,
-                "port": smb_config.port or 445,
-                "timeout": smb_config.timeout_seconds or 30
+                "domain": getattr(smb_config, "domain", None),
+                "port": smb_config.server_port or 445,
+                "timeout": 30,
+                "client_name": getattr(smb_config, "client_name", "MEDIACMN"),
+                "is_direct_tcp": getattr(smb_config, "is_direct_tcp", True)
             }
         
         elif storage_type == "local":
-            local_config = session.query(LocalStorageConfig).filter_by(
-                storage_config_id=storage_config.id
+            local_config = session.exec(
+                select(LocalStorageConfig).where(LocalStorageConfig.storage_config_id == storage_config.id)
             ).first()
             if not local_config:
                 raise ValueError(f"本地存储配置不存在: {storage_config.id}")
@@ -84,24 +87,24 @@ class StorageService:
             # 直接使用明文配置，不再加密解密
             return {
                 "base_path": local_config.base_path,
-                "readonly": local_config.readonly if local_config.readonly is not None else False
+                "readonly": False,
+                "auto_create_dirs": getattr(local_config, "auto_create_dirs", True)
             }
         
         elif storage_type == "cloud":
-            cloud_config = session.query(CloudStorageConfig).filter_by(
-                storage_config_id=storage_config.id
+            cloud_config = session.exec(
+                select(CloudStorageConfig).where(CloudStorageConfig.storage_config_id == storage_config.id)
             ).first()
             if not cloud_config:
                 raise ValueError(f"云存储配置不存在: {storage_config.id}")
             
             # 直接使用明文配置，不再加密解密
             return {
-                "provider": cloud_config.provider,
-                "bucket": cloud_config.bucket,
-                "access_key": cloud_config.access_key,
-                "secret_key": cloud_config.secret_key,
-                "region": cloud_config.region,
-                "endpoint": cloud_config.endpoint
+                "provider": cloud_config.cloud_provider,
+                "remote_root_path": cloud_config.remote_root_path,
+                "access_token": getattr(cloud_config, "access_token", None),
+                "refresh_token": getattr(cloud_config, "refresh_token", None),
+                "chunk_size_mb": getattr(cloud_config, "chunk_size_mb", 100)
             }
         
         else:
@@ -130,10 +133,12 @@ class StorageService:
             return self._clients[client_key]
         
         # 获取存储配置
-        storage_config = session.query(StorageConfig).filter_by(
-            user_id=user_id,
-            name=storage_name,
-            is_active=True
+        storage_config = session.exec(
+            select(StorageConfig).where(
+                (StorageConfig.user_id == user_id) &
+                (StorageConfig.name == storage_name) &
+                (StorageConfig.is_active == True)
+            )
         ).first()
         
         if not storage_config:
@@ -382,10 +387,11 @@ class StorageService:
             from models.storage_models import StorageConfig
             
             with next(get_session()) as session:
-                storage_config = session.query(StorageConfig).filter_by(id=storage_id).first()
+                storage_config = session.exec(select(StorageConfig).where(StorageConfig.id == storage_id)).first()
                 if not storage_config:
                     logger.error(f"存储配置不存在: {storage_id}")
                     return None
+            
                 
                 # 使用ensure_client获取客户端
                 return await self.ensure_client(

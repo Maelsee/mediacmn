@@ -6,8 +6,7 @@
 
 from typing import Optional, List
 from datetime import datetime, timezone
-from sqlmodel import SQLModel, Field, Relationship, UniqueConstraint
-from sqlalchemy import String
+from sqlmodel import SQLModel, Field, Relationship, UniqueConstraint, String
 
 
 # ============================================

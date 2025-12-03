@@ -30,8 +30,8 @@ from typing import Optional
 
 from utils.time_compat import get_utc_now_factory
 
-from sqlalchemy import UniqueConstraint, BigInteger, Column
-from sqlmodel import Field, SQLModel
+from sqlmodel import UniqueConstraint, BigInteger, Column,Field, SQLModel
+
 
 
 # ==================== 媒体核心模型 ====================

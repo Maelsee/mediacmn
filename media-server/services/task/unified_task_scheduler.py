@@ -148,14 +148,14 @@ class UnifiedTaskScheduler:
                 params={
                     "storage_id": storage_id,
                     "scan_path": scan_path,
-                "recursive": recursive,
-                "max_depth": max_depth,
-                "enable_metadata_enrichment": enable_metadata_enrichment,
-                "enable_delete_sync": enable_delete_sync,
-                "user_id": user_id,
-                "batch_size": batch_size,
-                "create_metadata_tasks": enable_metadata_enrichment,
-                "parse_snapshot": None
+                    "recursive": recursive,
+                    "max_depth": max_depth,
+                    "enable_metadata_enrichment": enable_metadata_enrichment,
+                    "enable_delete_sync": enable_delete_sync,
+                    "user_id": user_id,
+                    "batch_size": batch_size,
+                    "create_metadata_tasks": enable_metadata_enrichment,
+                    "parse_snapshot": None
             },
             max_retries=3,
             retry_delay=300,  # 5分钟重试延迟

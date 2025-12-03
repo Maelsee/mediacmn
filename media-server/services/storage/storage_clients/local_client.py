@@ -120,8 +120,9 @@ class LocalStorageClient(StorageClient):
                 used_space=used_space,
                 free_space=free_space,
                 readonly=self.readonly,
-                supports_resume=True,  # 本地文件支持断点续传
-                max_file_size=None  # 通常无明确限制
+                supports_resume=True,
+                supports_range=True,
+                max_file_size=None
             )
             
         except Exception as e:
@@ -207,7 +208,7 @@ class LocalStorageClient(StorageClient):
                 content_type=None,
                 etag=str(stat.st_mtime)
             )
-            
+        
         except Exception as e:
             error_msg = f"获取文件信息失败: {e}"
             logger.error(error_msg)
@@ -219,7 +220,10 @@ class LocalStorageClient(StorageClient):
             else:
                 raise StorageError(error_msg)
     
-    async def download_iter(self, path: str, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
+    async def stat(self, path: str) -> StorageEntry:
+        return await self.get_file_info(path)
+    
+    async def download_iter(self, path: str, chunk_size: int = 64 * 1024, offset: int = 0) -> Iterator[bytes]:
         """流式下载本地文件"""
         if not self._connected:
             raise StorageError("客户端未连接")
@@ -238,6 +242,8 @@ class LocalStorageClient(StorageClient):
             
             # 使用aiofiles进行异步文件读取
             async with aiofiles.open(full_path, 'rb') as file:
+                if offset and offset > 0:
+                    await file.seek(offset)
                 while True:
                     chunk = await file.read(chunk_size)
                     if not chunk:

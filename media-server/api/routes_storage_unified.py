@@ -6,7 +6,7 @@
 
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
-from sqlalchemy.orm import Session
+from sqlmodel import Session,select
 from pydantic import BaseModel, Field
 from datetime import datetime
 from core.logging import  logger
@@ -72,10 +72,12 @@ async def test_storage_connection(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.query(StorageConfig).filter_by(
-        id=storage_id,
-        user_id=user_id,
-        is_active=True
+    storage_config = db.exec(
+        select(StorageConfig).where(
+            (StorageConfig.id == storage_id) &
+            (StorageConfig.user_id == user_id) &
+            (StorageConfig.is_active == True)
+        )
     ).first()
     
     
@@ -124,10 +126,12 @@ async def list_storage_directory(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.query(StorageConfig).filter_by(
-        id=storage_id,
-        user_id=user_id,
-        is_active=True
+    storage_config = db.exec(
+        select(StorageConfig).where(
+            (StorageConfig.id == storage_id) &
+            (StorageConfig.user_id == user_id) &
+            (StorageConfig.is_active == True)
+        )
     ).first()
     
     if not storage_config:
@@ -180,10 +184,12 @@ async def get_storage_info(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.query(StorageConfig).filter_by(
-        id=storage_id,
-        user_id=user_id,
-        is_active=True
+    storage_config = db.exec(
+        select(StorageConfig).where(
+            (StorageConfig.id == storage_id) &
+            (StorageConfig.user_id == user_id) &
+            (StorageConfig.is_active == True)
+        )
     ).first()
     
     if not storage_config:
@@ -223,10 +229,12 @@ async def get_file_info(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.query(StorageConfig).filter_by(
-        id=storage_id,
-        user_id=user_id,
-        is_active=True
+    storage_config = db.exec(
+        select(StorageConfig).where(
+            (StorageConfig.id == storage_id) &
+            (StorageConfig.user_id == user_id) &
+            (StorageConfig.is_active == True)
+        )
     ).first()
     
     if not storage_config:
@@ -267,10 +275,8 @@ async def create_directory(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.query(StorageConfig).filter_by(
-        id=storage_id,
-        user_id=user_id,
-        is_active=True
+    storage_config = db.exec(
+        select(StorageConfig).where(id=storage_id, user_id=user_id, is_active=True)
     ).first()
     
     if not storage_config:
@@ -306,10 +312,12 @@ async def delete_path(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.query(StorageConfig).filter_by(
-        id=storage_id,
-        user_id=user_id,
-        is_active=True
+    storage_config = db.exec(
+        select(StorageConfig).where(
+            (StorageConfig.id == storage_id) &
+            (StorageConfig.user_id == user_id) &
+            (StorageConfig.is_active == True)
+        )
     ).first()
     
     if not storage_config:

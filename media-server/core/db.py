@@ -8,8 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Generator
 
-from sqlmodel import SQLModel, Session, create_engine
-from sqlalchemy import inspect, text
+from sqlmodel import SQLModel, Session, create_engine, inspect, text
 
 from .config import get_settings, Settings
 from models.user import User  # noqa: F401
@@ -101,7 +100,7 @@ def init_db() -> None:
                     inspector = inspect(engine)
                     cols = inspector.get_columns('file_asset')
                     size_col = next((c for c in cols if c['name'] == 'size'), None)
-                    # SQLAlchemy 对类型名的字符串化可能因方言不同而异，统一按包含判断
+                    
                     if size_col and 'INTEGER' in str(size_col['type']).upper():
                         conn.execute(text("ALTER TABLE file_asset ALTER COLUMN size TYPE BIGINT"))
                         logger.info("迁移: file_asset.size 列已更新为 BIGINT")

@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import Optional, Dict, Any, List
 from venv import logger
 
-from sqlmodel import Session, select, func
-from sqlalchemy import and_, or_
+from sqlmodel import Session, select, func, and_, or_
 
 from models.media_models import MediaCore
 from models.media_models import MovieExt, MediaVersion

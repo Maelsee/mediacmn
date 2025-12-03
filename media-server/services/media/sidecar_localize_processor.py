@@ -3,7 +3,6 @@ from typing import Optional
 from datetime import datetime
 
 from sqlmodel import select
-from sqlalchemy import func
 
 from core.db import get_session as get_db_session
 from models.media_models import FileAsset, MediaCore, ExternalID, EpisodeExt, SeasonExt

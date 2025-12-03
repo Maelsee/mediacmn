@@ -4262,4 +4262,14 @@ ScraperEpisodeItem（季内集条目）
 - `metadata_enricher`能在电影与单集两种路径下正确富集并持久化。
 - 持久化层在电影/剧集/季/集四种类型下，公共部分（artwork、credit、genres）复用且幂等。
 - 开发文档更新到本节，字段定义与TMDB返回一致且可校验。
+## 存储与扫描的解耦约定（ADR-001 摘要）
 
+- 抽象契约：统一的 `StorageClient` 能力作为扫描唯一的存储依赖；采用工厂注册与服务层创建。
+- 能力统一：在基类中标准化 `stat(path)` 与 `download_iter(path, chunk_size, offset=0)`，对不支持偏移的实现进行文档化回退。
+- 依赖注入：路由/编排层注入 `StorageClient` 与仓储接口到扫描引擎，扫描不直接依赖 `StorageService` 与 ORM。
+- 仓储接口：引入 `FileAssetRepository` 契约，封装 `find/create/update` 等操作，处理器链通过引擎统一提交。
+- 路径规范：统一 `StorageEntry.path` 的语义为“后端根相对路径”，避免 URL 拼接耦合。
+- 能力标识：`StorageInfo.supports_resume`/`supports_range` 指导是否安全使用 `offset`。
+- 渐进改造：先补齐基类签名，再将扫描入口改为依赖注入，最后抽仓储适配层并完善测试。
+
+详见 `media-server/docs/ADR-001-storage-scan-decoupling.md`。

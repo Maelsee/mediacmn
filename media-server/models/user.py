@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from typing import Optional, List
 
-from sqlalchemy import UniqueConstraint
-from sqlmodel import Field, SQLModel
-from sqlalchemy.orm import Relationship
+
+from sqlmodel import Field, SQLModel, UniqueConstraint
+
 
 
 class User(SQLModel, table=True):

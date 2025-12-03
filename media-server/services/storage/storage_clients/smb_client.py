@@ -86,12 +86,13 @@ class SMBStorageClient(StorageClient):
         # SMB协议通常不提供详细的磁盘空间信息
         # 这里返回基础信息
         return StorageInfo(
-            total_space=None,  # SMB通常不提供总空间信息
+            total_space=None,
             used_space=None,
             free_space=None,
-            readonly=False,  # 假设支持读写
-            supports_resume=True,  # 支持断点续传
-            max_file_size=None  # 无明确限制
+            readonly=False,
+            supports_resume=True,
+            supports_range=False,
+            max_file_size=None
         )
     
     async def list_dir(self, path: str = "/", depth: int = 1) -> List[StorageEntry]:
@@ -204,7 +205,10 @@ class SMBStorageClient(StorageClient):
             else:
                 raise StorageError(error_msg)
     
-    async def download_iter(self, path: str, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
+    async def stat(self, path: str) -> StorageEntry:
+        return await self.get_file_info(path)
+    
+    async def download_iter(self, path: str, chunk_size: int = 64 * 1024, offset: int = 0) -> Iterator[bytes]:
         """流式下载SMB文件"""
         if not self._connected:
             raise StorageError("客户端未连接")
@@ -220,6 +224,8 @@ class SMBStorageClient(StorageClient):
             
             # 模拟文件数据
             mock_data = b"Mock SMB file data for testing purposes." * 1000
+            if offset and offset > 0:
+                mock_data = mock_data[offset:]
             
             # 分块返回数据
             for i in range(0, len(mock_data), chunk_size):

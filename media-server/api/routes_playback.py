@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
-from sqlalchemy import and_, desc, asc
+from sqlmodel import and_
 
 from core.db import get_session
 from core.security import get_current_subject
@@ -103,7 +103,7 @@ def recent_list(
     db: Session = Depends(get_session),
 ):
     user_id = int(current_subject)
-    order_clause = desc(PlaybackHistory.updated_at) if sort != "updated_asc" else asc(PlaybackHistory.updated_at)
+    order_clause = PlaybackHistory.updated_at.desc() if sort != "updated_asc" else PlaybackHistory.updated_at.asc()
     base_limit = max(200, (page or 1) * (page_size or limit) * 3)
     rows = db.exec(
         select(PlaybackHistory)

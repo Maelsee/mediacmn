@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlmodel import Session, select, func
-from sqlalchemy import and_
+from sqlmodel import and_
 
 from core.db import get_session
 from core.security import get_current_subject
