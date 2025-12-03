@@ -47,4 +47,6 @@ media-server/.venv/
 .trae/
 media-server/.env.example
 media-server/.env
-
+media-server/__pycache__/
+media-server/core/__pycache__/
+media-server/.ruff_cache/
