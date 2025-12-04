@@ -52,5 +52,6 @@ media-server/core/__pycache__/
 media-server/.ruff_cache/
 media-server/services/scan/__pycache__/
 media-server/services/media/__pycache__/
-media-server/services/scan/__pycache__/
-media-server/services/scan/__pycache__/
+
+
+media-server/services/scraper/__pycache__/

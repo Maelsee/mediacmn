@@ -324,6 +324,11 @@ class MetadataPersistenceService:
 
         elif isinstance(metadata, ScraperSeriesDetail):
             core = self._apply_series_detail(session, media_file.user_id, metadata)
+            try:
+                if not getattr(media_file, "core_id", None):
+                    media_file.core_id = core.id
+            except Exception:
+                media_file.core_id = getattr(core, "id", None)
            
 
         elif isinstance(metadata, ScraperEpisodeDetail):
@@ -464,27 +469,29 @@ class MetadataPersistenceService:
             self._upsert_artworks(session, media_file.user_id, core.id, getattr(metadata, "provider", None), getattr(metadata, "artworks", None))
         except Exception:
             pass
+        # 直接根据 metadata 的 poster/backdrop 写入 Artwork，避免需要二次查询
         try:
-            mx = session.exec(select(MovieExt).filter(MovieExt.user_id == media_file.user_id, MovieExt.core_id == core.id)).first()
-            if mx:
-                if getattr(mx, "poster_path", None):
-                    art_p = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "poster")).first()
-                    if not art_p:
-                        session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="poster", remote_url=mx.poster_path, provider=getattr(metadata, "provider", None), preferred=True, exists_remote=True))
-                    else:
-                        art_p.remote_url = mx.poster_path
-                        art_p.provider = getattr(metadata, "provider", None) or getattr(art_p, "provider", None)
-                        art_p.preferred = True
-                        art_p.exists_remote = True
-                if getattr(mx, "backdrop_path", None):
-                    art_b = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "backdrop")).first()
-                    if not art_b:
-                        session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="backdrop", remote_url=mx.backdrop_path, provider=getattr(metadata, "provider", None), preferred=True, exists_remote=True))
-                    else:
-                        art_b.remote_url = mx.backdrop_path
-                        art_b.provider = getattr(metadata, "provider", None) or getattr(art_b, "provider", None)
-                        art_b.preferred = True
-                        art_b.exists_remote = True
+            ppath = getattr(metadata, "poster_path", None)
+            bpath = getattr(metadata, "backdrop_path", None)
+            prov = getattr(metadata, "provider", None)
+            if ppath:
+                art_p = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "poster")).first()
+                if not art_p:
+                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="poster", remote_url=ppath, provider=prov, preferred=True, exists_remote=True))
+                else:
+                    art_p.remote_url = art_p.remote_url or ppath
+                    art_p.provider = prov or getattr(art_p, "provider", None)
+                    art_p.preferred = True
+                    art_p.exists_remote = True
+            if bpath:
+                art_b = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "backdrop")).first()
+                if not art_b:
+                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="backdrop", remote_url=bpath, provider=prov, preferred=True, exists_remote=True))
+                else:
+                    art_b.remote_url = art_b.remote_url or bpath
+                    art_b.provider = prov or getattr(art_b, "provider", None)
+                    art_b.preferred = True
+                    art_b.exists_remote = True
         except Exception:
             pass
         try:

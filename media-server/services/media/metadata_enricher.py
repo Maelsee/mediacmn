@@ -14,6 +14,7 @@ from models.media_models import FileAsset
 from services.scraper import scraper_manager, MediaType
 from services.storage.storage_service import StorageService
 from services.utils.filename_parser import FilenameParser, ParserMode, ParseInput
+from dataclasses import asdict
 
 logger = logging.getLogger(__name__)
 
@@ -170,32 +171,76 @@ class MetadataEnricher:
                 except Exception as e:
                     logger.error(f"❌ 获取详细信息失败: {e}")
                 
-                # 保存元数据到数据库（统一应用）
-                from services.media.metadata_persistence_service import persistence_service
-                logger.debug(f"💾 保存元数据到数据库: 文件ID={media_file.id}, 匹配标题={best_match.title}")
+                # 入队持久化任务（解耦写库）
                 try:
-                    persistence_service.apply_metadata(session, media_file, details_obj or best_match)
+                    from services.task import Task, TaskType, TaskPriority, get_task_queue_service
+                    tq = get_task_queue_service()
+                    await tq.connect()
+                    contract_type = None
+                    payload = None
+                    if details_obj and hasattr(details_obj, 'movie_id'):
+                        contract_type = 'movie'
+                        payload = asdict(details_obj)
+                        external_key = str(getattr(details_obj, 'movie_id', best_match.id))
+                        scope = 'movie_single'
+                    elif details_obj and hasattr(details_obj, 'episode_number'):
+                        contract_type = 'episode'
+                        payload = asdict(details_obj)
+                        external_key = str(getattr(details_obj, 'episode_id', f"{best_match.id}:{season}:{episode}"))
+                        scope = 'episode_single'
+                    elif details_obj and hasattr(details_obj, 'series_id'):
+                        contract_type = 'series'
+                        payload = asdict(details_obj)
+                        external_key = str(getattr(details_obj, 'series_id', best_match.id))
+                        scope = 'series_group'
+                    else:
+                        contract_type = 'series'
+                        payload = asdict(best_match)
+                        external_key = str(getattr(best_match, 'id', media_file.id))
+                        scope = 'series_group'
+                    quality = None
+                    if getattr(out, 'resolution_tags', None):
+                        quality = out.resolution_tags[0] if len(out.resolution_tags) > 0 else None
+                    source = None
+                    if getattr(out, 'quality_tags', None):
+                        qt = [q.lower() for q in out.quality_tags]
+                        for s in ['web', 'bluray', 'dvd', 'hdtv']:
+                            if any(s in q for q in qt):
+                                source = s
+                                break
+                    idempotency_key = f"{media_file.user_id}:{media_file.id}:{best_match.provider}:{contract_type}:{external_key}"
+                    persist_task = Task(
+                        task_type=TaskType.PERSIST_METADATA,
+                        priority=TaskPriority.NORMAL,
+                        params={
+                            "file_id": media_file.id,
+                            "user_id": media_file.user_id,
+                            "storage_id": storage_id,
+                            "contract_type": contract_type,
+                            "contract_payload": payload,
+                            "version_context": {
+                                "scope": scope,
+                                "quality": quality,
+                                "source": source
+                            },
+                            "provider": best_match.provider,
+                            "language": preferred_language,
+                            "idempotency_key": idempotency_key
+                        },
+                        max_retries=3,
+                        retry_delay=300,
+                        timeout=3600
+                    )
+                    ok = await tq.enqueue_task(persist_task)
+                    logger.info(f"元数据持久化任务已入队: {persist_task.id}")
+                    if not ok:
+                        logger.error("持久化任务入队失败")
+                        return False
                 except Exception as e:
-                    try:
-                        session.rollback()
-                    except Exception:
-                        pass
-                    logger.error(f"❌ 保存元数据到数据库失败: 文件ID={media_file.id}, 错误: {e}")
+                    logger.error(f"持久化任务入队异常: {e}")
                     return False
-                
-                # 保存版本选择（迁移到持久化服务）
-                try:
-                    from services.media.metadata_persistence_service import persistence_service
-                    persistence_service.bind_version(session, media_file, out)
-                except Exception:
-                    pass
-                
-                # 提交事务
-                session.commit()
-                
-                logger.info(f"✅ 元数据丰富成功: '{title}' -> '{best_match.title}' ({best_match.year})")
-                
-                # 异步本地化：入队侧车任务，替代直接写入
+
+                # 异步本地化：入队侧车任务
                 try:
                     from services.task import Task, TaskType, TaskPriority, get_task_queue_service
                     from core.config import get_settings
@@ -221,14 +266,14 @@ class MetadataEnricher:
                                 retry_delay=300,
                                 timeout=1800
                             )
-                            ok = await tq.enqueue_task(sidecar_task)
-                            if ok:
+                            ok2 = await tq.enqueue_task(sidecar_task)
+                            if ok2:
                                 logger.info(f"侧车本地化任务已入队: {sidecar_task.id} -> file_id={media_file.id}")
                             else:
                                 logger.error("侧车任务入队失败，跳过本地化")
                 except Exception as e:
                     logger.error(f"侧车本地化任务入队异常，跳过本地化: {e}")
-            
+                
                 return True
                 
         except Exception as e:

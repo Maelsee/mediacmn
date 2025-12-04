@@ -123,10 +123,6 @@ def init_db() -> None:
                     # ExternalID 表索引
                     "CREATE INDEX IF NOT EXISTS idx_external_ids_core_id ON external_ids (core_id)",
                     "CREATE INDEX IF NOT EXISTS idx_external_ids_source ON external_ids (source)",
-                    
-                    # ScanJob 表索引
-                    "CREATE INDEX IF NOT EXISTS idx_scan_job_user_id ON scan_job (user_id)",
-                    "CREATE INDEX IF NOT EXISTS idx_scan_job_status ON scan_job (status)",
                 ]
                 
                 created_indexes = 0

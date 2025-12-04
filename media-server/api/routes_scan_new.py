@@ -37,6 +37,7 @@ class CreateScanTaskRequest(BaseModel):
     enable_delete_sync: bool = Field(True, description="是否启用删除同步")
     priority: str = Field("normal", description="任务优先级: low|normal|high|urgent")
     batch_size: int = Field(100, ge=10, le=1000, description="批量处理大小")
+    language: str = Field("zh-CN", description="语言")
 
 
 class CreateMetadataTaskRequest(BaseModel):
@@ -195,7 +196,8 @@ async def create_scan_task(
             enable_delete_sync=request.enable_delete_sync,
             user_id=int(current_user),
             priority=priority,
-            batch_size=request.batch_size
+            batch_size=request.batch_size,
+            language=request.language
         )
         
         return TaskResponse(

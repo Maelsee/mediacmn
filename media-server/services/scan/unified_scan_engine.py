@@ -21,7 +21,7 @@ import mimetypes
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Callable, AsyncGenerator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from sqlmodel import select
@@ -45,11 +45,11 @@ class ScanResult:
     updated_files: int = 0
     errors: int = 0
     duration: float = 0.0
-    scanned_paths: List[str] = None
-    error_details: List[Dict] = None
-    new_file_ids: List[int] = None
-    encountered_media_paths: List[str] = None
-    new_file_snapshots: Dict[int, Dict] = None
+    scanned_paths: List[str] = field(default_factory=list)
+    error_details: List[Dict] = field(default_factory=list)
+    new_file_ids: List[int] = field(default_factory=list)
+    encountered_media_paths: List[str] = field(default_factory=list)
+    new_file_snapshots: Dict[int, Dict] = field(default_factory=dict)
 
 """
 示例 ScanResult 实例

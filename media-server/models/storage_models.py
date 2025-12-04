@@ -49,7 +49,7 @@ class StorageConfig(SQLModel, table=True):
     local_config: Optional["LocalStorageConfig"] = Relationship(back_populates="storage_config")
     cloud_config: Optional["CloudStorageConfig"] = Relationship(back_populates="storage_config")
     status: Optional["StorageStatus"] = Relationship(back_populates="storage_config")
-    scan_tasks: List["StorageScanTask"] = Relationship(back_populates="storage_config")
+    # scan_tasks: List["StorageScanTask"] = Relationship(back_populates="storage_config")
     
     def __repr__(self):
         return f"<StorageConfig(id={self.id}, name='{self.name}', type='{self.storage_type}')>"
@@ -287,64 +287,64 @@ class StorageStatus(SQLModel, table=True):
 # 存储扫描任务
 # ============================================
 
-class StorageScanTask(SQLModel, table=True):
-    """存储扫描任务模型 - 管理各存储源的扫描任务"""
+# class StorageScanTask(SQLModel, table=True):
+#     """存储扫描任务模型 - 管理各存储源的扫描任务"""
     
-    __tablename__ = "storage_scan_task"
+#     __tablename__ = "storage_scan_task"
     
-    id: Optional[int] = Field(default=None, primary_key=True, description="存储扫描任务唯一标识")
+#     id: Optional[int] = Field(default=None, primary_key=True, description="存储扫描任务唯一标识")
     
-    # 关联信息
-    storage_id: int = Field(index=True, foreign_key="storage_config.id", description="关联的存储配置ID")
-    scan_job_id: Optional[int] = Field(default=None, foreign_key="scan_job.id", description="关联的扫描作业ID（可选）")
+#     # 关联信息
+#     storage_id: int = Field(index=True, foreign_key="storage_config.id", description="关联的存储配置ID")
+#     scan_job_id: Optional[int] = Field(default=None, description="关联的扫描作业ID（可选）")
     
-    # 扫描配置
-    scan_path: Optional[str] = Field(default=None, description="扫描路径（相对存储根路径）")
-    scan_type: str = Field(
-        default="full", 
-        description="扫描类型：full（全量）|incremental（增量）|quick（快速）"
-    )
+#     # 扫描配置
+#     scan_path: Optional[str] = Field(default=None, description="扫描路径（相对存储根路径）")
+#     scan_type: str = Field(
+#         default="full", 
+#         description="扫描类型：full（全量）|incremental（增量）|quick（快速）"
+#     )
     
-    # 过滤配置
-    file_patterns: str = Field(
-        default="*", 
-        description="文件匹配模式（JSON格式，如['*.mp4', '*.mkv']）"
-    )
-    exclude_patterns: Optional[str] = Field(
-        default=None, 
-        description="排除模式（JSON格式，如['*.tmp', '.git/*']）"
-    )
+#     # 过滤配置
+#     file_patterns: str = Field(
+#         default="*", 
+#         description="文件匹配模式（JSON格式，如['*.mp4', '*.mkv']）"
+#     )
+#     exclude_patterns: Optional[str] = Field(
+#         default=None, 
+#         description="排除模式（JSON格式，如['*.tmp', '.git/*']）"
+#     )
     
-    # 时间记录
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="任务创建时间（UTC时间）"
-    )
-    started_at: Optional[datetime] = Field(
-        default=None, description="任务开始时间（UTC时间）"
-    )
-    completed_at: Optional[datetime] = Field(
-        default=None, description="任务完成时间（UTC时间）"
-    )
+#     # 时间记录
+#     created_at: datetime = Field(
+#         default_factory=lambda: datetime.now(timezone.utc),
+#         description="任务创建时间（UTC时间）"
+#     )
+#     started_at: Optional[datetime] = Field(
+#         default=None, description="任务开始时间（UTC时间）"
+#     )
+#     completed_at: Optional[datetime] = Field(
+#         default=None, description="任务完成时间（UTC时间）"
+#     )
     
-    # 状态信息
-    status: str = Field(
-        default="pending",
-        description="任务状态：pending（待处理）|running（运行中）|completed（已完成）|failed（失败）"
-    )
+#     # 状态信息
+#     status: str = Field(
+#         default="pending",
+#         description="任务状态：pending（待处理）|running（运行中）|completed（已完成）|failed（失败）"
+#     )
     
-    # 进度统计
-    files_found: int = Field(default=0, description="发现的文件数")
-    files_processed: int = Field(default=0, description="处理的文件数")
-    files_added: int = Field(default=0, description="新增的文件数")
-    files_updated: int = Field(default=0, description="更新的文件数")
-    files_removed: int = Field(default=0, description="移除的文件数")
+#     # 进度统计
+#     files_found: int = Field(default=0, description="发现的文件数")
+#     files_processed: int = Field(default=0, description="处理的文件数")
+#     files_added: int = Field(default=0, description="新增的文件数")
+#     files_updated: int = Field(default=0, description="更新的文件数")
+#     files_removed: int = Field(default=0, description="移除的文件数")
     
-    # 错误信息
-    error_message: Optional[str] = Field(default=None, description="错误信息")
+#     # 错误信息
+#     error_message: Optional[str] = Field(default=None, description="错误信息")
     
-    # 关系
-    storage_config: StorageConfig = Relationship(back_populates="scan_tasks")
+#     # 关系
+#     storage_config: StorageConfig = Relationship(back_populates="scan_tasks")
     
-    def __repr__(self):
-        return f"<StorageScanTask(id={self.id}, storage_id={self.storage_id}, status='{self.status}')>"
+#     def __repr__(self):
+#         return f"<StorageScanTask(id={self.id}, storage_id={self.storage_id}, status='{self.status}')>"

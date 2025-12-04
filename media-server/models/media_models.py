@@ -16,7 +16,7 @@
 6. 外部ID模型：ExternalID
 7. 流派模型：Genre, MediaCoreGenre
 8. 人员信用模型：Person, Credit
-9. 扫描任务模型：ScanJob
+
 
 关联关系：
 - 所有模型都通过 user_id 关联到 User 模型

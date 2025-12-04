@@ -54,6 +54,7 @@ class TaskType(str, Enum):
     CLEANUP = "cleanup"             # 清理任务
     DELETE_SYNC = "delete_sync"     # 删除对齐任务
     SIDECAR_LOCALIZE = "sidecar_localize"     # 侧车文件本地化
+    PERSIST_METADATA = "persist_metadata"     # 持久化元数据
 
 
 @dataclass

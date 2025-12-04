@@ -48,7 +48,15 @@ class UnifiedTaskExecutor:
             "tasks_succeeded": 0,
             "tasks_failed": 0,
             "start_time": None,
-            "last_task_time": None
+            "last_task_time": None,
+            "batch_persist": {
+                "batches": 0,
+                "tasks": 0,
+                "succeeded": 0,
+                "failed": 0,
+                "avg_batch_size": 0.0,
+                "last_batch_duration": 0.0
+            }
         }
     
     async def initialize(self):
@@ -89,7 +97,7 @@ class UnifiedTaskExecutor:
                 try:
                     # 从队列获取任务
                     task = await self.task_queue_service.dequeue_task(
-                        [TaskType.SCAN, TaskType.METADATA_FETCH, TaskType.COMBINED_SCAN, TaskType.DELETE_SYNC, TaskType.SIDECAR_LOCALIZE],
+                        [TaskType.SCAN, TaskType.METADATA_FETCH, TaskType.COMBINED_SCAN, TaskType.DELETE_SYNC, TaskType.SIDECAR_LOCALIZE, TaskType.PERSIST_METADATA],
                         self.worker_id,
                         timeout=10
                     )
@@ -128,30 +136,111 @@ class UnifiedTaskExecutor:
             task.status = TaskStatus.RUNNING
             task.started_at = datetime.now()
             
-            # 执行任务
-            execution_result = await self.task_scheduler.execute_task(task)
-            
-            # 创建任务结果
-            task_result = TaskResult(
-                success=execution_result.success,
-                data=execution_result.data,
-                error=execution_result.error,
-                duration=execution_result.duration or (datetime.now() - start_time).total_seconds()
-            )
-            
-            # 完成任务
-            await self.task_queue_service.complete_task(task.id, task_result)
-            
-            # 更新统计信息
-            self.stats["tasks_processed"] += 1
-            self.stats["last_task_time"] = datetime.now()
-            
-            if execution_result.success:
-                self.stats["tasks_succeeded"] += 1
-                logger.info(f"任务执行成功: {task.id}, 耗时: {task_result.duration:.2f}秒")
+            if task.task_type == TaskType.PERSIST_METADATA:
+                from core.config import get_settings
+                settings = get_settings()
+                max_size = int(getattr(settings, "PERSIST_BATCH_MAX_SIZE", 100))
+                max_wait_ms = int(getattr(settings, "PERSIST_BATCH_MAX_WAIT_MS", 800))
+                batch = [task]
+                batch_start = time.time()
+                while len(batch) < max_size and (time.time() - batch_start) < (max_wait_ms / 1000.0):
+                    nxt = await self.task_queue_service.dequeue_task(
+                        [TaskType.PERSIST_METADATA], self.worker_id, timeout=1
+                    )
+                    if not nxt:
+                        break
+                    batch.append(nxt)
+                # 分桶优化（按 contract_type/provider/user_id）
+                bucket_enabled = bool(getattr(settings, "PERSIST_BUCKET_ENABLED", True))
+                if bucket_enabled and len(batch) > 1:
+                    buckets = {}
+                    for bt in batch:
+                        p = bt.params or {}
+                        key = (p.get("contract_type"), p.get("provider"), p.get("user_id"))
+                        buckets.setdefault(key, []).append(bt)
+                    results_all = {}
+                    succeeded_all = 0
+                    failed_all = 0
+                    total_dur = 0.0
+                    for key, group in buckets.items():
+                        execution_result = await self.task_scheduler.execute_persist_batch(group)
+                        dur = execution_result.duration or (datetime.now() - start_time).total_seconds()
+                        total_dur += dur
+                        results = (execution_result.data or {}).get("results", {})
+                        succeeded = sum(1 for g in group if bool(results.get(g.id)))
+                        failed = len(group) - succeeded
+                        succeeded_all += succeeded
+                        failed_all += failed
+                        results_all.update(results)
+                        for g in group:
+                            ok = bool(results.get(g.id))
+                            tr = TaskResult(success=ok, data=None, error=None, duration=dur)
+                            await self.task_queue_service.complete_task(g.id, tr)
+                            self.stats["tasks_processed"] += 1
+                            self.stats["last_task_time"] = datetime.now()
+                            if ok:
+                                self.stats["tasks_succeeded"] += 1
+                            else:
+                                self.stats["tasks_failed"] += 1
+                    prev_batches = self.stats["batch_persist"]["batches"]
+                    prev_tasks = self.stats["batch_persist"]["tasks"]
+                    new_tasks = prev_tasks + len(batch)
+                    new_batches = prev_batches + len(buckets)
+                    self.stats["batch_persist"]["batches"] = new_batches
+                    self.stats["batch_persist"]["tasks"] = new_tasks
+                    self.stats["batch_persist"]["succeeded"] += succeeded_all
+                    self.stats["batch_persist"]["failed"] += failed_all
+                    try:
+                        self.stats["batch_persist"]["avg_batch_size"] = (new_tasks / new_batches) if new_batches > 0 else 0.0
+                    except Exception:
+                        pass
+                    self.stats["batch_persist"]["last_batch_duration"] = total_dur
+                    return
+                execution_result = await self.task_scheduler.execute_persist_batch(batch)
+                dur = execution_result.duration or (datetime.now() - start_time).total_seconds()
+                results = (execution_result.data or {}).get("results", {})
+                succeeded = sum(1 for bt in batch if bool(results.get(bt.id)))
+                failed = len(batch) - succeeded
+                prev_batches = self.stats["batch_persist"]["batches"]
+                prev_tasks = self.stats["batch_persist"]["tasks"]
+                new_tasks = prev_tasks + len(batch)
+                new_batches = prev_batches + 1
+                self.stats["batch_persist"]["batches"] = new_batches
+                self.stats["batch_persist"]["tasks"] = new_tasks
+                self.stats["batch_persist"]["succeeded"] += succeeded
+                self.stats["batch_persist"]["failed"] += failed
+                self.stats["batch_persist"]["last_batch_duration"] = dur
+                try:
+                    self.stats["batch_persist"]["avg_batch_size"] = (new_tasks / new_batches) if new_batches > 0 else 0.0
+                except Exception:
+                    pass
+                for bt in batch:
+                    ok = bool(results.get(bt.id))
+                    tr = TaskResult(success=ok, data=None, error=None, duration=dur)
+                    await self.task_queue_service.complete_task(bt.id, tr)
+                    self.stats["tasks_processed"] += 1
+                    self.stats["last_task_time"] = datetime.now()
+                    if ok:
+                        self.stats["tasks_succeeded"] += 1
+                    else:
+                        self.stats["tasks_failed"] += 1
             else:
-                self.stats["tasks_failed"] += 1
-                logger.warning(f"任务执行失败: {task.id}, 错误: {execution_result.error}")
+                execution_result = await self.task_scheduler.execute_task(task)
+                task_result = TaskResult(
+                    success=execution_result.success,
+                    data=execution_result.data,
+                    error=execution_result.error,
+                    duration=execution_result.duration or (datetime.now() - start_time).total_seconds()
+                )
+                await self.task_queue_service.complete_task(task.id, task_result)
+                self.stats["tasks_processed"] += 1
+                self.stats["last_task_time"] = datetime.now()
+                if execution_result.success:
+                    self.stats["tasks_succeeded"] += 1
+                    logger.info(f"任务执行成功: {task.id}, 耗时: {task_result.duration:.2f}秒")
+                else:
+                    self.stats["tasks_failed"] += 1
+                    logger.warning(f"任务执行失败: {task.id}, 错误: {execution_result.error}")
             
         except asyncio.CancelledError:
             logger.info(f"任务被取消: {task.id}")

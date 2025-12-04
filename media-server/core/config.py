@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     SIDE_CAR_LOCALIZATION_ARTWORK_LIMIT: int = Field(default=2, description="侧车阶段写入的艺术作品最大数量")
     TASK_EXECUTOR_COUNT: int = Field(default=1, description="统一任务执行器（侧车文件上传）并发数")
 
+    # 持久化批量聚合配置
+    PERSIST_BATCH_MAX_SIZE: int = Field(default=100, description="持久化批量最大聚合任务数")
+    PERSIST_BATCH_MAX_WAIT_MS: int = Field(default=800, description="持久化批量聚合最大等待时间（毫秒）")
+    PERSIST_BUCKET_ENABLED: bool = Field(default=True, description="是否启用按类型/源/用户分桶批量提交")
+
 
     # 允许 CORS_ORIGINS 以逗号分隔或 JSON 列表形式配置
     @field_validator("CORS_ORIGINS", mode="before")

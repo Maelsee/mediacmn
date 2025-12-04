@@ -33,6 +33,18 @@ from services.media.metadata_task_processor import (
 from services.media.metadata_enricher import metadata_enricher
 from services.media.sidecar_localize_processor import SidecarLocalizeProcessor
 from services.media.delete_sync_service import DeleteSyncService
+from sqlmodel import select
+from core.db import get_session as get_db_session
+from models.media_models import FileAsset
+from services.media.metadata_persistence_service import persistence_service
+from services.scraper.base import (
+    ScraperMovieDetail,
+    ScraperSeriesDetail,
+    ScraperSeasonDetail,
+    ScraperEpisodeDetail,
+    ScraperSearchResult,
+)
+from dataclasses import fields as _dc_fields
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +127,8 @@ class UnifiedTaskScheduler:
         enable_delete_sync: bool = True,
         user_id: int = 1,
         priority: TaskPriority = TaskPriority.NORMAL,
-        batch_size: int = 100
+        batch_size: int = 100,
+        language: str = "zh-CN"
     ) -> str:
         """
         创建扫描任务
@@ -155,6 +168,7 @@ class UnifiedTaskScheduler:
                     "user_id": user_id,
                     "batch_size": batch_size,
                     "create_metadata_tasks": enable_metadata_enrichment,
+                    "language": language,
                     # "parse_snapshot": None
             },
             max_retries=3,
@@ -267,6 +281,8 @@ class UnifiedTaskScheduler:
                 result = await self._execute_delete_sync_task(task)
             elif task.task_type == TaskType.SIDECAR_LOCALIZE:
                 result = await self._execute_sidecar_localize_task(task)
+            elif task.task_type == TaskType.PERSIST_METADATA:
+                result = await self._execute_persist_metadata_task(task)
             else:
                 raise ValueError(f"不支持的任务类型: {task.task_type}")
             
@@ -379,33 +395,32 @@ class UnifiedTaskScheduler:
             user_id = params.get("user_id", 1)
             language = params.get("language", "zh-CN")
             metadata_task_ids: List[str] = []
+            candidate_ids: List[int] = list(new_file_ids or [])
+            if not candidate_ids:
+                encountered = scan_result.data.get("scan_result", {}).get("encountered_media_paths", [])
+                if encountered:
+                    with next(get_db_session()) as session:
+                        rows = session.exec(select(FileAsset).where(
+                            (FileAsset.user_id == user_id) &
+                            (FileAsset.storage_id == storage_id) &
+                            (FileAsset.full_path.in_(encountered))
+                        )).all() or []
+                        candidate_ids = [int(fa.id) for fa in rows if not getattr(fa, "core_id", None)]
 
-            if new_file_ids:
-                logger.debug(f"组合任务发现 {len(new_file_ids)} 个新文件，将创建元数据任务: {task.id}")
-                
-                # 第二步：创建元数据任务
-               
-                
-                # 附带轻量快照到元数据任务参数
-                # 将每个新文件的快照字典传递到元数据任务
-                # parse_snapshot = new_file_snapshots if isinstance(new_file_snapshots, dict) else None
-               
+            if candidate_ids:
+                logger.debug(f"组合任务将创建元数据任务: {task.id}, files={len(candidate_ids)}")
                 metadata_task_ids = await self.create_metadata_task(
                     storage_id=storage_id,
-                    file_ids=new_file_ids,
+                    file_ids=candidate_ids,
                     user_id=user_id,
                     language=language,
-                    priority=TaskPriority.NORMAL,  # 元数据任务使用普通优先级
-                    # parse_snapshot_map=parse_snapshot
+                    priority=TaskPriority.NORMAL,
                 )
-
-                # 更新扫描结果，添加元数据任务信息
                 scan_result.data["metadata_task_ids"] = metadata_task_ids
+                scan_result.data["candidate_enrich_ids"] = candidate_ids
                 scan_result.sub_task_ids = metadata_task_ids
-            
             else:
-                # 没有新文件
-                logger.debug(f"组合任务未发现新文件，跳过元数据丰富: {task.id}")
+                logger.debug(f"组合任务未发现可丰富文件: {task.id}")
              
             # 第三步：删除对齐任务（如果开启），
             
@@ -429,7 +444,7 @@ class UnifiedTaskScheduler:
                     f"创建删除对齐任务: {delete_task.id}, storage_id={storage_id}, encountered_count={len(encountered)}"
                 )
                 await self.task_queue_service.enqueue_task(delete_task)
-                scan_result.sub_task_ids.append(delete_task.id)
+                scan_result.sub_task_ids = (scan_result.sub_task_ids or []) + [delete_task.id]
                 scan_result.data.setdefault("delete_sync_task_id", delete_task.id)
       
             logger.debug(
@@ -492,6 +507,160 @@ class UnifiedTaskScheduler:
             logger.error(f"侧车本地化任务执行失败: {task.id}, 错误: {e}")
             return TaskExecutionResult(success=False, error=str(e))
     
+    async def _execute_persist_metadata_task(self, task: Task) -> TaskExecutionResult:
+        try:
+            params = task.params or {}
+            file_id = params.get("file_id")
+            user_id = params.get("user_id")
+            contract_type = params.get("contract_type")
+            payload = params.get("contract_payload") or {}
+            version_context = params.get("version_context") or {}
+            if not file_id or not user_id or not contract_type or not payload:
+                return TaskExecutionResult(success=False, error="missing_params")
+            with next(get_db_session()) as session:
+                fa = session.exec(select(FileAsset).where(FileAsset.id == int(file_id))).first()
+                if not fa:
+                    return TaskExecutionResult(success=False, error="file_not_found")
+                md = None
+                if contract_type == "movie":
+                    allowed = {f.name for f in _dc_fields(ScraperMovieDetail)}
+                    md = ScraperMovieDetail(**{k: v for k, v in payload.items() if k in allowed})
+                elif contract_type == "episode":
+                    season_payload = payload.get("season")
+                    series_payload = payload.get("series")
+                    sp = None
+                    sr = None
+                    if isinstance(season_payload, dict):
+                        allowed_se = {f.name for f in _dc_fields(ScraperSeasonDetail)}
+                        sp = ScraperSeasonDetail(**{k: v for k, v in season_payload.items() if k in allowed_se})
+                    if isinstance(series_payload, dict):
+                        allowed_sr = {f.name for f in _dc_fields(ScraperSeriesDetail)}
+                        sr = ScraperSeriesDetail(**{k: v for k, v in series_payload.items() if k in allowed_sr})
+                    ep_payload = {k: v for k, v in payload.items() if k not in ["season", "series"]}
+                    allowed_ep = {f.name for f in _dc_fields(ScraperEpisodeDetail)}
+                    md = ScraperEpisodeDetail(**{k: v for k, v in ep_payload.items() if k in allowed_ep})
+                    setattr(md, "season", sp)
+                    setattr(md, "series", sr)
+                elif contract_type == "series":
+                    allowed = {f.name for f in _dc_fields(ScraperSeriesDetail)}
+                    md = ScraperSeriesDetail(**{k: v for k, v in payload.items() if k in allowed})
+                else:
+                    allowed = {f.name for f in _dc_fields(ScraperSearchResult)}
+                    md = ScraperSearchResult(**{k: v for k, v in payload.items() if k in allowed})
+                persistence_service.apply_metadata(session, fa, md)
+                scope = version_context.get("scope")
+                qual = version_context.get("quality")
+                src = version_context.get("source")
+                class _ParseProxy:
+                    pass
+                pp = _ParseProxy()
+                setattr(pp, "resolution_tags", ([qual] if qual else []))
+                setattr(pp, "quality_tags", ([src] if src else []))
+                try:
+                    persistence_service.bind_version(session, fa, pp)
+                except Exception:
+                    pass
+                session.commit()
+            return TaskExecutionResult(success=True, data={"file_id": file_id, "contract_type": contract_type})
+        except Exception as e:
+            logger.error(f"持久化任务执行失败: {task.id}, 错误: {e}")
+            return TaskExecutionResult(success=False, error=str(e))
+
+    async def execute_persist_batch(self, tasks: List[Task]) -> TaskExecutionResult:
+        try:
+            def _run(ts: List[Task]):
+                processed = 0
+                succeeded = 0
+                errors = []
+                results = {}
+                with next(get_db_session()) as session:
+                    for t in ts:
+                        try:
+                            params = t.params or {}
+                            file_id = params.get("file_id")
+                            user_id = params.get("user_id")
+                            contract_type = params.get("contract_type")
+                            payload = params.get("contract_payload") or {}
+                            version_context = params.get("version_context") or {}
+                            if not file_id or not user_id or not contract_type or not payload:
+                                results[t.id] = False
+                                errors.append({"task_id": t.id, "error": "missing_params"})
+                                continue
+                            fa = session.exec(select(FileAsset).where(FileAsset.id == int(file_id))).first()
+                            if not fa:
+                                results[t.id] = False
+                                errors.append({"task_id": t.id, "error": "file_not_found"})
+                                continue
+                            md = None
+                            if contract_type == "movie":
+                                allowed = {f.name for f in _dc_fields(ScraperMovieDetail)}
+                                md = ScraperMovieDetail(**{k: v for k, v in payload.items() if k in allowed})
+                            elif contract_type == "episode":
+                                season_payload = payload.get("season")
+                                series_payload = payload.get("series")
+                                sp = None
+                                sr = None
+                                if isinstance(season_payload, dict):
+                                    allowed_se = {f.name for f in _dc_fields(ScraperSeasonDetail)}
+                                    sp = ScraperSeasonDetail(**{k: v for k, v in season_payload.items() if k in allowed_se})
+                                if isinstance(series_payload, dict):
+                                    allowed_sr = {f.name for f in _dc_fields(ScraperSeriesDetail)}
+                                    sr = ScraperSeriesDetail(**{k: v for k, v in series_payload.items() if k in allowed_sr})
+                                ep_payload = {k: v for k, v in payload.items() if k not in ["season", "series"]}
+                                allowed_ep = {f.name for f in _dc_fields(ScraperEpisodeDetail)}
+                                md = ScraperEpisodeDetail(**{k: v for k, v in ep_payload.items() if k in allowed_ep})
+                                setattr(md, "season", sp)
+                                setattr(md, "series", sr)
+                            elif contract_type == "series":
+                                allowed = {f.name for f in _dc_fields(ScraperSeriesDetail)}
+                                md = ScraperSeriesDetail(**{k: v for k, v in payload.items() if k in allowed})
+                            else:
+                                allowed = {f.name for f in _dc_fields(ScraperSearchResult)}
+                                md = ScraperSearchResult(**{k: v for k, v in payload.items() if k in allowed})
+                            persistence_service.apply_metadata(session, fa, md)
+                            scope = version_context.get("scope")
+                            qual = version_context.get("quality")
+                            src = version_context.get("source")
+                            class _ParseProxy:
+                                pass
+                            pp = _ParseProxy()
+                            setattr(pp, "resolution_tags", ([qual] if qual else []))
+                            setattr(pp, "quality_tags", ([src] if src else []))
+                            try:
+                                persistence_service.bind_version(session, fa, pp)
+                            except Exception:
+                                pass
+                            processed += 1
+                            succeeded += 1
+                            results[t.id] = True
+                        except Exception as e:
+                            results[t.id] = False
+                            errors.append({"task_id": t.id, "error": str(e)})
+                    if processed > 0:
+                        try:
+                            session.commit()
+                            return processed, succeeded, results, errors
+                        except Exception:
+                            try:
+                                session.rollback()
+                            except Exception:
+                                pass
+                if len(ts) == 1:
+                    return 1, 0, {ts[0].id: False}, [{"task_id": ts[0].id, "error": "commit_failed"}]
+                mid = len(ts) // 2
+                p1 = _run(ts[:mid])
+                p2 = _run(ts[mid:])
+                return (
+                    p1[0] + p2[0],
+                    p1[1] + p2[1],
+                    {**p1[2], **p2[2]},
+                    p1[3] + p2[3]
+                )
+            p = _run(tasks)
+            return TaskExecutionResult(success=True, data={"processed": len(tasks), "succeeded": p[1], "results": p[2], "errors": p[3]})
+        except Exception as e:
+            logger.error(f"持久化批量执行失败: {e}")
+            return TaskExecutionResult(success=False, error=str(e))
     
    
     

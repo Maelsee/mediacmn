@@ -48,7 +48,7 @@ from .storage_models import (  # noqa: F401
     LocalStorageConfig,
     CloudStorageConfig,
     StorageStatus,
-    StorageScanTask
+    # StorageScanTask
 )
 
 # ============================================
@@ -61,7 +61,7 @@ SmbStorageConfig = SmbStorageConfig
 LocalStorageConfig = LocalStorageConfig
 CloudStorageConfig = CloudStorageConfig
 StorageStatus = StorageStatus
-StorageScanTask = StorageScanTask
+# StorageScanTask = StorageScanTask
 
 # 媒体模型别名（保持向后兼容）
 # 注意：以下独立模型文件将在后续清理中移除

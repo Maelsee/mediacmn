@@ -38,18 +38,6 @@
 
 Alembic 错误信息的中文解释和解决方案：
 
-错误信息翻译
-
-
-INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
-信息 [alembic.runtime.migration] 上下文实现为 PostgreSQL
-INFO  [alembic.runtime.migration] Will assume transactional DDL.
-信息 [alembic.runtime.migration] 将假定使用事务性DDL
-ERROR [alembic.util.messaging] Target database is not up to date.
-错误 [alembic.util.messaging] 目标数据库不是最新的
-  FAILED: Target database is not up to date.
-  失败：目标数据库不是最新的
-
 
 问题解释
 
