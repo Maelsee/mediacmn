@@ -16,7 +16,7 @@ class ParseInput:
     full_path: Optional[str] = None
     language_pref: str = "zh-CN"
     site_plugins: Optional[List[str]] = None
-    existing_snapshot: Optional[Dict] = None
+    
 
 
 @dataclass

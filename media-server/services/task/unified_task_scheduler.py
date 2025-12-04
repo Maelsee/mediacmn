@@ -155,7 +155,7 @@ class UnifiedTaskScheduler:
                     "user_id": user_id,
                     "batch_size": batch_size,
                     "create_metadata_tasks": enable_metadata_enrichment,
-                    "parse_snapshot": None
+                    # "parse_snapshot": None
             },
             max_retries=3,
             retry_delay=300,  # 5分钟重试延迟
@@ -183,7 +183,7 @@ class UnifiedTaskScheduler:
         language: str = "zh-CN",
         priority: TaskPriority = TaskPriority.NORMAL,
         batch_size: int = 20,
-        parse_snapshot_map: Optional[Dict[int, Dict]] = None
+        # parse_snapshot_map: Optional[Dict[int, Dict]] = None
     ) -> List[str]:
         """
         创建元数据任务（批量）
@@ -220,7 +220,7 @@ class UnifiedTaskScheduler:
                         "language": language,
                         "batch_mode": True,
                         "user_id": user_id,
-                        "parse_snapshot": {fid: (parse_snapshot_map.get(fid) if parse_snapshot_map else None) for fid in batch_file_ids}
+                        # "parse_snapshot": {fid: (parse_snapshot_map.get(fid) if parse_snapshot_map else None) for fid in batch_file_ids}
                     },
                     max_retries=3,
                     retry_delay=300,  # 5分钟重试延迟
@@ -327,7 +327,7 @@ class UnifiedTaskScheduler:
             file_ids = params.get("file_ids", [])
             storage_id = params.get("storage_id")
             language = params.get("language", "zh-CN")
-            existing_snapshot_map = params.get("parse_snapshot") or {}
+            
             
             if not file_ids:
                 return TaskExecutionResult(success=True, data={"processed": 0, "succeeded": 0})
@@ -336,9 +336,10 @@ class UnifiedTaskScheduler:
             success_count = 0
             results = {}
             
+            # 使用元数据丰富器的批量处理,enrich_multiple_files
             for file_id in file_ids:
                 try:
-                    success = await metadata_enricher.enrich_media_file(file_id, language, storage_id=storage_id, existing_snapshot=existing_snapshot_map.get(file_id))
+                    success = await metadata_enricher.enrich_media_file(file_id, language, storage_id=storage_id)
                     results[file_id] = success
                     if success:
                         success_count += 1
@@ -387,7 +388,7 @@ class UnifiedTaskScheduler:
                 
                 # 附带轻量快照到元数据任务参数
                 # 将每个新文件的快照字典传递到元数据任务
-                parse_snapshot = new_file_snapshots if isinstance(new_file_snapshots, dict) else None
+                # parse_snapshot = new_file_snapshots if isinstance(new_file_snapshots, dict) else None
                
                 metadata_task_ids = await self.create_metadata_task(
                     storage_id=storage_id,
@@ -395,7 +396,7 @@ class UnifiedTaskScheduler:
                     user_id=user_id,
                     language=language,
                     priority=TaskPriority.NORMAL,  # 元数据任务使用普通优先级
-                    parse_snapshot_map=parse_snapshot
+                    # parse_snapshot_map=parse_snapshot
                 )
 
                 # 更新扫描结果，添加元数据任务信息

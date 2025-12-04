@@ -350,34 +350,6 @@ class Credit(SQLModel, table=True):
     character: Optional[str] = Field(default=None, description="饰演的角色名称（仅演员）")
     job: Optional[str] = Field(default=None, description="具体职位：导演、编剧、摄影等（仅剧组人员）")
 
-
-# ==================== 扫描任务模型 ====================
-class ScanJob(SQLModel, table=True):
-    """扫描任务模型 - 跟踪和管理媒体库扫描任务的状态与进度"""
-    __tablename__ = "scan_job"
-
-    id: Optional[int] = Field(default=None, primary_key=True, description="扫描任务唯一标识")
-    user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
-    storage_name: str = Field(index=True, description="WebDAV存储配置名称")
-    root_path: str = Field(default="/", description="扫描起始路径（相对存储根目录）")
-
-    # 任务状态
-    status: str = Field(default="pending", description="任务状态：pending|running|success|failed|stopped")
-    total: int = Field(default=0, description="预计总项数（扫描过程中动态估算）")
-    done: int = Field(default=0, description="已处理项数（成功扫描的文件数量）")
-    failed: int = Field(default=0, description="失败项数（扫描失败的文件数量）")
-
-    # 软中断机制
-    cancel_requested: bool = Field(default=False, description="是否请求取消（软中断机制）")
-
-    # 时间信息
-    started_at: Optional[datetime] = Field(default=None, description="任务开始时间")
-    finished_at: Optional[datetime] = Field(default=None, description="任务完成时间")
-    last_error: Optional[str] = Field(default=None, description="最后错误信息（用于故障排查）")
-
-    created_at: datetime = Field(default_factory=get_utc_now_factory(), description="任务创建时间")
-    updated_at: datetime = Field(default_factory=get_utc_now_factory(), description="任务最后更新时间")
-
 # ==================== 播放历史模型 ====================
 class PlaybackHistory(SQLModel, table=True):
     __tablename__ = "playback_history"

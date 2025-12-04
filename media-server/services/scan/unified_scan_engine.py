@@ -28,22 +28,12 @@ from sqlmodel import select
 
 from core.db import get_session as get_db_session
 from models.media_models import MediaCore, FileAsset
-from models.storage_models import StorageConfig
 from services.storage.storage_service import StorageService
 from services.storage.storage_client import StorageClient, StorageEntry
 from services.utils.filename_parser import FilenameParser, ParserMode, ParseInput
 from services.scan.file_asset_repository import SqlFileAssetRepository
 
 logger = logging.getLogger(__name__)
-
-
-class ScanStatus(Enum):
-    """扫描状态枚举"""
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
 
 
 @dataclass

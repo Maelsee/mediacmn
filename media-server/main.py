@@ -15,7 +15,6 @@ from core.config import Settings, get_settings
 from core.logging import init_logging, logger
 from core.errors import register_exception_handlers
 from core.db import init_db
-from core.error_handler import UnifiedErrorHandlerMiddleware
 from services.scraper import scraper_manager
 
 
@@ -40,9 +39,6 @@ def create_app() -> FastAPI:
 
     # 注册 JWT 认证中间件（非强制）
     app.add_middleware(JWTAuthMiddleware)
-
-    # 注册错误处理中间件（在JWT认证之后）
-    app.add_middleware(UnifiedErrorHandlerMiddleware)
 
     # 注册统一异常处理
     register_exception_handlers(app)
@@ -78,7 +74,6 @@ def create_app() -> FastAPI:
     api_router.include_router(storage_unified_router, prefix="/storage-unified", tags=["storage-unified"])
     api_router.include_router(scan_new_router, prefix="/scan", tags=["scan"])  # 新的统一扫描路由
     api_router.include_router(scraper_router, prefix="/scraper", tags=["scraper"])
-    api_router.include_router(playback_router, prefix="/playback", tags=["playback"])
     # 移除旧架构路由
     # api_router.include_router(scan_unified_router, prefix="/scan-unified", tags=["scan-unified"])  # 旧统一扫描路由
     # api_router.include_router(enhanced_scan_router, prefix="/enhanced-scan", tags=["enhanced-scan"])  # 旧增强扫描路由

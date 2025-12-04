@@ -31,11 +31,11 @@ class MetadataEnricher:
         self.storage_service = StorageService()
         self.parser = FilenameParser()
     
-    async def enrich_media_file(self, file_id: int, preferred_language: str = "zh-CN", storage_id: Optional[int] = None, existing_snapshot: Optional[dict] = None) -> bool:
+    async def enrich_media_file(self, file_id: int, preferred_language: str = "zh-CN", storage_id: Optional[int] = None) -> bool:
         """
         丰富单个媒体文件的元数据
-        
-        这是核心的元数据丰富函数，负责：
+
+        流程：
         1. 获取文件信息和存储客户端
         2. 解析文件名提取标题、年份、季集信息
         3. 搜索元数据并进行类型校正（Movie/TV），支持语言回退
@@ -43,14 +43,14 @@ class MetadataEnricher:
         5. 将覆盖版 ScraperResult 一次性持久化并绑定版本
         6. 入队侧车本地化任务（NFO/Poster/Fanart）
         
-        Args:
+        req:
             file_id: 文件ID
             preferred_language: 首选语言（默认中文）
-            storage_id: 存储配置ID（可选）
-            existing_snapshot: 名称解析器快照（可选，用于重用之前的解析结果）
-            
-        Returns:
+            storage_id: 存储配置ID（可选）完全不用,file_id查表就可以查到
+        
+        resp:
             bool: 是否成功完成元数据丰富
+
         """
        
         try:
@@ -59,7 +59,7 @@ class MetadataEnricher:
             
             with next(get_db_session()) as session:
                 # 获取媒体文件信息
-                media_file = session.exec(select(FileAsset).filter(FileAsset.id == file_id)).first()
+                media_file = session.exec(select(FileAsset).where(FileAsset.id == file_id)).first()
                 
                 if not media_file:
                     logger.error(f"媒体文件不存在: {file_id}")
@@ -78,17 +78,11 @@ class MetadataEnricher:
                 
                 # 解析文件名（Deep 模式，若快照存在则重用）
                 seed_parent = str(Path(media_file.full_path).parent.name) # 父目录名作为种子
-                # Light模式（文件扫描阶段）的文件名解析快照
-                if existing_snapshot and existing_snapshot.get('parser_confidence', 0) >= 60:  # 仅当置信度足够高时重用快照
-                    seed_title = existing_snapshot.get('filename_normalized') or (media_file.filename or Path(media_file.full_path).name)
-                    seed_year = existing_snapshot.get('year_hint')  
-                    seed_season = existing_snapshot.get('season_hint')
-                    seed_episode = existing_snapshot.get('episode_hint')
-                else:
-                    seed_title = media_file.filename or Path(media_file.full_path).name
-                    seed_year = None
-                    seed_season = None
-                    seed_episode = None
+              
+                seed_title = media_file.filename or Path(media_file.full_path).name
+                seed_year = None
+                seed_season = None
+                seed_episode = None
                 # 名称解析器
                 out = self.parser.parse(
                     ParseInput(
@@ -96,7 +90,7 @@ class MetadataEnricher:
                         parent_hint=seed_parent,
                         grandparent_hint=str(Path(media_file.full_path).parent.parent.name) if Path(media_file.full_path).parent.parent else None,
                         full_path=str(Path(media_file.full_path)),
-                        existing_snapshot=existing_snapshot
+                        
                     ),
                     ParserMode.DEEP
                 )
@@ -105,7 +99,7 @@ class MetadataEnricher:
                 season = out.season_number if out.season_number is not None else seed_season
                 episode = out.episode_number if out.episode_number is not None else seed_episode
                 
-                # 确定媒体类型
+                # 确定媒体类型(movie or tv)
                 media_type = self._determine_media_type(media_file, season, episode)
                 
                 # 搜索元数据

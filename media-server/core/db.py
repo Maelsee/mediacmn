@@ -14,7 +14,6 @@ from .config import get_settings, Settings
 from models.user import User  # noqa: F401
 from models.refresh_token import RefreshToken  # noqa: F401
 from models.storage_models import StorageConfig  # noqa: F401
-from models.media_models import ScanJob  # noqa: F401
 from models.media_models import MediaCore  # noqa: F401
 from models.media_models import ExternalID  # noqa: F401
 from models.media_models import Artwork  # noqa: F401

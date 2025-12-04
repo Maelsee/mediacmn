@@ -35,9 +35,7 @@ from .media_models import (  # noqa: F401
     MediaCoreGenre,
     # 人员信用模型
     Person,
-    Credit,
-    # 扫描任务模型
-    ScanJob
+    Credit
 )
 
 # ============================================
@@ -81,4 +79,3 @@ Genre = Genre
 MediaCoreGenre = MediaCoreGenre
 Person = Person
 Credit = Credit
-ScanJob = ScanJob
