@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
     from api.routes_storage_config import router as storage_config_router
     from api.routes_storage_unified import router as storage_unified_router
     from api.routes_scan_new import router as scan_new_router  # 新的统一扫描路由
+    from api.routes_tasks import router as tasks_router
     from api.routes_scraper import router as scraper_router
     from api.routes_playback import router as playback_router
     from api.routes_collections import router as collections_router
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     api_router.include_router(storage_config_router, prefix="/storage", tags=["storage"])
     api_router.include_router(storage_unified_router, prefix="/storage-unified", tags=["storage-unified"])
     api_router.include_router(scan_new_router, prefix="/scan", tags=["scan"])  # 新的统一扫描路由
+    api_router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])  # 任务生产者API
     api_router.include_router(scraper_router, prefix="/scraper", tags=["scraper"])
     # 移除旧架构路由
     # api_router.include_router(scan_unified_router, prefix="/scan-unified", tags=["scan-unified"])  # 旧统一扫描路由

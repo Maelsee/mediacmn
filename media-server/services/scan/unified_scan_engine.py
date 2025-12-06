@@ -484,7 +484,8 @@ class UnifiedScanEngine:
                           recursive: bool = True, max_depth: int = 10,
                           user_id: int = 1, batch_size: int = 100,
                           storage_client: Optional[StorageClient] = None,
-                          file_asset_repo: Optional[SqlFileAssetRepository] = None) -> ScanResult:
+                          file_asset_repo: Optional[SqlFileAssetRepository] = None,
+                          progress_cb: Optional[Callable[[int, int], None]] = None) -> ScanResult:
         """扫描存储并批量入库
 
         流程：
@@ -574,6 +575,15 @@ class UnifiedScanEngine:
                             ext = Path(entry.path).suffix.lower()
                             if ext in supported_exts:
                                 encountered_media_set.add(entry.path)
+                    try:
+                        if progress_cb:
+                            # 回调当前进度：已扫描条目数与遇到的媒体文件数
+                            maybe = progress_cb(result.total_files, len(encountered_media_set))
+                            import inspect
+                            if inspect.iscoroutine(maybe):
+                                await maybe
+                    except Exception:
+                        pass
                 
                 # 写入去重后的路径集合并计算耗时
                 result.scanned_paths = list(seen_paths_set)

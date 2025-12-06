@@ -32,7 +32,7 @@ class MetadataEnricher:
         self.storage_service = StorageService()
         self.parser = FilenameParser()
     
-    async def enrich_media_file(self, file_id: int, preferred_language: str = "zh-CN", storage_id: Optional[int] = None) -> bool:
+    async def enrich_media_file(self, file_id: int, storage_id: Optional[int] = None) -> bool:
         """
         丰富单个媒体文件的元数据
 
@@ -46,7 +46,7 @@ class MetadataEnricher:
         
         req:
             file_id: 文件ID
-            preferred_language: 首选语言（默认中文）
+            language: 首选语言（默认中文）
             storage_id: 存储配置ID（可选）完全不用,file_id查表就可以查到
         
         resp:
@@ -81,24 +81,24 @@ class MetadataEnricher:
                 seed_parent = str(Path(media_file.full_path).parent.name) # 父目录名作为种子
               
                 seed_title = media_file.filename or Path(media_file.full_path).name
-                seed_year = None
-                seed_season = None
-                seed_episode = None
+                # seed_year = None
+                # seed_season = None
+                # seed_episode = None
                 # 名称解析器
                 out = self.parser.parse(
                     ParseInput(
                         filename_raw=seed_title,
                         parent_hint=seed_parent,
                         grandparent_hint=str(Path(media_file.full_path).parent.parent.name) if Path(media_file.full_path).parent.parent else None,
-                        full_path=str(Path(media_file.full_path)),
-                        
+                        full_path=str(Path(media_file.full_path)),            
                     ),
                     ParserMode.DEEP
                 )
                 title = out.title or (media_file.filename or Path(media_file.full_path).name)
-                year = out.year if out.year is not None else seed_year
-                season = out.season_number if out.season_number is not None else seed_season
-                episode = out.episode_number if out.episode_number is not None else seed_episode
+                year = out.year if out.year is not None else None
+                season = out.season_number if out.season_number is not None else None
+                episode = out.episode_number if out.episode_number is not None else None
+                language = out.language or None
                 
                 # 确定媒体类型(movie or tv)
                 media_type = self._determine_media_type(media_file, season, episode)
@@ -113,17 +113,17 @@ class MetadataEnricher:
                     return False
                 
                 # 始终使用年份进行搜索（推荐配置）
-                logger.debug(f"🎯 搜索参数: 标题='{title}', 年份={year }, 语言={preferred_language}")
+                logger.debug(f"🎯 搜索参数: 标题='{title}', 年份={year }, 语言={language}")
                 
                 # 调用的是插件中的search方法，中间加了语言回退策略
                 search_results, corrected_type = await scraper_manager.search_with_type_correction(
                     title=title,
                     year=year,
                     initial_type=media_type,
-                    language=preferred_language
+                    language=language
                 )
                 # logger.info(f'搜索结果元数据: {search_results.raw_data}')
-                logger.debug(f"🔍 首选语言搜索结果数量: {len(search_results)}")
+                logger.debug(f"🔍 搜索结果数量: {len(search_results)}")
                 
                 
                 
@@ -141,19 +141,19 @@ class MetadataEnricher:
                     plugin = scraper_manager.get_plugin(best_match.provider)
                     if plugin and getattr(best_match, 'id', None):
                         if corrected_type == MediaType.MOVIE:
-                            details_obj = await plugin.get_movie_details(best_match.id, preferred_language)
+                            details_obj = await plugin.get_movie_details(best_match.id, language)
                             if details_obj:
                                 logger.debug(f"✅ 电影详细信息获取成功: {details_obj.title}")
                         else:
                             if season is not None and episode is not None:
-                                ep = await plugin.get_episode_details(best_match.id, season, episode, preferred_language)
+                                ep = await plugin.get_episode_details(best_match.id, season, episode, language)
                                 if ep:
                                     try:
-                                        sd = await plugin.get_series_details(best_match.id, preferred_language)
+                                        sd = await plugin.get_series_details(best_match.id, language)
                                     except Exception:
                                         sd = None
                                     try:
-                                        se = await plugin.get_season_details(best_match.id, season, preferred_language)
+                                        se = await plugin.get_season_details(best_match.id, season, language)
                                     except Exception:
                                         se = None
                                     if sd:
@@ -163,9 +163,9 @@ class MetadataEnricher:
                                     details_obj = ep
                                     logger.debug("✅ 单集详细信息获取成功并补充系列/季信息")
                             if details_obj is None:
-                                details_obj = await plugin.get_series_details(best_match.id, preferred_language)
+                                details_obj = await plugin.get_series_details(best_match.id, language)
                                 if details_obj:
-                                    logger.debug(f"✅ 系列详细信息获取成功: {details_obj.name}")
+                                    logger.debug(f"✅ 只获取到系列详细信息: {details_obj.name}")
                     else:
                         logger.warning(f"⚠️ 未找到插件或无ID: provider={getattr(best_match, 'provider', None)}")
                 except Exception as e:
@@ -224,7 +224,7 @@ class MetadataEnricher:
                                 "source": source
                             },
                             "provider": best_match.provider,
-                            "language": preferred_language,
+                            "language": language,
                             "idempotency_key": idempotency_key
                         },
                         max_retries=3,
@@ -259,7 +259,7 @@ class MetadataEnricher:
                                 params={
                                     "file_id": media_file.id,
                                     "storage_id": storage_id,
-                                    "language": preferred_language,
+                                    "language": language,
                                     "user_id": media_file.user_id
                                 },
                                 max_retries=3,
@@ -304,7 +304,7 @@ class MetadataEnricher:
 
     
     async def enrich_multiple_files(self, file_ids: List[int], 
-                                   preferred_language: str = "zh-CN", 
+                                   language: str = "zh-CN", 
                                    storage_id: Optional[int] = None) -> Dict[int, bool]:
         """
         丰富多个媒体文件的元数据
@@ -313,7 +313,7 @@ class MetadataEnricher:
         
         Args:
             file_ids: 文件ID列表
-            preferred_language: 首选语言
+            language: 首选语言
             storage_id: 存储配置ID（可选）
             
         Returns:
@@ -325,7 +325,7 @@ class MetadataEnricher:
         tasks = []
         for file_id in file_ids:
             task = asyncio.create_task(
-                self._enrich_single_file_safe(file_id, preferred_language, storage_id)
+                self._enrich_single_file_safe(file_id, language, storage_id)
             )
             tasks.append((file_id, task))
         

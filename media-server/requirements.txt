@@ -18,3 +18,4 @@ aiohttp==3.10.5
 beautifulsoup4==4.12.2
 aiofiles==24.1.0
 redis==5.0.8
+dramatiq==2.0.0
