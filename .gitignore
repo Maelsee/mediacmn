@@ -55,3 +55,5 @@ media-server/services/media/__pycache__/
 
 
 media-server/services/scraper/__pycache__/
+media-server/services/storage/__pycache__/
+media-server/services/storage/storage_clients/__pycache__/

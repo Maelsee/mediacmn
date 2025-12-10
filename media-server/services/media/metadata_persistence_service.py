@@ -162,9 +162,9 @@ class MetadataPersistenceService:
             for genre_name in genres or []:
                 if not genre_name:
                     continue
-                genre = session.exec(select(Genre).filter(Genre.user_id == user_id, Genre.name == genre_name)).first()
+                genre = session.exec(select(Genre).filter(Genre.name == genre_name)).first()
                 if not genre:
-                    genre = Genre(user_id=user_id, name=genre_name)
+                    genre = Genre(name=genre_name)
                     session.add(genre)
                     session.flush()
                 existing_link = session.exec(select(MediaCoreGenre).filter(MediaCoreGenre.user_id == user_id, MediaCoreGenre.core_id == core_id, MediaCoreGenre.genre_id == genre.id)).first()
@@ -180,30 +180,36 @@ class MetadataPersistenceService:
             year_val = dt.year if dt else None
         except Exception:
             year_val = None
-        series_core = session.exec(select(MediaCore).filter(
+        series_core = session.exec(select(MediaCore).where(
             MediaCore.user_id == user_id,
-            MediaCore.kind == "tv_series",
+            MediaCore.kind == "series",
             MediaCore.title == name_val
         )).first()
         if not series_core:
             series_core = MediaCore(
                 user_id=user_id,
-                kind="tv_series",
+                kind="series",
                 title=name_val,
                 original_title=getattr(sd, "original_name", None),
                 year=year_val,
                 plot=getattr(sd, "overview", None),
+                display_rating=getattr(sd, "vote_average", None),
+                display_poster_path=getattr(sd, "poster_path", None),
+                display_date=self._parse_dt(getattr(sd, "first_air_date", None)),
                 created_at=datetime.now(),
                 updated_at=datetime.now()
             )
             session.add(series_core)
             session.flush()
         else:
-            series_core.kind = "tv_series"
+            series_core.kind = "series"
             series_core.title = name_val
             series_core.original_title = getattr(sd, "original_name", None)
             series_core.year = year_val
             series_core.plot = getattr(sd, "overview", None)
+            series_core.display_rating = getattr(sd, "vote_average", None)
+            series_core.display_poster_path = getattr(sd, "poster_path", None)
+            series_core.display_date = self._parse_dt(getattr(sd, "first_air_date", None))
             series_core.updated_at = datetime.now()
         try:
             if getattr(sd, "provider", None) and getattr(sd, "series_id", None):
@@ -240,6 +246,7 @@ class MetadataPersistenceService:
                 tv_ext.episode_run_time = int(rt[0]) if isinstance(rt[0], (int, float)) else None
             tv_ext.status = getattr(sd, "status", None)
             tv_ext.rating = getattr(sd, "vote_average", None)
+            tv_ext.origin_country = ",".join(getattr(sd, "origin_country", []) or [])
             try:
                 fd = getattr(sd, "first_air_date", None)
                 ld = getattr(sd, "last_air_date", None)
@@ -249,29 +256,32 @@ class MetadataPersistenceService:
                 pass
             tv_ext.poster_path = getattr(sd, "poster_path", None) or tv_ext.poster_path
             tv_ext.backdrop_path = getattr(sd, "backdrop_path", None) or tv_ext.backdrop_path
-            if getattr(sd, "raw_data", None):
-                tv_ext.raw_data = json.dumps(sd.raw_data, ensure_ascii=False)
+            
+            raw_data = getattr(sd, 'raw_data', None)
+            if isinstance(raw_data, _DictWrapper):
+                raw_data = raw_data._data
+            tv_ext.raw_data = json.dumps(raw_data, ensure_ascii=False) if raw_data else None
         except Exception:
             pass
         try:
             if getattr(tv_ext, "poster_path", None):
-                art_p = session.exec(select(Artwork).filter(Artwork.user_id == user_id, Artwork.core_id == series_core.id, Artwork.type == "poster")).first()
+                art_p = session.exec(select(Artwork).filter(Artwork.user_id == user_id, Artwork.core_id == series_core.id, Artwork.type == "poster", Artwork.preferred==True)).first()
                 if not art_p:
-                    session.add(Artwork(user_id=user_id, core_id=series_core.id, type="poster", remote_url=tv_ext.poster_path, provider=getattr(sd, "provider", None), preferred=True, exists_remote=True))
+                    session.add(Artwork(user_id=user_id, core_id=series_core.id, type="poster", remote_url=tv_ext.poster_path, provider=getattr(sd, "provider", None), preferred=True))
                 else:
                     art_p.remote_url = art_p.remote_url or tv_ext.poster_path
                     art_p.provider = getattr(sd, "provider", None) or getattr(art_p, "provider", None)
                     art_p.preferred = True
-                    art_p.exists_remote = True
+                    # art_p.exists_remote = True
             if getattr(tv_ext, "backdrop_path", None):
-                art_b = session.exec(select(Artwork).filter(Artwork.user_id == user_id, Artwork.core_id == series_core.id, Artwork.type == "backdrop")).first()
+                art_b = session.exec(select(Artwork).filter(Artwork.user_id == user_id, Artwork.core_id == series_core.id, Artwork.type == "backdrop", Artwork.preferred==True)).first()
                 if not art_b:
-                    session.add(Artwork(user_id=user_id, core_id=series_core.id, type="backdrop", remote_url=tv_ext.backdrop_path, provider=getattr(sd, "provider", None), preferred=True, exists_remote=True))
+                    session.add(Artwork(user_id=user_id, core_id=series_core.id, type="backdrop", remote_url=tv_ext.backdrop_path, provider=getattr(sd, "provider", None), preferred=True))
                 else:
                     art_b.remote_url = art_b.remote_url or tv_ext.backdrop_path
                     art_b.provider = getattr(sd, "provider", None) or getattr(art_b, "provider", None)
                     art_b.preferred = True
-                    art_b.exists_remote = True
+                    # art_b.exists_remote = True
         except Exception:
             pass
         try:
@@ -301,11 +311,11 @@ class MetadataPersistenceService:
         if not season_core:
             season_core = session.exec(select(MediaCore).filter(
                 MediaCore.user_id == user_id,
-                MediaCore.kind == "tv_season",
+                MediaCore.kind == "season",
                 MediaCore.title == f"Season {season_num}"
             )).first()
         if not season_core:
-            season_core = MediaCore(user_id=user_id, kind="tv_season", title=f"Season {season_num}", created_at=datetime.now(), updated_at=datetime.now())
+            season_core = MediaCore(user_id=user_id, kind="season", title=f"Season {season_num}", created_at=datetime.now(), updated_at=datetime.now())
             session.add(season_core)
             session.flush()
         se_ext = session.exec(select(SeasonExt).filter(SeasonExt.core_id == season_core.id, SeasonExt.user_id == user_id)).first()
@@ -319,20 +329,26 @@ class MetadataPersistenceService:
             ad = getattr(se, "air_date", None)
             se_ext.aired_date = self._parse_dt(ad) if ad else se_ext.aired_date
             se_ext.poster_path = getattr(se, "poster_path", None) or se_ext.poster_path
-            if getattr(se, "raw_data", None):
-                se_ext.raw_data = json.dumps(se.raw_data, ensure_ascii=False)
+            
+            # 替换原来的 raw_data 赋值行
+            raw_data = getattr(se, 'raw_data', None)
+            # 如果是 _DictWrapper 类型，获取其内部字典数据
+            if isinstance(raw_data, _DictWrapper):
+                raw_data = raw_data._data
+            # 序列化为JSON字符串
+            se_ext.raw_data = json.dumps(raw_data, ensure_ascii=False) if raw_data else None
         except Exception:
             pass
         try:
             if getattr(se_ext, "poster_path", None):
-                art_p = session.exec(select(Artwork).filter(Artwork.user_id == user_id, Artwork.core_id == season_core.id, Artwork.type == "poster")).first()
+                art_p = session.exec(select(Artwork).filter(Artwork.user_id == user_id, Artwork.core_id == season_core.id, Artwork.type == "poster", Artwork.preferred==True)).first()
                 if not art_p:
-                    session.add(Artwork(user_id=user_id, core_id=season_core.id, type="poster", remote_url=se_ext.poster_path, provider=getattr(se, "provider", None), preferred=True, exists_remote=True))
+                    session.add(Artwork(user_id=user_id, core_id=season_core.id, type="poster", remote_url=se_ext.poster_path, provider=getattr(se, "provider", None), preferred=True))
                 else:
                     art_p.remote_url = art_p.remote_url or se_ext.poster_path
                     art_p.provider = getattr(se, "provider", None) or getattr(art_p, "provider", None)
                     art_p.preferred = True
-                    art_p.exists_remote = True
+                    # art_p.exists_remote = True
         except Exception:
             pass
         try:
@@ -406,7 +422,7 @@ class MetadataPersistenceService:
             return
         
         # 更新mediacore缓存
-        self._refresh_display_cache_for_core(session, core, media_file.user_id)
+        # self._refresh_display_cache_for_core(session, core, media_file.user_id)
         session.flush()
 
     def _apply_movie_detail(self, session, media_file: FileAsset, metadata: ScraperMovieDetail) -> MediaCore:
@@ -493,6 +509,9 @@ class MetadataPersistenceService:
             rv = getattr(metadata, "vote_average", None)
             movie_ext.rating = float(rv) if isinstance(rv, (int, float)) else movie_ext.rating
             movie_ext.overview = getattr(metadata, "overview", None) or movie_ext.overview
+            movie_ext.origin_country = ",".join(getattr(metadata, "origin_country", []))
+            # logger.info(f"原国家: {getattr(metadata, 'origin_country', None)}")
+
         except Exception:
             pass
         try:
@@ -504,10 +523,19 @@ class MetadataPersistenceService:
             movie_ext.poster_path = getattr(metadata, "poster_path", None) or movie_ext.poster_path
             movie_ext.backdrop_path = getattr(metadata, "backdrop_path", None) or movie_ext.backdrop_path
             movie_ext.imdb_id = getattr(metadata, "imdb_id", None) or movie_ext.imdb_id
-            movie_ext.runtime_minutes = getattr(metadata, "runtime", None)
-            if getattr(metadata, "raw_data", None):
-                movie_ext.raw_data = json.dumps(metadata.raw_data, ensure_ascii=False)
-        except Exception:
+            movie_ext.runtime_minutes = getattr(metadata, "runtime", None) or movie_ext.runtime_minutes
+            
+            
+            # 替换原来的 raw_data 赋值行
+            raw_data = getattr(metadata, 'raw_data', None)
+            # 如果是 _DictWrapper 类型，获取其内部字典数据
+            if isinstance(raw_data, _DictWrapper):
+                raw_data = raw_data._data
+            # 序列化为JSON字符串
+            movie_ext.raw_data = json.dumps(raw_data, ensure_ascii=False) if raw_data else None
+           
+        except Exception as e:
+            # logger.info(f"原始数据转换失败errer:{str(e)}")
             pass
         try:
             col = getattr(metadata, "belongs_to_collection", None)
@@ -545,7 +573,7 @@ class MetadataPersistenceService:
             bpath = getattr(metadata, "backdrop_path", None)
             prov = getattr(metadata, "provider", None)
             if ppath:
-                art_p = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "poster",preferred=True)).first()
+                art_p = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "poster", Artwork.preferred==True)).first()
                 if not art_p:
                     session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="poster", remote_url=ppath, provider=prov, preferred=True))
                 else:
@@ -554,7 +582,7 @@ class MetadataPersistenceService:
                     art_p.preferred = True
                 #     art_p.exists_remote = True
             if bpath:
-                art_b = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "backdrop",preferred=True)).first()
+                art_b = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "backdrop", Artwork.preferred==True)).first()
                 if not art_b:
                     session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="backdrop", remote_url=bpath, provider=prov, preferred=True))
                 else:
@@ -583,7 +611,7 @@ class MetadataPersistenceService:
                     core.display_rating = getattr(mx, 'rating', None)
                     core.display_poster_path = getattr(mx, 'poster_path', None)
                     core.display_date = getattr(mx, 'release_date', None)
-            elif core.kind == 'tv_series':
+            elif core.kind == 'series':
                 tv = session.exec(select(TVSeriesExt).filter(TVSeriesExt.core_id == core.id, TVSeriesExt.user_id == user_id)).first()
                 if tv:
                     core.display_rating = getattr(tv, 'rating', None)
@@ -597,7 +625,7 @@ class MetadataPersistenceService:
                         pass
                 if tv and getattr(tv, 'rating', None) is not None and core.display_rating is None:
                     core.display_rating = tv.rating
-            elif core.kind == 'tv_season':
+            elif core.kind == 'season':
                 se = session.exec(select(SeasonExt).filter(SeasonExt.core_id == core.id, SeasonExt.user_id == user_id)).first()
                 if se:
                     try:
@@ -610,7 +638,7 @@ class MetadataPersistenceService:
                     core.display_rating = getattr(se, 'rating', None)
                     core.display_poster_path = getattr(se, 'poster_path', None)
                     core.display_date = getattr(se, 'aired_date', None)
-            elif core.kind == 'tv_episode':
+            elif core.kind == 'episode':
                 ep = session.exec(select(EpisodeExt).filter(EpisodeExt.core_id == core.id, EpisodeExt.user_id == user_id)).first()
                 if ep:
                     core.title = ep.title or core.title
@@ -635,11 +663,14 @@ class MetadataPersistenceService:
             title_val = getattr(metadata, "name", None) or ""
             core = MediaCore(
                 user_id=media_file.user_id,
-                kind="tv_episode",
+                kind="episode",
                 title=title_val,
                 original_title=None,
                 year=None,
                 plot=getattr(metadata, "overview", None),
+                display_rating=getattr(metadata, "vote_average", None),
+                display_poster_path=getattr(metadata, "still_path", None),
+                display_date=self._parse_dt(getattr(metadata, "air_date", None)),
                 created_at=datetime.now(),
                 updated_at=datetime.now()
             )
@@ -647,10 +678,14 @@ class MetadataPersistenceService:
             session.flush()
             media_file.core_id = core.id
         else:
-            core.kind = "tv_episode"
+            core.kind = "episode"
             core.title = getattr(metadata, "name", None) or core.title
             core.plot = getattr(metadata, "overview", None) or core.plot
+            core.display_rating = getattr(metadata, "vote_average", None)
+            core.display_poster_path = getattr(metadata, "still_path", None)
+            core.display_date = self._parse_dt(getattr(metadata, "air_date", None))
             core.updated_at = datetime.now()
+
         ep_ext = session.exec(select(EpisodeExt).filter(EpisodeExt.core_id == core.id, EpisodeExt.user_id == media_file.user_id)).first()
         if not ep_ext:
             ep_ext = EpisodeExt(user_id=media_file.user_id, core_id=core.id, series_core_id=series_core.id if series_core else None, season_core_id=season_core.id if season_core else None, episode_number=getattr(metadata, "episode_number", None) or 1, season_number=getattr(metadata, "season_number", None) or 1)
@@ -668,14 +703,14 @@ class MetadataPersistenceService:
             pass
         try:
             if getattr(ep_ext, "still_path", None):
-                art_s = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "still")).first()
+                art_s = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "still", Artwork.preferred==True)).first()
                 if not art_s:
-                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="still", remote_url=ep_ext.still_path, provider=getattr(metadata, "provider", None), preferred=True, exists_remote=True))
+                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="still", remote_url=ep_ext.still_path, provider=getattr(metadata, "provider", None), preferred=True))
                 else:
                     art_s.remote_url = art_s.remote_url or ep_ext.still_path
                     art_s.provider = getattr(metadata, "provider", None) or getattr(art_s, "provider", None)
                     art_s.preferred = True
-                    art_s.exists_remote = True
+                    # art_s.exists_remote = True
         except Exception:
             pass
         try:
@@ -704,7 +739,7 @@ class MetadataPersistenceService:
         core = session.exec(select(MediaCore).filter(MediaCore.id == media_file.core_id)).first()
         title_val = getattr(metadata, "title", None) or ""
         mt = getattr(metadata, "media_type", None) or "movie"
-        kind_val = "movie" if mt == "movie" else ("tv_series" if mt == "tv_series" else "movie")
+        kind_val = "movie" if mt == "movie" else "series"
         year_val = getattr(metadata, "year", None)
         if not core:
             core = MediaCore(
@@ -751,7 +786,7 @@ class MetadataPersistenceService:
                     mx = MovieExt(user_id=media_file.user_id, core_id=core.id)
                     session.add(mx)
                 mx.poster_path = getattr(metadata, "poster_path", None) or mx.poster_path
-            elif kind_val == "tv_series":
+            elif kind_val == "series":
                 tv = session.exec(select(TVSeriesExt).filter(TVSeriesExt.core_id == core.id, TVSeriesExt.user_id == media_file.user_id)).first()
                 if not tv:
                     tv = TVSeriesExt(user_id=media_file.user_id, core_id=core.id)
@@ -766,8 +801,8 @@ class MetadataPersistenceService:
     def backfill_display_cache(self, session, user_id: Optional[int] = None) -> None:
         try:
             cores = []
-            cores.extend(session.exec(select(MediaCore).filter(MediaCore.kind == 'tv_series')).all() or [])
-            cores.extend(session.exec(select(MediaCore).filter(MediaCore.kind == 'tv_season')).all() or [])
+            cores.extend(session.exec(select(MediaCore).filter(MediaCore.kind == 'series')).all() or [])
+            cores.extend(session.exec(select(MediaCore).filter(MediaCore.kind == 'season')).all() or [])
             for c in cores:
                 if user_id and c.user_id != user_id:
                     continue
@@ -779,7 +814,7 @@ class MetadataPersistenceService:
     def backfill_canonical_and_plot(self, session, user_id: Optional[int] = None) -> None:
         try:
             series_list = session.exec(
-                select(MediaCore).filter(MediaCore.kind == 'tv_series')
+                select(MediaCore).filter(MediaCore.kind == 'series')
             ).all()
             for sc in series_list:
                 if user_id and sc.user_id != user_id:
@@ -809,7 +844,7 @@ class MetadataPersistenceService:
                         if not existing:
                             session.add(ExternalID(user_id=sc.user_id, core_id=sc.id, source='tmdb', key=tmdb_id))
 
-            seasons = session.exec(select(MediaCore).filter(MediaCore.kind == 'tv_season')).all()
+            seasons = session.exec(select(MediaCore).filter(MediaCore.kind == 'season')).all()
             for scc in seasons:
                 if user_id and scc.user_id != user_id:
                     continue
@@ -846,9 +881,9 @@ class MetadataPersistenceService:
         scope = None
         if core.kind == "movie":
             scope = "movie_single"
-        elif core.kind in ("tv_season",):
+        elif core.kind in ("season",):
             scope = "season_group"
-        elif core.kind in ("tv_series",):
+        elif core.kind in ("series",):
             scope = "series_group"
         else:
             return

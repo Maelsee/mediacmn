@@ -92,6 +92,7 @@ class ScraperMovieDetail:
     title: str
     original_title: Optional[str] = None
     original_language: Optional[str] = None
+    origin_country: List[str] = field(default_factory=list)
     overview: Optional[str] = None
     release_date: Optional[str] = None
     runtime: Optional[int] = None

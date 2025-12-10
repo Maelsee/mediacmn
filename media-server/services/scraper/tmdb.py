@@ -231,6 +231,7 @@ class TmdbScraper(ScraperPlugin):
                 title=title,
                 original_title=original_title if original_title != title else None,
                 original_language=(data.get("original_language") or None),
+                origin_country =[c for c in (data.get("origin_country") or [])],
                 overview=data.get("overview"),
                 release_date=release_date,
                 runtime=data.get("runtime"),

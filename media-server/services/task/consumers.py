@@ -329,9 +329,9 @@ async def persist_worker(task_id: str, payload: Dict[str, Any]) -> None:
 
             # 应用元数据并提交
             contract_type = payload.get("contract_type", "unknown")
-            logger.info(f"📄 持久化文件 {file_id} 元数据：类型={contract_type}")
+            # logger.info(f"📄 持久化文件 {file_id} 元数据：类型={contract_type}")
             contract_payload = payload.get("contract_payload", {})
-            logger.info(f"📄 持久化文件 {file_id} 元数据：{contract_payload}")
+            # logger.info(f"📄 持久化文件 {file_id} 元数据：{contract_payload}")
 
             svc.apply_metadata(session, media_file, metadata=contract_payload, metadata_type=contract_type)
             session.commit()

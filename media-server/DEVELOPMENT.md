@@ -30,6 +30,10 @@
  
   }
 }
+
+递归移除目录的 Git 追踪，保留本地文件
+git rm --cached -r services/storage/__pycache__/
+
 1. 在修改模型后生成迁移脚本：
    alembic revision --autogenerate -m "描述变更内容"
   

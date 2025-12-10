@@ -43,7 +43,7 @@ class MediaCore(SQLModel, table=True):
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
     
     # 基础信息
-    kind: str = Field(index=True, description="媒体类型：movie|tv_series|tv_season|tv_episode")
+    kind: str = Field(index=True, description="媒体类型：movie|series|season|episode")
     title: str = Field(index=True, description="标题")
     original_title: Optional[str] = Field(default=None, description="原始标题")
     year: Optional[int] = Field(default=None, description="年份")
@@ -98,7 +98,8 @@ class MovieExt(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True, description="电影扩展记录唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
     core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
-
+    overview: Optional[str] = Field(default=None, description="电影简介")
+    origin_country: Optional[str] = Field(default=None, description="原产国家/地区，多个以逗号分隔")
     tagline: Optional[str] = Field(default=None, description="标语/宣传语")
     collection_id: Optional[int] = Field(default=None, description="所属电影合集ID")
     rating: Optional[float] = Field(default=None, description="评分")
@@ -123,6 +124,8 @@ class TVSeriesExt(SQLModel, table=True):
     # 播出信息
     aired_date: Optional[datetime] = Field(default=None, description="播出日期")
     last_aired_date: Optional[datetime] = Field(default=None, description="最后播出日期")
+    
+    origin_country: Optional[str] = Field(default=None, description="原产国家/地区，多个以逗号分隔")
     
     # 统计信息
     episode_count: Optional[int] = Field(default=None, description="总集数")
@@ -304,10 +307,10 @@ class ExternalID(SQLModel, table=True):
 class Genre(SQLModel, table=True):
     """流派模型 - 管理媒体类型和分类标签"""
     __tablename__ = "genre"
-    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_genre_user_name"),)
+    __table_args__ = (UniqueConstraint("name", name="uq_genre_user_name"),)
 
     id: Optional[int] = Field(default=None, primary_key=True, description="流派标签唯一标识")
-    user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
+    # user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
     name: str = Field(index=True, description="流派名称（如动作、喜剧、科幻等）")
 
 
