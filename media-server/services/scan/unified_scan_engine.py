@@ -49,7 +49,7 @@ class ScanResult:
     error_details: List[Dict] = field(default_factory=list)
     new_file_ids: List[int] = field(default_factory=list)
     encountered_media_paths: List[str] = field(default_factory=list)
-    new_file_snapshots: Dict[int, Dict] = field(default_factory=dict)
+    # new_file_snapshots: Dict[int, Dict] = field(default_factory=dict)
 
 """
 示例 ScanResult 实例
@@ -176,36 +176,37 @@ class FileAssetProcessor(ScanProcessor):
         ext = Path(file_path).suffix.lower()
         return ext in self.supported_media_extensions
     
-    def _light_parse(self, entry: StorageEntry) -> Dict:
-        """轻量级文件名解析
+    
+    # def _light_parse(self, entry: StorageEntry) -> Dict:
+    #     """轻量级文件名解析
 
-        使用 `FilenameParser` 的轻量模式，优先提取常见元信息（标题/年/季/集/分辨率）。
-        当轻量模式无法提取到季集或分辨率等关键点时，回退到更保守的解析策略（例如依据文件名 stem）。
+    #     使用 `FilenameParser` 的轻量模式，优先提取常见元信息（标题/年/季/集/分辨率）。
+    #     当轻量模式无法提取到季集或分辨率等关键点时，回退到更保守的解析策略（例如依据文件名 stem）。
 
-        Args:
-            entry: 存储条目，至少包含 `name` 与 `path`。
+    #     Args:
+    #         entry: 存储条目，至少包含 `name` 与 `path`。
 
-        Returns:
-            结构化的轻量信息字典：`{"title","year","season","episode","resolution","source"}`。
-        """
-        out = self.parser.parse(ParseInput(filename_raw=entry.name, parent_hint=str(Path(entry.path).parent.name)), ParserMode.LIGHT)
-        title = out.title or Path(entry.name).stem
-        year = out.year or None
-        season = out.season_number or None
-        episode = out.episode_number or None
-        resolution = None
-        if out.resolution_tags and len(out.resolution_tags) > 0:
-            resolution = out.resolution_tags[0]
-        if not any([year, season, episode, resolution]):
-            return self._parse_filename(entry.name)
-        return {
-            "title": title,
-            "year": year,
-            "season": season,
-            "episode": episode,
-            "resolution": resolution,
-            "source": None
-        }
+    #     Returns:
+    #         结构化的轻量信息字典：`{"title","year","season","episode","resolution","source"}`。
+    #     """
+    #     out = self.parser.parse(ParseInput(filename_raw=entry.name, parent_hint=str(Path(entry.path).parent.name)), ParserMode.LIGHT)
+    #     title = out.title or Path(entry.name).stem
+    #     year = out.year or None
+    #     season = out.season_number or None
+    #     episode = out.episode_number or None
+    #     resolution = None
+    #     if out.resolution_tags and len(out.resolution_tags) > 0:
+    #         resolution = out.resolution_tags[0]
+    #     if not any([year, season, episode, resolution]):
+    #         return self._parse_filename(entry.name)
+    #     return {
+    #         "title": title,
+    #         "year": year,
+    #         "season": season,
+    #         "episode": episode,
+    #         "resolution": resolution,
+    #         "source": None
+    #     }
     
     async def _calculate_file_hash(self, storage_client: StorageClient, file_path: str) -> Optional[str]:
         """计算文件哈希
@@ -274,7 +275,7 @@ class FileAssetProcessor(ScanProcessor):
 
         步骤：
         1) 过滤非媒体文件。
-        2) 轻量解析文件名，产出 `file_info`。
+        2) 轻量解析文件名，产出 `file_info`(已删除)。
         3) 通过仓储接口查询是否存在记录；存在则按 `size/etag` 判变更并更新；不存在则创建新记录。
 
         Args:
@@ -282,7 +283,7 @@ class FileAssetProcessor(ScanProcessor):
             context: 上下文（`storage_id/user_id/storage_client/file_asset_repo`）。
 
         Returns:
-            `{"status","is_media","file_id","file_info"}` 或错误条目；非媒体返回 None。
+            `{"status","is_media","file_id"}` 或错误条目；非媒体返回 None。
         """
         
         try:
@@ -294,7 +295,7 @@ class FileAssetProcessor(ScanProcessor):
             user_id = context.get("user_id", 1)
             
             # 解析文件信息
-            file_info = self._light_parse(file_entry)
+            # file_info = self._light_parse(file_entry)
             
             # 暂不使用文件哈希以提升性能
             
@@ -310,19 +311,19 @@ class FileAssetProcessor(ScanProcessor):
                         "status": "updated",
                         "is_media": True,
                         "file_id": existing_file.id,
-                        "file_info": file_info
+                        # "file_info": file_info
                     }
                 return None
             else:
                 new_file = None
                 if repo:
-                    new_file = repo.create_file_record(storage_id, file_entry, file_info, user_id)
+                    new_file = repo.create_file_record(storage_id, file_entry, user_id)
                 if new_file:
                     return {
                         "status": "new",
                         "is_media": True,
                         "file_id": new_file.id,
-                        "file_info": file_info
+                        # "file_info": file_info
                     }
                 else:
                     logger.error(f"创建文件记录失败: {file_entry.path}")
@@ -331,7 +332,7 @@ class FileAssetProcessor(ScanProcessor):
                         "is_media": True,
                         "path": file_entry.path,
                         "error": "create_file_record_failed",
-                        "file_info": file_info
+                        # "file_info": file_info
                     }
             
             return None
@@ -371,9 +372,9 @@ class FileAssetProcessor(ScanProcessor):
                 return results
             
             # # 批量解析文件信息
-            file_info_map: Dict[str, Dict] = {}
-            for e in media_entries:
-                file_info_map[e.path] = self._light_parse(e)
+            # file_info_map: Dict[str, Dict] = {}
+            # for e in media_entries:
+            #     file_info_map[e.path] = self._light_parse(e)
             
             # 构建路径到存储条目的映射  
             entry_by_path: Dict[str, StorageEntry] = {e.path: e for e in media_entries}
@@ -407,23 +408,23 @@ class FileAssetProcessor(ScanProcessor):
                 updated_count = repo.bulk_update_file_info(to_update_records)
                 if updated_count > 0:
                     for fr in to_update_records:
-                        fi = file_info_map.get(fr.full_path)
+                        # fi = file_info_map.get(fr.full_path)
                         results.append({
                             "status": "updated",
                             "is_media": True,
                             "file_id": fr.id,
-                            "file_info": fi
+                            # "file_info": fi
                         })
 
             if to_create:
-                created = repo.bulk_create_file_records(storage_id, to_create, file_info_map, user_id)
+                created = repo.bulk_create_file_records(storage_id, to_create, user_id)
                 for mf in created:
-                    fi = file_info_map.get(mf.full_path)
+                    # fi = file_info_map.get(mf.full_path)
                     results.append({
                         "status": "new",
                         "is_media": True,
                         "file_id": mf.id,
-                        "file_info": fi
+                        # "file_info": fi
                     })
 
             return results
@@ -438,7 +439,7 @@ class FileAssetProcessor(ScanProcessor):
                     "is_media": True,
                     "path": entry.path,
                     "error": str(err),
-                    "file_info": None
+                    # "file_info": None
                 })
             return results
 
@@ -478,7 +479,7 @@ class UnifiedScanEngine:
             - 处理器的调用由 `_process_batch` 统一调度，支持真实批处理与并发兜底。
         """
         self.processors.append(processor)
-        logger.info(f"注册扫描处理器: {processor.__class__.__name__}")
+        logger.debug(f"注册扫描处理器: {processor.__class__.__name__}")
     
     async def scan_storage(self, storage_id: int, scan_path: str = "/",
                           recursive: bool = True, max_depth: int = 10,
@@ -534,6 +535,7 @@ class UnifiedScanEngine:
                 async for batch in self._scan_directory_in_batches(
                     storage_client, scan_path, recursive, max_depth, batch_size
                 ):
+                    logger.debug(f"扫描到批次文件: {batch}")
                     # 批量处理文件
                     batch_results = await self._process_batch(batch, {
                         "storage_id": storage_id,
@@ -541,9 +543,11 @@ class UnifiedScanEngine:
                         "user_id": user_id,
                         "file_asset_repo": file_asset_repo or SqlFileAssetRepository()
                     })
+                    logger.debug(f"处理批次文件完成，结果：{batch_results}")
                     
                     result.total_files += len(batch)
                     for br in batch_results:
+                        logger.debug(f"这一批处理结果: {br}")
                         for file_result in br:
                             if file_result.get("is_media"):
                                 result.media_files += 1
@@ -552,9 +556,7 @@ class UnifiedScanEngine:
                                 result.new_files += 1
                                 if "file_id" in file_result:
                                     result.new_file_ids.append(file_result["file_id"])
-                                    fi = file_result.get("file_info")
-                                    if fi:
-                                        result.new_file_snapshots[file_result["file_id"]] = fi
+                                   
                             elif status == "updated":
                                 result.updated_files += 1
                             elif status == "error":
@@ -590,7 +592,7 @@ class UnifiedScanEngine:
                 result.encountered_media_paths = list(encountered_media_set)
                 result.duration = (datetime.now() - start_time).total_seconds()
                 
-                logger.info(f"扫描完成: {scan_path}, 统计: {result}")
+                logger.debug(f"扫描完成: {scan_path}, 统计: {result}")
                 
             finally:
                 # 断开存储连接

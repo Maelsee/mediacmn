@@ -160,7 +160,7 @@ class StorageService:
         
         # 缓存客户端
         self._clients[client_key] = client
-        logger.info(f"存储客户端已创建并连接: {client_key}")
+        logger.debug(f"存储客户端已创建并连接: {client_key}")
         
         return client
     

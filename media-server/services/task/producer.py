@@ -6,6 +6,8 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 from .state_store import TaskRecord, TaskStatus, get_state_store, TaskPriority
+from .custom_encoder import DramatiqCustomEncoder  # 导入自定义编码器
+import json
 
 import logging
 logger = logging.getLogger(__name__)
@@ -14,30 +16,31 @@ logger = logging.getLogger(__name__)
 # 任务 Payload 模型（保持不变）
 # --------------------------
 class ScanPayload(BaseModel):
-    user_id: str
-    storage_id: str
+    user_id: int
+    storage_id: int
     scan_path: str
 
 class MetadataPayload(BaseModel):
-    user_id: str
-    file_ids: List[str]
+    user_id: int
+    file_ids: List[int]
+    storage_id: Optional[int] = None
 
 class PersistPayload(BaseModel):
-    user_id: str
-    file_id: str
+    user_id: int
+    file_id: int
     contract_type: str
     contract_payload: Dict
 
 class DeletePayload(BaseModel):
-    user_id: str
-    storage_id: str
+    user_id: int
+    storage_id: int
     scan_path: str
     encountered_media_paths: List[str]
 
 class LocalizePayload(BaseModel):
-    user_id: str
-    file_id: str
-    storage_id: str
+    user_id: int
+    file_id: int
+    storage_id: int
 
 # --------------------------
 # 工具函数（保持不变）
@@ -75,6 +78,14 @@ async def _enqueue(
             logger.info(f"幂等键 {idem_key} 已存在，返回已有任务 ID：{existing_task_id}")
             return existing_task_id
 
+    # -------------------------- 关键修改：手动序列化 payload --------------------------
+    # 使用自定义编码器将 payload 转换为 JSON 字符串（处理 ArtworkType 枚举）
+    serialized_payload_str = json.dumps(payload, cls=DramatiqCustomEncoder)
+    # 将 JSON 字符串转回 dict（确保传递给 Dramatiq 的是基础类型，无 Enum）
+    serialized_payload = json.loads(serialized_payload_str)
+    # ----------------------------------------------------------------------------------
+
+
     # 2. 生成任务 ID 并初始化状态
     task_id = _new_task_id()
     task_record = TaskRecord(
@@ -82,13 +93,13 @@ async def _enqueue(
         task_type=task_type,
         queue=queue,
         status=TaskStatus.PENDING,
-        payload=payload,
+        payload=serialized_payload,
         max_retries=max_retries,
         time_limit_ms=time_limit_ms,
         created_at=_now_iso(),
     )
     await store.create_task(task_record)
-    logger.info(f"初始化任务状态：task_id={task_id}, queue={queue}, payload={payload}")
+    logger.debug(f"初始化任务状态：task_id={task_id}, queue={queue}, payload={payload}")
 
     try:
         # 3. 延迟导入 Actor（避免循环导入），映射队列与 Actor
@@ -107,13 +118,19 @@ async def _enqueue(
             raise ValueError(f"队列 {queue} 对应的 Actor 不存在")
 
         # 4. 发送任务（依赖全局统一 Broker，无需手动绑定）
+        # logger.info(f"发送任务 {task_id} 到队列 {queue}，Actor：{target_actor.actor_name}")
+        # target_actor.send(task_id, payload)
+
+        
+        # 4. 发送任务：使用手动序列化后的 payload（无 Enum 类型，可正常序列化）
         logger.info(f"发送任务 {task_id} 到队列 {queue}，Actor：{target_actor.actor_name}")
-        target_actor.send(task_id, payload)
+        target_actor.send(task_id, serialized_payload)  # 传递序列化后的 payload
+
 
         # 5. 幂等键持久化（若有）
         if idem_key:
             await store.set_idempotency(idem_key, task_id)
-            logger.info(f"任务 {task_id} 绑定幂等键：{idem_key}")
+            logger.debug(f"任务 {task_id} 绑定幂等键：{idem_key}")
 
         return task_id
 
@@ -136,8 +153,8 @@ async def _enqueue(
 # 任务创建函数（统一调用 _enqueue，彻底精简）
 # --------------------------
 async def create_scan_task(
-    user_id: str,
-    storage_id: str,
+    user_id: int,
+    storage_id: int,
     scan_path: str,
     *,
     priority: TaskPriority = TaskPriority.NORMAL,
@@ -154,15 +171,16 @@ async def create_scan_task(
     return await _enqueue("scan", "scan", payload, priority=priority)
 
 async def create_metadata_task(
-    user_id: str,
-    file_ids: List[str],
-    *,
+    user_id: int,
+    file_ids: List[int],
+    storage_id: Optional[int] = None,
     priority: TaskPriority = TaskPriority.NORMAL,
     idempotency_key: Optional[str] = None
 ) -> str:
     payload = MetadataPayload(
         user_id=user_id,
-        file_ids=file_ids
+        file_ids=file_ids,
+        storage_id = storage_id
     ).model_dump()
     if idempotency_key:
         payload["idempotency_key"] = idempotency_key
@@ -170,8 +188,8 @@ async def create_metadata_task(
     return await _enqueue("metadata", "metadata", payload, priority=priority)
 
 async def create_persist_task(
-    user_id: str,
-    file_id: str,
+    user_id: int,
+    file_id: int,
     contract_type: str,
     contract_payload: Dict,
     *,
@@ -189,8 +207,8 @@ async def create_persist_task(
     return await _enqueue("persist", "persist", payload, priority=priority)
 
 async def create_delete_task(
-    user_id: str,
-    storage_id: str,
+    user_id: int,
+    storage_id: int,
     scan_path: str,
     encountered_media_paths: List[str],
     *,
@@ -208,9 +226,9 @@ async def create_delete_task(
     return await _enqueue("delete", "delete", payload, priority=priority)
 
 async def create_localize_task(
-    user_id: str,
-    file_id: str,
-    storage_id: str,
+    user_id: int,
+    file_id: int,
+    storage_id: int,
     *,
     priority: TaskPriority = TaskPriority.NORMAL,
     idempotency_key: Optional[str] = None

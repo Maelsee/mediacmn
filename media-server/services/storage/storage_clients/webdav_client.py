@@ -78,7 +78,7 @@ class WebDAVStorageClient(StorageClient):
                 raise StorageConnectionError(error or "连接测试失败")
             
             self._connected = True
-            logger.info(f"WebDAV存储客户端已连接: {self.name}")
+            logger.debug(f"WebDAV存储客户端已连接: {self.name}")
             return True
             
         except Exception as e:
@@ -96,7 +96,7 @@ class WebDAVStorageClient(StorageClient):
             await self._session.close()
             self._session = None
         self._connected = False
-        logger.info(f"WebDAV存储客户端已断开: {self.name}")
+        logger.debug(f"WebDAV存储客户端已断开: {self.name}")
     
     def _parse_webdav_response(self, xml_text: str) -> List[Dict[str, Any]]:
         """解析WebDAV PROPFIND响应"""

@@ -215,13 +215,17 @@ class TmdbScraper(ScraperPlugin):
             for cast in cr.get("cast", [])[:20]:
                 profile_path = cast.get("profile_path")
                 image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-                credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), role=cast.get("character"), order=cast.get("order"), image_url=image_url))
+                provider_id = cast.get("id")
+                # provider = self.name
+                credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), role=cast.get("character"), order=cast.get("order"), image_url=image_url, provider_id=provider_id))
             for crew in cr.get("crew", [])[:15]:
                 job = (crew.get("job") or "").lower()
                 ctype = CreditType.DIRECTOR if job == "director" else CreditType.WRITER if job == "writer" else CreditType.PRODUCER if job == "producer" else CreditType.ACTOR
                 profile_path = crew.get("profile_path")
                 image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-                credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url))
+                provider_id = crew.get("id")
+                # provider = self.name
+                credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url, provider_id=provider_id))
             md = ScraperMovieDetail(
                 movie_id=eid or "",
                 title=title,

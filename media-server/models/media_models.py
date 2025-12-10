@@ -271,7 +271,7 @@ class Artwork(SQLModel, table=True):
     core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
 
     # 图片信息
-    type: str = Field(index=True, description="图片类型：poster|backdrop|fanart|banner|cover|folder")
+    type: str = Field(index=True, description="图片类型：poster|backdrop|still|banner|cover|folder")
     remote_url: Optional[str] = Field(default=None, description="远程图片URL地址")
     local_path: Optional[str] = Field(default=None, description="本地图片存储路径")
     width: Optional[int] = Field(default=None, description="图片宽度（像素）")
@@ -280,7 +280,7 @@ class Artwork(SQLModel, table=True):
     language: Optional[str] = Field(default=None, description="图片语言")
     preferred: bool = Field(default=False, description="是否为首选图片")
     exists_local: bool = Field(default=False, description="本地文件是否存在")
-    exists_remote: bool = Field(default=True, description="远程URL是否可访问")
+    # exists_remote: bool = Field(default=True, description="远程URL是否可访问")
 
 
 # ==================== 外部ID模型 ====================
@@ -326,14 +326,14 @@ class MediaCoreGenre(SQLModel, table=True):
 class Person(SQLModel, table=True):
     """人员基础模型 - 存储人员基本信息"""
     __tablename__ = "person"
-    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_person_user_name"),)
+    __table_args__ = (UniqueConstraint("provider", "provider_id", "name", name="uq_person_user_name"),)
 
     id: Optional[int] = Field(default=None, primary_key=True, description="人员记录唯一标识")
-    user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
+    # user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
     name: str = Field(index=True, description="人员姓名")
-    tmdb_id: Optional[int] = Field(default=None, index=True, description="TMDB人员ID（用于外部关联）")
+    provider_id: Optional[int] = Field(default=None, index=True, description="TMDB人员ID（用于外部关联）")
     profile_url: Optional[str] = Field(default=None, description="人员头像URL（规范化: http(s)绝对路径）")
-
+    provider: Optional[str] = Field(default=None, description="数据来源提供者")
 
 class Credit(SQLModel, table=True):
     """演职员关联模型 - 关联人员与媒体作品"""

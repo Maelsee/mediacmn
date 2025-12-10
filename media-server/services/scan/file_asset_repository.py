@@ -67,7 +67,7 @@ class SqlFileAssetRepository:
                 session.rollback()
                 return 0
 
-    def create_file_record(self, storage_id: int, entry: StorageEntry, file_info: Dict, user_id: int) -> Optional[FileAsset]:
+    def create_file_record(self, storage_id: int, entry: StorageEntry, user_id: int) -> Optional[FileAsset]:
         import mimetypes
         from pathlib import Path
         with next(get_db_session()) as session:
@@ -85,7 +85,7 @@ class SqlFileAssetRepository:
                     relative_path=relative_path,
                     size=entry.size or 0,
                     mimetype=mimetypes.guess_type(entry.path)[0],
-                    resolution=file_info.get("resolution"),
+                    # resolution=file_info.get("resolution"),
                     etag=entry.etag,
                     created_at=datetime.now(),
                     updated_at=datetime.now()
@@ -97,7 +97,7 @@ class SqlFileAssetRepository:
                 session.rollback()
                 return None
 
-    def bulk_create_file_records(self, storage_id: int, entries: List[StorageEntry], file_info_map: Dict[str, Dict], user_id: int) -> List[FileAsset]:
+    def bulk_create_file_records(self, storage_id: int, entries: List[StorageEntry],  user_id: int) -> List[FileAsset]:
         if not entries:
             return []
         import mimetypes
@@ -111,7 +111,7 @@ class SqlFileAssetRepository:
                         relative_path = str(Path(*path_parts[1:]))
                     else:
                         relative_path = "."
-                    fi = file_info_map.get(entry.path, {})
+                    # fi = file_info_map.get(entry.path, {})
                     media_file = FileAsset(
                         user_id=user_id,
                         storage_id=storage_id,
@@ -120,7 +120,7 @@ class SqlFileAssetRepository:
                         relative_path=relative_path,
                         size=entry.size or 0,
                         mimetype=mimetypes.guess_type(entry.path)[0],
-                        resolution=fi.get("resolution"),
+                        # resolution=fi.get("resolution"),
                         etag=entry.etag,
                         created_at=datetime.now(),
                         updated_at=datetime.now()

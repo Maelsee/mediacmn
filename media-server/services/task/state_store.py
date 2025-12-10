@@ -69,7 +69,7 @@ class StateStore:
             "task_type": rec.task_type,
             "queue": rec.queue,
             "status": rec.status,
-            "payload": json.dumps(rec.payload, ensure_ascii=False),
+            "payload": rec.payload,
             "attempts": str(rec.attempts),
             "max_retries": str(rec.max_retries),
             "time_limit_ms": str(rec.time_limit_ms or ""),
@@ -211,3 +211,4 @@ def _mem_store() -> Dict[str, Dict[str, Any]]:
 
 def _mem_idemp() -> Dict[str, str]:
     return _MEM_IDEMP
+

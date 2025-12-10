@@ -64,11 +64,10 @@ class ScraperCredit:
     role: Optional[str] = None
     order: Optional[int] = None
     image_url: Optional[str] = None
-    external_ids: List[ScraperExternalId] = None
+    provider_id: Optional[int] = None
+    # provider: Optional[str] = None
     
-    def __post_init__(self):
-        if self.external_ids is None:
-            self.external_ids = []
+   
 
 
 @dataclass

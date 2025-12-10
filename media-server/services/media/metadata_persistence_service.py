@@ -20,10 +20,53 @@ from services.scraper import (
 logger = logging.getLogger(__name__)
 
 
+class _DictWrapper:
+    """包装器，使 dict 可以通过 getattr 访问，并递归处理嵌套结构"""
+    def __init__(self, data: Dict):
+        self._data = data if isinstance(data, dict) else {}
+    
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            return object.__getattribute__(self, name)
+        value = self._data.get(name)
+        return self._wrap_value(value)
+    
+    def __getitem__(self, index: int):
+        """支持列表索引访问"""
+        if isinstance(self._data, list):
+            return self._wrap_value(self._data[index])
+        raise TypeError(f"'{type(self).__name__}' object is not subscriptable")
+    
+    def _wrap_value(self, value):
+        """递归包装嵌套的 dict 和 list"""
+        if isinstance(value, dict):
+            return _DictWrapper(value)
+        elif isinstance(value, list):
+            return [self._wrap_value(item) for item in value]
+        else:
+            return value
+
+
 class MetadataPersistenceService:
     """
     媒体元数据持久化服务
     """
+    def _get_attr(self, obj, key: str, default=None):
+        """
+        统一的属性访问方法，同时支持 dict 和 dataclass 对象
+        
+        参数:
+            obj: dict 或 dataclass 对象
+            key: 属性/键名
+            default: 默认值
+        返回:
+            属性值或默认值
+        """
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        else:
+            return getattr(obj, key, default)
+    
     def _parse_dt(self, v):
         """
         将日期值解析为 datetime 对象
@@ -46,7 +89,13 @@ class MetadataPersistenceService:
         try:
             if artworks:
                 for a in artworks:
-                    _t = getattr(getattr(a, "type", None), "value", None)
+                    # 支持 dict 和 dataclass：先尝试 dict.get，再用 getattr
+                    a_type = self._get_attr(a, "type")
+                    # 处理 Enum 类型：如果是 Enum，取其 value；如果已是字符串，直接使用
+                    if hasattr(a_type, "value"):
+                        _t = a_type.value
+                    else:
+                        _t = a_type
                     _t = "still" if _t == "thumb" else _t
                     by_type = session.exec(select(Artwork).filter(
                         Artwork.user_id == user_id,
@@ -56,40 +105,47 @@ class MetadataPersistenceService:
                     if by_type:
                         try:
                             if not getattr(by_type, "remote_url", None):
-                                by_type.remote_url = getattr(a, "url", None)
+                                by_type.remote_url = self._get_attr(a, "url")
                         except Exception:
-                            by_type.remote_url = getattr(a, "url", None)
+                            by_type.remote_url = self._get_attr(a, "url")
                         by_type.provider = provider
-                        by_type.language = getattr(a, "language", None) or getattr(by_type, "language", None)
+                        by_type.language = self._get_attr(a, "language") or getattr(by_type, "language", None)
                         by_type.preferred = getattr(by_type, "preferred", False)
-                        by_type.exists_remote = True
+                        # by_type.exists_remote = True
                     else:
-                        session.add(Artwork(user_id=user_id, core_id=core_id, type=_t, remote_url=getattr(a, "url", None), local_path=None, provider=provider, language=getattr(a, "language", None), preferred=False, exists_local=False, exists_remote=True))
+                        session.add(Artwork(user_id=user_id, core_id=core_id, type=_t, remote_url=self._get_attr(a, "url"), local_path=None, provider=provider, language=self._get_attr(a, "language"), preferred=False, exists_local=False))
         except Exception:
             pass
-    def _upsert_credits(self, session, user_id: int, core_id: int, credits) -> None:
+    def _upsert_credits(self, session, user_id: int, core_id: int, credits, provider: Optional[str]) -> None:
         try:
             if credits:
                 for c in credits:
-                    name = getattr(c, "name", None)
+                    name = self._get_attr(c, "name")
+                    provider_id = self._get_attr(c, "provider_id")
+
                     if not name:
                         continue
-                    person = session.exec(select(Person).filter(Person.user_id == user_id, Person.name == name)).first()
+                    person = session.exec(select(Person).filter(Person.provider_id == provider_id, Person.name == name,Person.provider == provider)).first()
                     if not person:
-                        purl = getattr(c, "image_url", None)
-                        person = Person(user_id=user_id, name=name, tmdb_id=None, profile_url=purl)
+                        purl = self._get_attr(c, "image_url")
+                        person = Person(provider=provider, provider_id=provider_id, name=name, profile_url=purl)
                         session.add(person)
                         session.flush()
                     else:
                         try:
-                            if not getattr(person, "profile_url", None) and getattr(c, "image_url", None):
-                                person.profile_url = c.image_url
+                            if not getattr(person, "profile_url", None) and self._get_attr(c, "image_url"):
+                                person.profile_url = self._get_attr(c, "image_url")
                         except Exception:
                             pass
-                    role_type = getattr(getattr(c, "type", None), "value", None)
+                    # 处理 Enum 类型：如果是 Enum，取其 value；如果已是字符串，直接使用
+                    c_type = self._get_attr(c, "type")
+                    if hasattr(c_type, "value"):
+                        role_type = c_type.value
+                    else:
+                        role_type = c_type
                     role = "cast" if role_type == "actor" else "crew"
-                    character = getattr(c, "role", None) if role == "cast" else None
-                    job = role_type if role == "crew" else None
+                    character = self._get_attr(c, "role") if role == "cast" else None
+                    job = role_type 
                     existing = session.exec(select(Credit).filter(
                         Credit.user_id == user_id,
                         Credit.core_id == core_id,
@@ -227,7 +283,7 @@ class MetadataPersistenceService:
         except Exception:
             pass
         try:
-            self._upsert_credits(session, user_id, series_core.id, getattr(sd, "credits", None))
+            self._upsert_credits(session, user_id, series_core.id, getattr(sd, "credits", None), getattr(sd, "provider", None))
         except Exception:
             pass
         return series_core
@@ -296,45 +352,54 @@ class MetadataPersistenceService:
         except Exception:
             pass
         try:
-            self._upsert_credits(session, user_id, season_core.id, getattr(se, "credits", None))
+            self._upsert_credits(session, user_id, season_core.id, getattr(se, "credits", None), getattr(se, "provider", None))
         except Exception:
             pass
         return season_core
     # 播放链接相关逻辑已移除，直连生成在 routes_media 中实现
-    def apply_metadata(self, session, media_file: FileAsset, metadata) -> None:
+    def apply_metadata(self, session, media_file: FileAsset, metadata,metadata_type: str) -> None:
         """
         一次性幂等地将刮削结果写入领域模型，并更新相关扩展信息
-        
+
         事务说明:
             - 本方法内部仅执行 flush，不提交事务；由调用方统一 commit
         参数:
             session: SQLModel 会话
             media_file: 当前媒体文件记录（用于定位/创建 MediaCore）
-            metadata: 新契约对象，支持 ScraperMovieDetail/ScraperSeriesDetail/ScraperEpisodeDetail/ScraperSearchResult
+            metadata: 新契约对象或 dict，支持 ScraperMovieDetail/ScraperSeriesDetail/ScraperEpisodeDetail/ScraperSearchResult 或其对应的 dict 形式
         行为:
             - 创建/更新 MediaCore 与 ExternalID
-            - 电视剧分层映射: TVSeriesExt/SeasonExt/EpisodeExt
+            - 电视剧分层映射: TVSeriesExt/SeasonExt/EpisodeExt        
             - 通用映射: Artwork/Genre/MediaCoreGenre/Person/Credit
             - 电影扩展与合集: MovieExt/Collection
         """
+        # 如果 metadata 是 dict，包装为可通过 getattr 访问的对象
+        if isinstance(metadata, dict):
+            metadata = _DictWrapper(metadata)
+        
         core = session.exec(select(MediaCore).filter(MediaCore.id == media_file.core_id)).first()
-
-        if isinstance(metadata, ScraperMovieDetail):
+        # logger.info(f"开始应用元数据：文件ID={media_file.id}, 当前核心ID={getattr(media_file, 'core_id', None)}, 元数据类型={type(metadata)}")
+        # if isinstance(metadata, ScraperMovieDetail):
+        # if hasattr(metadata, "movie_id"):
+        if metadata_type == "movie":
+            # logger.info(f"应用电影元数据：文件ID={media_file.id}, 元数据={metadata}")
             core = self._apply_movie_detail(session, media_file, metadata)
 
-        elif isinstance(metadata, ScraperSeriesDetail):
+        # elif isinstance(metadata, ScraperEpisodeDetail):
+        elif metadata_type == "episode":
+            core = self._apply_episode_detail(session, media_file, metadata)
+
+        # elif isinstance(metadata, ScraperSeriesDetail):
+        elif metadata_type == "series":
             core = self._apply_series_detail(session, media_file.user_id, metadata)
             try:
                 if not getattr(media_file, "core_id", None):
                     media_file.core_id = core.id
             except Exception:
                 media_file.core_id = getattr(core, "id", None)
-           
-
-        elif isinstance(metadata, ScraperEpisodeDetail):
-            core = self._apply_episode_detail(session, media_file, metadata)
-
-        elif isinstance(metadata, ScraperSearchResult):
+        
+        # elif isinstance(metadata, ScraperSearchResult):
+        elif metadata_type == "search_result":
             core = self._apply_search_result(session, media_file, metadata)
 
         else:
@@ -345,7 +410,8 @@ class MetadataPersistenceService:
         session.flush()
 
     def _apply_movie_detail(self, session, media_file: FileAsset, metadata: ScraperMovieDetail) -> MediaCore:
-        core = session.exec(select(MediaCore).filter(MediaCore.id == media_file.core_id)).first()
+        # 添加或更新媒体核心元数据
+        core = session.exec(select(MediaCore).where(MediaCore.id == media_file.core_id)).first()
         year_val = None
         try:
             dt = self._parse_dt(getattr(metadata, "release_date", None))
@@ -360,6 +426,9 @@ class MetadataPersistenceService:
                 original_title=getattr(metadata, "original_title", None),
                 year=year_val,
                 plot=getattr(metadata, "overview", None),
+                display_rating=getattr(metadata, "vote_average", None),
+                display_poster_path=getattr(metadata, "poster_path", None),
+                display_date=self._parse_dt(getattr(metadata, "release_date", None)),
                 created_at=datetime.now(),
                 updated_at=datetime.now()
             )
@@ -372,10 +441,14 @@ class MetadataPersistenceService:
             core.original_title = getattr(metadata, "original_title", None)
             core.year = year_val
             core.plot = getattr(metadata, "overview", None)
+            core.display_rating = getattr(metadata, "vote_average", None)
+            core.display_poster_path = getattr(metadata, "poster_path", None)
+            core.display_date = self._parse_dt(getattr(metadata, "release_date", None))
             core.updated_at = datetime.now()
-
+        
+        # 改元信息提供商ID
         if getattr(metadata, "provider", None) and getattr(metadata, "movie_id", None):
-            existing = session.exec(select(ExternalID).filter(
+            existing = session.exec(select(ExternalID).where(
                 ExternalID.user_id == media_file.user_id,
                 ExternalID.core_id == core.id,
                 ExternalID.source == metadata.provider,
@@ -394,11 +467,12 @@ class MetadataPersistenceService:
             except Exception:
                 pass
 
+        # 外部平台信息列表（tmdb，imdb）
         try:
             for eid in getattr(metadata, "external_ids", []) or []:
                 if not eid or not getattr(eid, "provider", None) or not getattr(eid, "external_id", None):
                     continue
-                existing = session.exec(select(ExternalID).filter(
+                existing = session.exec(select(ExternalID).where(
                     ExternalID.user_id == media_file.user_id,
                     ExternalID.core_id == core.id,
                     ExternalID.source == eid.provider,
@@ -408,8 +482,8 @@ class MetadataPersistenceService:
                     session.add(ExternalID(user_id=media_file.user_id, core_id=core.id, source=eid.provider, key=str(eid.external_id)))
         except Exception:
             pass
-
-        movie_ext = session.exec(select(MovieExt).filter(MovieExt.user_id == media_file.user_id, MovieExt.core_id == core.id)).first()
+        # 电影详细信息
+        movie_ext = session.exec(select(MovieExt).where(MovieExt.user_id == media_file.user_id, MovieExt.core_id == core.id)).first()
         if not movie_ext:
             movie_ext = MovieExt(user_id=media_file.user_id, core_id=core.id)
             session.add(movie_ext)
@@ -418,18 +492,12 @@ class MetadataPersistenceService:
             movie_ext.tagline = getattr(metadata, "tagline", None)
             rv = getattr(metadata, "vote_average", None)
             movie_ext.rating = float(rv) if isinstance(rv, (int, float)) else movie_ext.rating
+            movie_ext.overview = getattr(metadata, "overview", None) or movie_ext.overview
         except Exception:
             pass
         try:
             rd = getattr(metadata, "release_date", None)
-            if rd:
-                from datetime import datetime as _dt, date as _date
-                if isinstance(rd, _dt):
-                    movie_ext.release_date = rd
-                elif isinstance(rd, _date):
-                    movie_ext.release_date = _dt.combine(rd, _dt.min.time())
-                elif isinstance(rd, str):
-                    movie_ext.release_date = self._parse_dt(rd)
+            movie_ext.release_date = self._parse_dt(rd) if rd else movie_ext.release_date
         except Exception:
             pass
         try:
@@ -465,39 +533,42 @@ class MetadataPersistenceService:
                 movie_ext.collection_id = collection.id
         except Exception:
             pass
+        # 图片海报等统一处理
         try:
             self._upsert_artworks(session, media_file.user_id, core.id, getattr(metadata, "provider", None), getattr(metadata, "artworks", None))
         except Exception:
             pass
+
         # 直接根据 metadata 的 poster/backdrop 写入 Artwork，避免需要二次查询
         try:
             ppath = getattr(metadata, "poster_path", None)
             bpath = getattr(metadata, "backdrop_path", None)
             prov = getattr(metadata, "provider", None)
             if ppath:
-                art_p = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "poster")).first()
+                art_p = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "poster",preferred=True)).first()
                 if not art_p:
-                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="poster", remote_url=ppath, provider=prov, preferred=True, exists_remote=True))
+                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="poster", remote_url=ppath, provider=prov, preferred=True))
                 else:
                     art_p.remote_url = art_p.remote_url or ppath
                     art_p.provider = prov or getattr(art_p, "provider", None)
                     art_p.preferred = True
-                    art_p.exists_remote = True
+                #     art_p.exists_remote = True
             if bpath:
-                art_b = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "backdrop")).first()
+                art_b = session.exec(select(Artwork).filter(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "backdrop",preferred=True)).first()
                 if not art_b:
-                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="backdrop", remote_url=bpath, provider=prov, preferred=True, exists_remote=True))
+                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="backdrop", remote_url=bpath, provider=prov, preferred=True))
                 else:
                     art_b.remote_url = art_b.remote_url or bpath
                     art_b.provider = prov or getattr(art_b, "provider", None)
                     art_b.preferred = True
-                    art_b.exists_remote = True
         except Exception:
             pass
+        # 演职人员信息
         try:
-            self._upsert_credits(session, media_file.user_id, core.id, getattr(metadata, "credits", None))
+            self._upsert_credits(session, media_file.user_id, core.id, getattr(metadata, "credits", None), getattr(metadata, "provider", None))
         except Exception:
             pass
+        # 类型信息
         try:
             self._upsert_genres(session, media_file.user_id, core.id, getattr(metadata, "genres", []) or [])
         except Exception:
@@ -624,7 +695,7 @@ class MetadataPersistenceService:
         except Exception:
             pass
         try:
-            self._upsert_credits(session, media_file.user_id, core.id, getattr(metadata, "credits", None))
+            self._upsert_credits(session, media_file.user_id, core.id, getattr(metadata, "credits", None), getattr(metadata, "provider", None))
         except Exception:
             pass
         return core

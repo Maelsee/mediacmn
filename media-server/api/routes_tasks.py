@@ -43,7 +43,8 @@ async def create_scan(
     current_user: str = Depends(get_current_subject),
 ):
     try:
-        task_id = await create_scan_task(current_user, storage_id, scan_path)
+        logger.info(f"创建扫描任务: user_id={int(current_user)}, storage_id={int(storage_id)}, scan_path={scan_path}")
+        task_id = await create_scan_task(int(current_user), int(storage_id), scan_path)
         logger.info(f"创建扫描任务成功: {task_id}")
         return TaskCreateResponse(success=True, message="扫描任务已创建", task_id=task_id, task_type="scan")
     except Exception as e:
@@ -52,7 +53,7 @@ async def create_scan(
 
 
 class MetadataBody(BaseModel):
-    file_ids: List[str]
+    file_ids: List[int]
 
 
 @router.post("/metadata")
@@ -61,7 +62,7 @@ async def create_metadata(
     current_user: str = Depends(get_current_subject),
 ):
     try:
-        task_id = await create_metadata_task(current_user, body.file_ids)
+        task_id = await create_metadata_task(int(current_user), body.file_ids)
         return TaskCreateResponse(success=True, message="元数据任务已创建", task_id=task_id, task_type="metadata")
     except Exception as e:
         logger.error(f"创建元数据任务失败: {e}")
@@ -69,7 +70,7 @@ async def create_metadata(
 
 
 class PersistBody(BaseModel):
-    file_id: str
+    file_id: int
     contract_type: str
     contract_payload: Dict[str, Any]
 
@@ -80,7 +81,7 @@ async def create_persist(
     current_user: str = Depends(get_current_subject),
 ):
     try:
-        task_id = await create_persist_task(current_user, body.file_id, body.contract_type, body.contract_payload)
+        task_id = await create_persist_task(int(current_user), body.file_id, body.contract_type, body.contract_payload)
         return TaskCreateResponse(success=True, message="持久化任务已创建", task_id=task_id, task_type="persist")
     except Exception as e:
         logger.error(f"创建持久化任务失败: {e}")
@@ -88,7 +89,7 @@ async def create_persist(
 
 
 class DeleteBody(BaseModel):
-    storage_id: str
+    storage_id: int
     scan_path: str
     encountered_media_paths: List[str]
 
@@ -99,7 +100,7 @@ async def create_delete(
     current_user: str = Depends(get_current_subject),
 ):
     try:
-        task_id = await create_delete_task(current_user, body.storage_id, body.scan_path, body.encountered_media_paths)
+        task_id = await create_delete_task(int(current_user), body.storage_id, body.scan_path, body.encountered_media_paths)
         return TaskCreateResponse(success=True, message="删除对齐任务已创建", task_id=task_id, task_type="delete")
     except Exception as e:
         logger.error(f"创建删除对齐任务失败: {e}")
@@ -107,9 +108,8 @@ async def create_delete(
 
 
 class LocalizeBody(BaseModel):
-    file_id: str
-    storage_id: str
-
+    file_id: int
+    storage_id: int
 
 @router.post("/localize")
 async def create_localize(
@@ -117,7 +117,7 @@ async def create_localize(
     current_user: str = Depends(get_current_subject),
 ):
     try:
-        task_id = await create_localize_task(current_user, body.file_id, body.storage_id)
+        task_id = await create_localize_task(int(current_user), body.file_id, body.storage_id)
         return TaskCreateResponse(success=True, message="侧车本地化任务已创建", task_id=task_id, task_type="localize")
     except Exception as e:
         logger.error(f"创建侧车本地化任务失败: {e}")

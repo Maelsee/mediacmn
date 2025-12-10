@@ -4,7 +4,8 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, field
 
 from sqlmodel import select
 
@@ -17,6 +18,12 @@ from services.utils.filename_parser import FilenameParser, ParserMode, ParseInpu
 from dataclasses import asdict
 
 logger = logging.getLogger(__name__)
+
+# 类型别名：避免序列化/反序列化开销
+# MetadataResult 为 dict 而非 dataclass，消除 Enum 转换成本
+MetadataResult = Dict[str, Any]  # 结构: {user_id, file_id, contract_type, contract_payload}
+ 
+
 
 
 class MetadataEnricher:
@@ -32,7 +39,7 @@ class MetadataEnricher:
         self.storage_service = StorageService()
         self.parser = FilenameParser()
     
-    async def enrich_media_file(self, file_id: int, storage_id: Optional[int] = None) -> bool:
+    async def enrich_media_file(self, file_id: int, storage_id: Optional[int] = None) -> MetadataResult:
         """
         丰富单个媒体文件的元数据
 
@@ -67,15 +74,15 @@ class MetadataEnricher:
                     return False
                 
                 # 获取存储客户端 - 优先使用传入的storage_id，否则使用文件关联的存储配置ID
-                if storage_id:
-                    storage_client = await self.storage_service.get_client(storage_id)
-                    if not storage_client:
-                        logger.error(f"无法获取存储客户端: {storage_id}")
-                        return False
-                else:
-                    # 如果没有提供storage_id，尝试从文件路径推断或使用默认存储
-                    logger.warning("未提供storage_id，跳过侧车文件写入")
-                    storage_client = None
+                # if storage_id:
+                #     storage_client = await self.storage_service.get_client(storage_id)
+                #     if not storage_client:
+                #         logger.error(f"无法获取存储客户端: {storage_id}")
+                #         return False
+                # else:
+                #     # 如果没有提供storage_id，尝试从文件路径推断或使用默认存储
+                #     logger.warning("未提供storage_id，跳过侧车文件写入")
+                #     storage_client = None
                 
                 # 解析文件名（Deep 模式，若快照存在则重用）
                 seed_parent = str(Path(media_file.full_path).parent.name) # 父目录名作为种子
@@ -98,7 +105,8 @@ class MetadataEnricher:
                 year = out.year if out.year is not None else None
                 season = out.season_number if out.season_number is not None else None
                 episode = out.episode_number if out.episode_number is not None else None
-                language = out.language or None
+                # language = out.language or None
+                language = "zh-CN"  # 强制中文
                 
                 # 确定媒体类型(movie or tv)
                 media_type = self._determine_media_type(media_file, season, episode)
@@ -136,16 +144,19 @@ class MetadataEnricher:
                 logger.info(f"🏆 选择最佳匹配: {best_match.title} ({best_match.year}) - ID: {getattr(best_match, 'id', None)}")
                 
                 # 获取详情：按校正类型调用新细分接口
-                details_obj = None
+                contract_type = 'search_result' # 刮削类型, 'movie', 'series', 'episode'
+                details_obj = None # 刮削到的元数据内容
                 try:
                     plugin = scraper_manager.get_plugin(best_match.provider)
                     if plugin and getattr(best_match, 'id', None):
                         if corrected_type == MediaType.MOVIE:
+                            contract_type = 'movie'
                             details_obj = await plugin.get_movie_details(best_match.id, language)
                             if details_obj:
                                 logger.debug(f"✅ 电影详细信息获取成功: {details_obj.title}")
                         else:
                             if season is not None and episode is not None:
+                                contract_type = 'episode'
                                 ep = await plugin.get_episode_details(best_match.id, season, episode, language)
                                 if ep:
                                     try:
@@ -163,6 +174,7 @@ class MetadataEnricher:
                                     details_obj = ep
                                     logger.debug("✅ 单集详细信息获取成功并补充系列/季信息")
                             if details_obj is None:
+                                contract_type = 'series'
                                 details_obj = await plugin.get_series_details(best_match.id, language)
                                 if details_obj:
                                     logger.debug(f"✅ 只获取到系列详细信息: {details_obj.name}")
@@ -170,115 +182,123 @@ class MetadataEnricher:
                         logger.warning(f"⚠️ 未找到插件或无ID: provider={getattr(best_match, 'provider', None)}")
                 except Exception as e:
                     logger.error(f"❌ 获取详细信息失败: {e}")
-                
-                # 入队持久化任务（解耦写库）
-                try:
-                    from services.task import Task, TaskType, TaskPriority, get_task_queue_service
-                    tq = get_task_queue_service()
-                    await tq.connect()
-                    contract_type = None
-                    payload = None
-                    if details_obj and hasattr(details_obj, 'movie_id'):
-                        contract_type = 'movie'
-                        payload = asdict(details_obj)
-                        external_key = str(getattr(details_obj, 'movie_id', best_match.id))
-                        scope = 'movie_single'
-                    elif details_obj and hasattr(details_obj, 'episode_number'):
-                        contract_type = 'episode'
-                        payload = asdict(details_obj)
-                        external_key = str(getattr(details_obj, 'episode_id', f"{best_match.id}:{season}:{episode}"))
-                        scope = 'episode_single'
-                    elif details_obj and hasattr(details_obj, 'series_id'):
-                        contract_type = 'series'
-                        payload = asdict(details_obj)
-                        external_key = str(getattr(details_obj, 'series_id', best_match.id))
-                        scope = 'series_group'
-                    else:
-                        contract_type = 'series'
-                        payload = asdict(best_match)
-                        external_key = str(getattr(best_match, 'id', media_file.id))
-                        scope = 'series_group'
-                    quality = None
-                    if getattr(out, 'resolution_tags', None):
-                        quality = out.resolution_tags[0] if len(out.resolution_tags) > 0 else None
-                    source = None
-                    if getattr(out, 'quality_tags', None):
-                        qt = [q.lower() for q in out.quality_tags]
-                        for s in ['web', 'bluray', 'dvd', 'hdtv']:
-                            if any(s in q for q in qt):
-                                source = s
-                                break
-                    idempotency_key = f"{media_file.user_id}:{media_file.id}:{best_match.provider}:{contract_type}:{external_key}"
-                    persist_task = Task(
-                        task_type=TaskType.PERSIST_METADATA,
-                        priority=TaskPriority.NORMAL,
-                        params={
-                            "file_id": media_file.id,
-                            "user_id": media_file.user_id,
-                            "storage_id": storage_id,
-                            "contract_type": contract_type,
-                            "contract_payload": payload,
-                            "version_context": {
-                                "scope": scope,
-                                "quality": quality,
-                                "source": source
-                            },
-                            "provider": best_match.provider,
-                            "language": language,
-                            "idempotency_key": idempotency_key
-                        },
-                        max_retries=3,
-                        retry_delay=300,
-                        timeout=3600
-                    )
-                    ok = await tq.enqueue_task(persist_task)
-                    logger.info(f"元数据持久化任务已入队: {persist_task.id}")
-                    if not ok:
-                        logger.error("持久化任务入队失败")
-                        return False
-                except Exception as e:
-                    logger.error(f"持久化任务入队异常: {e}")
-                    return False
 
-                # 异步本地化：入队侧车任务
-                try:
-                    from services.task import Task, TaskType, TaskPriority, get_task_queue_service
-                    from core.config import get_settings
-                    settings = get_settings()
-                    if not bool(getattr(settings, "SIDE_CAR_LOCALIZATION_ENABLED", True)):
-                        logger.info("侧车本地化关闭（env），跳过入队")
-                    else:
-                        if storage_id is None:
-                            logger.error("侧车本地化启用但缺少storage_id，跳过入队")
-                        else:
-                            tq = get_task_queue_service()
-                            await tq.connect()
-                            sidecar_task = Task(
-                                task_type=TaskType.SIDECAR_LOCALIZE,
-                                priority=TaskPriority.LOW,
-                                params={
-                                    "file_id": media_file.id,
-                                    "storage_id": storage_id,
-                                    "language": language,
-                                    "user_id": media_file.user_id
-                                },
-                                max_retries=3,
-                                retry_delay=300,
-                                timeout=1800
-                            )
-                            ok2 = await tq.enqueue_task(sidecar_task)
-                            if ok2:
-                                logger.info(f"侧车本地化任务已入队: {sidecar_task.id} -> file_id={media_file.id}")
-                            else:
-                                logger.error("侧车任务入队失败，跳过本地化")
-                except Exception as e:
-                    logger.error(f"侧车本地化任务入队异常，跳过本地化: {e}")
+                # logger.info(f"🎉 元数据丰富完成: 文件ID={media_file.id}, 结果：{asdict(details_obj)}")
+                return {
+                    "user_id": media_file.user_id,
+                    "file_id": media_file.id,  
+                    "contract_type": contract_type,
+                    "contract_payload": asdict(details_obj) if details_obj else asdict(best_match)
+                }
                 
-                return True
+                # # 入队持久化任务（解耦写库）上一版本的任务队列
+                # try:
+                #     from services.task import Task, TaskType, TaskPriority, get_task_queue_service
+                #     tq = get_task_queue_service()
+                #     await tq.connect()
+                #     contract_type = None
+                #     payload = None
+                #     if details_obj and hasattr(details_obj, 'movie_id'):
+                #         contract_type = 'movie'
+                #         payload = asdict(details_obj)
+                #         external_key = str(getattr(details_obj, 'movie_id', best_match.id))
+                #         scope = 'movie_single'
+                #     elif details_obj and hasattr(details_obj, 'episode_number'):
+                #         contract_type = 'episode'
+                #         payload = asdict(details_obj)
+                #         external_key = str(getattr(details_obj, 'episode_id', f"{best_match.id}:{season}:{episode}"))
+                #         scope = 'episode_single'
+                #     elif details_obj and hasattr(details_obj, 'series_id'):
+                #         contract_type = 'series'
+                #         payload = asdict(details_obj)
+                #         external_key = str(getattr(details_obj, 'series_id', best_match.id))
+                #         scope = 'series_group'
+                #     else:
+                #         contract_type = 'series'
+                #         payload = asdict(best_match)
+                #         external_key = str(getattr(best_match, 'id', media_file.id))
+                #         scope = 'series_group'
+                #     quality = None
+                #     if getattr(out, 'resolution_tags', None):
+                #         quality = out.resolution_tags[0] if len(out.resolution_tags) > 0 else None
+                #     source = None
+                #     if getattr(out, 'quality_tags', None):
+                #         qt = [q.lower() for q in out.quality_tags]
+                #         for s in ['web', 'bluray', 'dvd', 'hdtv']:
+                #             if any(s in q for q in qt):
+                #                 source = s
+                #                 break
+                #     idempotency_key = f"{media_file.user_id}:{media_file.id}:{best_match.provider}:{contract_type}:{external_key}"
+                #     persist_task = Task(
+                #         task_type=TaskType.PERSIST_METADATA,
+                #         priority=TaskPriority.NORMAL,
+                #         params={
+                #             "file_id": media_file.id,
+                #             "user_id": media_file.user_id,
+                #             "storage_id": storage_id,
+                #             "contract_type": contract_type,
+                #             "contract_payload": payload,
+                #             "version_context": {
+                #                 "scope": scope,
+                #                 "quality": quality,
+                #                 "source": source
+                #             },
+                #             "provider": best_match.provider,
+                #             "language": language,
+                #             "idempotency_key": idempotency_key
+                #         },
+                #         max_retries=3,
+                #         retry_delay=300,
+                #         timeout=3600
+                #     )
+                #     ok = await tq.enqueue_task(persist_task)
+                #     logger.info(f"元数据持久化任务已入队: {persist_task.id}")
+                #     if not ok:
+                #         logger.error("持久化任务入队失败")
+                #         return False
+                # except Exception as e:
+                #     logger.error(f"持久化任务入队异常: {e}")
+                #     return False
+
+                # # 异步本地化：入队侧车任务
+                # try:
+                #     from services.task import Task, TaskType, TaskPriority, get_task_queue_service
+                #     from core.config import get_settings
+                #     settings = get_settings()
+                #     if not bool(getattr(settings, "SIDE_CAR_LOCALIZATION_ENABLED", True)):
+                #         logger.info("侧车本地化关闭（env），跳过入队")
+                #     else:
+                #         if storage_id is None:
+                #             logger.error("侧车本地化启用但缺少storage_id，跳过入队")
+                #         else:
+                #             tq = get_task_queue_service()
+                #             await tq.connect()
+                #             sidecar_task = Task(
+                #                 task_type=TaskType.SIDECAR_LOCALIZE,
+                #                 priority=TaskPriority.LOW,
+                #                 params={
+                #                     "file_id": media_file.id,
+                #                     "storage_id": storage_id,
+                #                     "language": language,
+                #                     "user_id": media_file.user_id
+                #                 },
+                #                 max_retries=3,
+                #                 retry_delay=300,
+                #                 timeout=1800
+                #             )
+                #             ok2 = await tq.enqueue_task(sidecar_task)
+                #             if ok2:
+                #                 logger.info(f"侧车本地化任务已入队: {sidecar_task.id} -> file_id={media_file.id}")
+                #             else:
+                #                 logger.error("侧车任务入队失败，跳过本地化")
+                # except Exception as e:
+                #     logger.error(f"侧车本地化任务入队异常，跳过本地化: {e}")
+                
+                # return True
                 
         except Exception as e:
             logger.exception(f"丰富媒体文件元数据失败: {e}")
-            return False
+            return {"file_id": file_id, "user_id": 0, "contract_type": "", "contract_payload": {}}  # 异常时返回空结果
     
     def _determine_media_type(self, media_file: FileAsset, season: Optional[int], episode: Optional[int]) -> MediaType:
         """
@@ -303,63 +323,113 @@ class MetadataEnricher:
             return MediaType.MOVIE
 
     
-    async def enrich_multiple_files(self, file_ids: List[int], 
-                                   language: str = "zh-CN", 
-                                   storage_id: Optional[int] = None) -> Dict[int, bool]:
-        """
-        丰富多个媒体文件的元数据
+    # async def enrich_multiple_files(self, file_ids: List[int], 
+    #                                language: str = "zh-CN", 
+    #                                storage_id: Optional[int] = None) -> List[MetadataResult]:
+    #     """
+    #     丰富多个媒体文件的元数据
         
-        并发驱动器：逐文件执行单文件内核流程，保证每个文件的事务与容错独立
+    #     并发驱动器：逐文件执行单文件内核流程，保证每个文件的事务与容错独立
         
-        Args:
-            file_ids: 文件ID列表
-            language: 首选语言
-            storage_id: 存储配置ID（可选）
+    #     Args:
+    #         file_ids: 文件ID列表
+    #         language: 首选语言
+    #         storage_id: 存储配置ID（可选）
             
-        Returns:
-            Dict[int, bool]: 文件ID到成功状态的映射"""
+    #     Returns:
+    #         Dict[int, bool]: 文件ID到成功状态的映射"""
         
-        results = {}
+    #     results = {}
         
-        # 并发处理多个文件
-        tasks = []
-        for file_id in file_ids:
-            task = asyncio.create_task(
-                self._enrich_single_file_safe(file_id, language, storage_id)
-            )
-            tasks.append((file_id, task))
+    #     # 并发处理多个文件
+    #     tasks = []
+    #     for file_id in file_ids:
+    #         task = asyncio.create_task(
+    #             self._enrich_single_file_safe(file_id, language, storage_id)
+    #         )
+    #         tasks.append((file_id, task))
         
-        # 等待所有任务完成
-        for file_id, task in tasks:
-            try:
-                success = await task
-                results[file_id] = success
-            except Exception as e:
-                logger.error(f"丰富文件 {file_id} 失败: {e}")
-                results[file_id] = False
+    #     # 等待所有任务完成
+    #     for file_id, task in tasks:
+    #         try:
+    #             success = await task
+    #             results[file_id] = success
+    #         except Exception as e:
+    #             logger.error(f"丰富文件 {file_id} 失败: {e}")
+    #             results[file_id] = False
         
+    #     return results
+    
+    # async def _enrich_single_file_safe(self, file_id: int, language: str, storage_id: Optional[int]) -> bool:
+    #     """
+    #     安全地丰富单个文件
+        
+    #     包装 enrich_media_file，提供异常捕获保证批处理稳定
+        
+    #     Args:
+    #         file_id: 文件ID
+    #         language: 语言
+    #         storage_id: 存储配置ID（可选）
+            
+    #     Returns:
+    #         bool: 是否成功完成丰富" 
+    #     """
+    #     try:
+    #         return await self.enrich_media_file(file_id, language, storage_id=storage_id)
+    #     except Exception as e:
+    #         logger.error(f"丰富文件 {file_id} 异常: {e}")
+    #         return False
+    
+    # async def enrich_multiple_files(self, file_ids: List[int], 
+    #                                language: str = "zh-CN", 
+    #                                storage_id: Optional[int] = None) -> List[MetadataResult]:
+    #     """
+    #     丰富多个媒体文件的元数据（修改后返回MetadataResult列表）
+    #     """
+    #     results: List[MetadataResult] = []
+        
+    #     # 并发处理多个文件
+    #     tasks = []
+    #     for file_id in file_ids:
+    #         task = asyncio.create_task(
+    #             self._enrich_single_file_safe(file_id, language, storage_id)
+    #         )
+    #         tasks.append(task)
+        
+    #     # 等待所有任务完成并收集结果
+    #     completed_results = await asyncio.gather(*tasks)
+    #     results.extend(completed_results)
+        
+    #     return results
+
+    # 在 enrich_multiple_files 中增加并发限制
+    async def enrich_multiple_files(self, file_ids: List[int], 
+                                language: str = "zh-CN", 
+                                storage_id: Optional[int] = None,
+                                max_concurrency: int = 20) -> List[MetadataResult]:
+        results: List[MetadataResult] = []
+        semaphore = asyncio.Semaphore(max_concurrency)  # 限制最大并发数
+        
+        async def _bound_enrich(file_id: int):
+            async with semaphore:
+                return await self._enrich_single_file_safe(file_id, language, storage_id)
+        
+        tasks = [asyncio.create_task(_bound_enrich(fid)) for fid in file_ids]
+        completed_results = await asyncio.gather(*tasks)
+        results.extend(completed_results)
         return results
     
-    async def _enrich_single_file_safe(self, file_id: int, language: str, storage_id: Optional[int]) -> bool:
+    async def _enrich_single_file_safe(self, file_id: int, language: str, storage_id: Optional[int]) -> MetadataResult:
         """
-        安全地丰富单个文件
-        
-        包装 enrich_media_file，提供异常捕获保证批处理稳定
-        
-        Args:
-            file_id: 文件ID
-            language: 语言
-            storage_id: 存储配置ID（可选）
-            
-        Returns:
-            bool: 是否成功完成丰富" 
+        安全地丰富单个文件（修改后返回MetadataResult）
         """
         try:
-            return await self.enrich_media_file(file_id, language, storage_id=storage_id)
+            return await self.enrich_media_file(file_id, storage_id=storage_id)
         except Exception as e:
             logger.error(f"丰富文件 {file_id} 异常: {e}")
-            return False
-    
+            return {"file_id": file_id, "user_id": 0, "contract_type": "", "contract_payload": {}}
+
+
 
 
 # 全局元数据丰富器实例

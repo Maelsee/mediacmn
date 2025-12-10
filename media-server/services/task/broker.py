@@ -3,6 +3,7 @@ from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import TimeLimit, Retries,AsyncIO
 
 from core.config import get_settings
+
 # 全局配置
 DEAD_LETTER_QUEUE = "dead_letter"  # 死信队列名称（统一存储所有重试失败的任务）
 DEFAULT_MAX_RETRIES = 3  # 全局默认重试次数
@@ -44,3 +45,4 @@ def get_broker() -> RedisBroker:
 
 # 初始化时自动创建并注册 Broker（避免导入时未初始化）
 broker = get_broker()
+
