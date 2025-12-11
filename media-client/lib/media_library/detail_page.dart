@@ -45,7 +45,14 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
           // 初始化选择索引：
           // - 剧集：默认选中第 0 季与第 0 集
           // - 电影：默认选中第 0 版本
-          if (d.mediaType == 'tv') {
+          if (d.mediaType == 'movie') {
+            if (_selectedVersionIndex == null &&
+                d.versions != null &&
+                d.versions!.isNotEmpty) {
+              _selectedVersionIndex = 0;
+            }
+          }
+          if (d.mediaType == 'tv' || d.mediaType == 'animation') {
             if (_selectedSeasonIndex == null &&
                 d.seasons != null &&
                 d.seasons!.isNotEmpty) {
@@ -58,13 +65,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
               _selectedEpisodeIndex = 0;
             }
           }
-          if (d.mediaType == 'movie') {
-            if (_selectedVersionIndex == null &&
-                d.versions != null &&
-                d.versions!.isNotEmpty) {
-              _selectedVersionIndex = 0;
-            }
-          }
+          
 
           return Stack(
             children: [

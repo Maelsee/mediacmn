@@ -12,7 +12,15 @@ class GenresPage extends ConsumerWidget {
     final m = ref.watch(mediaHomeProvider);
     final cats = m.data?.genres ?? const <HomeCardGenre>[];
     return Scaffold(
-      appBar: AppBar(title: const Text('类型')),
+      appBar: AppBar(
+        title: const Text('类型'),
+        // backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: GridView.builder(
         padding: const EdgeInsets.all(12),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

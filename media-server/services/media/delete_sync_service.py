@@ -135,16 +135,16 @@ class DeleteSyncService:
                 session.exec(MovieExt.__table__.delete().where(MovieExt.core_id == core_id))
                 session.delete(core)
                 removed += 1
-            elif kind == "tv_episode":
+            elif kind == "episode":
                 session.exec(EpisodeExt.__table__.delete().where(EpisodeExt.core_id == core_id))
                 session.delete(core)
                 removed += 1
                 # 级联季与系列在外部调用中判断
-            elif kind == "tv_season":
+            elif kind == "season":
                 session.exec(SeasonExt.__table__.delete().where(SeasonExt.core_id == core_id))
                 session.delete(core)
                 removed += 1
-            elif kind == "tv_series":
+            elif kind == "series":
                 session.exec(SeriesExt.__table__.delete().where(SeriesExt.core_id == core_id))
                 session.delete(core)
                 removed += 1
@@ -211,18 +211,18 @@ class DeleteSyncService:
             ext = {}
             if kind == "movie":
                 ext["movie_ext"] = session.exec(select(MovieExt.id).where(MovieExt.core_id == core_id)).all()
-            elif kind == "tv_series":
+            elif kind == "series":
                 ext["series_ext"] = session.exec(select(SeriesExt.id).where(SeriesExt.core_id == core_id)).all()
                 # 系列下的季与集
                 seasons = session.exec(select(SeasonExt.core_id).where(SeasonExt.series_core_id == core_id)).all()
                 episodes = session.exec(select(EpisodeExt.core_id).where(EpisodeExt.series_core_id == core_id)).all()
                 ext["season_core_ids"] = seasons
                 ext["episode_core_ids"] = episodes
-            elif kind == "tv_season":
+            elif kind == "season":
                 ext["season_ext"] = session.exec(select(SeasonExt.id).where(SeasonExt.core_id == core_id)).all()
                 episodes = session.exec(select(EpisodeExt.core_id).where(EpisodeExt.season_core_id == core_id)).all()
                 ext["episode_core_ids"] = episodes
-            elif kind == "tv_episode":
+            elif kind == "episode":
                 ext["episode_ext"] = session.exec(select(EpisodeExt.id).where(EpisodeExt.core_id == core_id)).all()
             return {"core_id": core_id, "kind": kind, "refs": refs, "ext": ext}
 

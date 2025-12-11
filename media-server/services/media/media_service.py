@@ -95,14 +95,35 @@ class MediaService:
         db: Session,
         user_id: int,
     ) -> Dict[str, Any]:
-        # 流派card 10条
+        # # 流派card 10条
+        # genre_rows = db.exec(
+        #     select(Genre)
+        #     .join(MediaCoreGenre, MediaCoreGenre.genre_id == Genre.id)
+        #     .where(Genre.user_id == user_id)
+        #     .order_by(Genre.name)
+        #     .limit(10)
+        # ).all()
+        # genre_cards: List[Dict[str, Any]] = []
+        # for g in genre_rows:
+        #     genre_cards.append({
+        #         "id": g.id,
+        #         "name": g.name,
+        #     })
+        
+        # 流派card 10条（修正版：通过中间表关联用户媒体）
         genre_rows = db.exec(
-            select(Genre)
-            # .join(MediaCoreGenre, MediaCoreGenre.genre_id == Genre.id)
-            .where(Genre.user_id == user_id)
-            .order_by(Genre.name)
-            .limit(10)
+            select(Genre)  # 最终要获取的是Genre表数据
+            .distinct()  # 去重：避免同一流派被多个媒体关联而重复出现
+            # 第一步：关联中间表MediaCoreGenre（Genre ↔ MediaCoreGenre）
+            .join(MediaCoreGenre, MediaCoreGenre.genre_id == Genre.id, isouter=False)  # 内连接：只保留有媒体关联的流派
+            # 第二步：关联用户媒体表MediaCore（MediaCoreGenre ↔ MediaCore）
+            # .join(MediaCore, MediaCore.id == MediaCoreGenre.media_core_id, isouter=False)  # 内连接：只保留用户有所有权的媒体
+            # 关键：通过MediaCore.user_id过滤当前用户（Genre无user_id，转由关联的MediaCore过滤）
+            .where(MediaCoreGenre.user_id == user_id)
+            .order_by(Genre.name)  # 按流派名称排序
+            .limit(10)  # 限制10条结果
         ).all()
+
         genre_cards: List[Dict[str, Any]] = []
         for g in genre_rows:
             genre_cards.append({
@@ -136,15 +157,15 @@ class MediaService:
                 "media_type": "movie",
             })
         # 剧集card 10条
-        series_rows = db.exec(
+        tv_rows = db.exec(
             select(MediaCore, SeriesExt)
             .join(SeriesExt, SeriesExt.core_id == MediaCore.id, isouter=True)
-            .where(and_(MediaCore.user_id == user_id, MediaCore.kind == "tv_series"))
+            .where(and_(MediaCore.user_id == user_id, MediaCore.kind == "series",MediaCore.subtype == 'Scripted'))
             .order_by(MediaCore.updated_at.desc())
             .limit(10)
         ).all()
-        series_cards: List[Dict[str, Any]] = []
-        for core, tv_ext in series_rows:
+        tv_cards: List[Dict[str, Any]] = []
+        for core, tv_ext in tv_rows:
             released = None
             rd = getattr(core, "display_date", None)
             if rd:
@@ -153,7 +174,7 @@ class MediaService:
                 except Exception:
                     released = rd
             poster_url2 = getattr(core, "display_poster_path", None) or (getattr(tv_ext, "poster_path", None) if tv_ext else None)
-            series_cards.append({
+            tv_cards.append({
                 "id": core.id,
                 "name": core.title,
                 "cover_url": poster_url2,
@@ -161,9 +182,35 @@ class MediaService:
                 "release_date": released,
                 "media_type": "tv",
             })
+        # 动画card 10条
+        animation_rows = db.exec(
+            select(MediaCore, SeriesExt)
+            .join(SeriesExt, SeriesExt.core_id == MediaCore.id, isouter=True)
+            .where(and_(MediaCore.user_id == user_id, MediaCore.kind == "series", MediaCore.subtype == 'Animation'))
+            .order_by(MediaCore.updated_at.desc()) 
+            .limit(10)
+        ).all()
+        animation_cards: List[Dict[str, Any]] = []
+        for core, tv_ext in animation_rows:
+            released = None
+            rd = getattr(core, "display_date", None)
+            if rd:
+                try:
+                    released = rd.isoformat()
+                except Exception:
+                    released = rd
+            poster_url2 = getattr(core, "display_poster_path", None) or (getattr(tv_ext, "poster_path", None) if tv_ext else None)
+            animation_cards.append({
+                "id": core.id,
+                "name": core.title,
+                "cover_url": poster_url2,
+                "rating": getattr(core, "display_rating", None) or (getattr(tv_ext, "rating", None) if tv_ext else None),
+                "release_date": released,
+                "media_type": "animation",
+            })
 
-        return {"genres": genre_cards, "movie": movie_cards, "tv": series_cards}
-
+        return {"genres": genre_cards, "movie": movie_cards, "tv": tv_cards, "animation": animation_cards}
+    
     def filter_media_cards(
         self,
         db: Session,
@@ -180,12 +227,14 @@ class MediaService:
         sort: Optional[str] = None,
     ) -> Dict[str, Any]:
         # 仅筛选电影与系列，排除季与集
-        stmt = select(MediaCore).where(and_(MediaCore.user_id == user_id, MediaCore.kind.in_(["movie", "tv_series"])))
+        stmt = select(MediaCore).where(and_(MediaCore.user_id == user_id, MediaCore.kind.in_(["movie", "series"])))
         if type_filter:
             if type_filter == "movie":
                 stmt = stmt.where(MediaCore.kind == "movie")
-            elif type_filter in ("tv", "tv_series"):
-                stmt = stmt.where(MediaCore.kind == "tv_series")
+            elif type_filter in ("tv", "series"):
+                stmt = stmt.where(MediaCore.kind == "series", MediaCore.subtype == 'Scripted')
+            elif type_filter == "animation":
+                stmt = stmt.where(MediaCore.kind == "series", MediaCore.subtype == 'Animation')
         if q:
             like_q = f"%{q}%"
             stmt = stmt.where(or_(MediaCore.title.ilike(like_q), MediaCore.original_title.ilike(like_q)))
@@ -254,7 +303,7 @@ class MediaService:
                             released = rd.isoformat()
                         except Exception:
                             released = rd
-            elif core.kind == "tv_series":
+            elif core.kind == "series":
                 tv_ext = tv_exts.get(core.id)
                 if tv_ext:
                     rating = getattr(core, "display_rating", None) or getattr(tv_ext, "rating", None)
@@ -275,7 +324,7 @@ class MediaService:
             })
         type_counts = {
             "movie": db.exec(select(func.count()).where(MediaCore.user_id == user_id, MediaCore.kind == "movie")).one(),
-            "tv": db.exec(select(func.count()).where(MediaCore.user_id == user_id, MediaCore.kind == "tv_series")).one(),
+            "tv": db.exec(select(func.count()).where(MediaCore.user_id == user_id, MediaCore.kind == "series")).one(),
         }
         return {"page": page, "page_size": page_size, "total": total, "items": items, "type_counts": type_counts}
     
@@ -430,11 +479,9 @@ class MediaService:
             select(Genre.name)
             .join(MediaCoreGenre, MediaCoreGenre.genre_id == Genre.id)
             .where(
-                and_(
-                    MediaCoreGenre.core_id == core_id,
-                    Genre.user_id == user_id
-                )
+                    MediaCoreGenre.core_id == core_id,         
             )
+            .distinct()
         ).all()
         return list(genres)
 
@@ -442,27 +489,27 @@ class MediaService:
         """获取演员列表。"""
         # Optimized to select all needed fields in one query
         people = db.exec(
-            select(Person.name, Person.tmdb_id, Credit.character, Person.profile_url)
+            select(Person.name, Credit.character, Person.profile_url)
             .join(Credit, Credit.person_id == Person.id)
             .where(and_(
-                Person.user_id == user_id,
+                Credit.user_id == user_id,
                 Credit.core_id == core_id,
                 Credit.role == "cast"
             ))
         ).all()
-        return [{"name": name, "character": character, "image_url": purl} for name, tmdb_id, character, purl in people]
+        return [{"name": name, "character": character, "image_url": purl} for name, character, purl in people]
     
     def _get_crew(self, db: Session, user_id: int, core_id: int, job: str) -> List[Dict[str, Any]]:
         people = db.exec(
-            select(Person.name, Person.tmdb_id, Credit.character, Person.profile_url)
+            select(Person.name, Credit.character, Person.profile_url)
             .join(Credit, Credit.person_id == Person.id)
             .where(and_(
-                Person.user_id == user_id,
+                Credit.user_id == user_id,
                 Credit.core_id == core_id,
                 Credit.job == job
             ))
         ).all()
-        return [{"name": name, "character": character, "image_url": purl} for name, tmdb_id, character, purl in people]
+        return [{"name": name, "character": character, "image_url": purl} for name, character, purl in people]
 
     def _get_movie_versions(self, db: Session, user_id: int, core_id: int) -> List[Dict[str, Any]]:
         """获取电影版本信息。"""

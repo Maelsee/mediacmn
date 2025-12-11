@@ -27,6 +27,12 @@ class SectionFactory {
           kind: 'tv',
           items: state.data?.tv ?? [],
         );
+      case '动漫':
+        return MediaListSection(
+          title: '动漫',
+          kind: 'animation',
+          items: state.data?.animation ?? [],
+        );
       default:
         return const SizedBox.shrink();
     }

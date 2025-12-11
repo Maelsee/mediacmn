@@ -39,7 +39,7 @@ class MediaListSection extends StatelessWidget {
               },
         ),
         SizedBox(
-          height: 220,
+          height: 215,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),

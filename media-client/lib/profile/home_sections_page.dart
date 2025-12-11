@@ -26,9 +26,18 @@ class _HomeSectionsPageState extends ConsumerState<HomeSectionsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('自定义媒体库首页'), actions: [
-        TextButton(onPressed: _onSave, child: const Text('保存')),
-      ]),
+      appBar: AppBar(
+        title: const Text('自定义媒体库首页'), 
+        // backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          TextButton(onPressed: _onSave, child: const Text('保存')),
+        ],
+      ),
       body: ReorderableListView.builder(
         itemCount: _order.length,
         onReorder: (oldIndex, newIndex) {

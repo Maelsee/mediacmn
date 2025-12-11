@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../recent_provider.dart';
 import '../widgets/recent_media_card.dart';
+import 'base_section_header.dart';
 
 class RecentWatchSection extends ConsumerStatefulWidget {
   const RecentWatchSection({super.key});
@@ -12,7 +13,11 @@ class RecentWatchSection extends ConsumerStatefulWidget {
 }
 
 class _RecentWatchSectionState extends ConsumerState<RecentWatchSection> {
+
   /// 初始化时触发最近观看列表加载（限制为5条，作为首页区块展示）
+  final String title = '最近观看';
+  // final String kind = 'recent';
+
   @override
   void initState() {
     super.initState();
@@ -35,25 +40,31 @@ class _RecentWatchSectionState extends ConsumerState<RecentWatchSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '最近观看',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.arrow_forward),
-                onPressed: () {
-                  GoRouter.of(context).push('/media/recent');
-                },
-              ),
-            ],
-          ),
+        // Padding(
+        //   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        //   child: Row(
+        //     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        //     children: [
+        //       Text(
+        //         '最近观看',
+        //         style: Theme.of(context).textTheme.titleLarge?.copyWith(
+        //               fontWeight: FontWeight.bold,
+        //             ),
+        //       ),
+        //       IconButton(
+        //         icon: const Icon(Icons.arrow_forward),
+        //         onPressed: () {
+        //           GoRouter.of(context).push('/media/recent');
+        //         },
+        //       ),
+        //     ],
+        //   ),
+        // ),
+        BaseSectionHeader(
+          title: title,
+          onMoreTap: () {
+            GoRouter.of(context).push('/media/recent');
+          },
         ),
         SizedBox(
           height: 165,

@@ -16,7 +16,7 @@ class MediaCard extends StatelessWidget {
     this.onTap,
     this.showRating = true,
     this.width = 120,
-    this.height = 220,
+    this.height = 205,
     this.margin = const EdgeInsets.symmetric(horizontal: 0),
   });
 

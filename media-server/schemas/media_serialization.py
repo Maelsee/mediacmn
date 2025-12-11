@@ -23,6 +23,7 @@ class HomeCardsResponse(BaseModel):
     genres: List[HomeCardGenre]
     movie: List[HomeCardItem]
     tv: List[HomeCardItem]
+    animation: List[HomeCardItem]
 
 
 # class TypeCounts(BaseModel):

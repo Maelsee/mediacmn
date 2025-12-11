@@ -83,7 +83,15 @@ class _MediaKindPageState extends ConsumerState<MediaKindPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title ?? '全部')),
+      appBar: AppBar(
+        title: Text(widget.title ?? '全部'),
+        // backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: Column(children: [
         if (_error != null)
           Padding(

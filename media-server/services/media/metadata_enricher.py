@@ -77,8 +77,8 @@ class MetadataEnricher:
             filtered_results.append(result)
 
         # 若过滤后无结果，保留原搜索结果（避免过度过滤导致无匹配）
-        if not filtered_results:
-            logger.warning(f"过滤后无候选结果，保留原搜索结果（共{len(search_results)}条）")
+        if not filtered_results or len(filtered_results) <=2 :
+            logger.warning(f"过滤后候选结果过少，保留原搜索结果（共{len(search_results)}条）")
             filtered_results = search_results
 
         # -------------------------- 步骤2：给候选结果打分 --------------------------

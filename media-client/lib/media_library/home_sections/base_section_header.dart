@@ -25,7 +25,8 @@ class BaseSectionHeader extends StatelessWidget {
           ),
           if (onMoreTap != null)
             IconButton(
-              icon: const Icon(Icons.arrow_forward),
+              // icon: const Icon(Icons.arrow_forward),
+              icon: const Icon(Icons.more_horiz), // 横向三点图标
               onPressed: onMoreTap,
             ),
         ],
