@@ -417,7 +417,7 @@ class ScraperManager:
                 all_results.extend(results)
         
         # 按评分和年份排序
-        all_results.sort(key=lambda x: (x.rating or 0, x.year or 0), reverse=True)
+        # all_results.sort(key=lambda x: (x.rating or 0, x.year or 0), reverse=True)
         
         return all_results
     

@@ -8,7 +8,7 @@ from typing import List, Dict, Set
 
 from sqlmodel import Session, select
 
-from models.media_models import FileAsset, MediaCore, MovieExt, TVSeriesExt, SeasonExt, EpisodeExt, Artwork, ExternalID, MediaCoreGenre, Credit, MediaVersion, PlaybackHistory
+from models.media_models import FileAsset, MediaCore, MovieExt, SeriesExt, SeasonExt, EpisodeExt, Artwork, ExternalID, MediaCoreGenre, Credit, MediaVersion, PlaybackHistory
 from core.db import get_session
 
 logger = logging.getLogger(__name__)
@@ -145,7 +145,7 @@ class DeleteSyncService:
                 session.delete(core)
                 removed += 1
             elif kind == "tv_series":
-                session.exec(TVSeriesExt.__table__.delete().where(TVSeriesExt.core_id == core_id))
+                session.exec(SeriesExt.__table__.delete().where(SeriesExt.core_id == core_id))
                 session.delete(core)
                 removed += 1
             session.commit()
@@ -212,7 +212,7 @@ class DeleteSyncService:
             if kind == "movie":
                 ext["movie_ext"] = session.exec(select(MovieExt.id).where(MovieExt.core_id == core_id)).all()
             elif kind == "tv_series":
-                ext["series_ext"] = session.exec(select(TVSeriesExt.id).where(TVSeriesExt.core_id == core_id)).all()
+                ext["series_ext"] = session.exec(select(SeriesExt.id).where(SeriesExt.core_id == core_id)).all()
                 # 系列下的季与集
                 seasons = session.exec(select(SeasonExt.core_id).where(SeasonExt.series_core_id == core_id)).all()
                 episodes = session.exec(select(EpisodeExt.core_id).where(EpisodeExt.series_core_id == core_id)).all()

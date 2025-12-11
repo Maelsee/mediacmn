@@ -12,7 +12,7 @@
 - 通用映射：`MediaCore` 基础字段、`ExternalID`、`Artwork`、`Credit`、`Genre`；
 - 类型映射：
   - 电影：`MovieExt` 字段（tagline/collection/rating/release_date/runtime...）。
-  - 剧集系列：`TVSeriesExt` 字段（status/season_count/episode_count/episode_run_time...）。
+  - 剧集系列：`SeriesExt` 字段（status/season_count/episode_count/episode_run_time...）。
   - 季：`SeasonExt`（season_number/episode_count/...）。
   - 集：`EpisodeExt`（episode_number/season_number/runtime/episode_type/absolute_episode_number...）。
 - 版本绑定：保留单独方法 `bind_version(session, media_file, parse_out)`；与 `apply` 解耦。

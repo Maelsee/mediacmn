@@ -11,6 +11,7 @@
 - 安装依赖：`pip install -r requirements.txt`
 - cd media-server/ && source  venv/bin/activate && uvicorn main:app --reload
 - cd media-server/ && source  venv/bin/activate && python start_task_executor.py
+- cd media-server/ && source  venv/bin/activate && dramatiq services.task.consumers
 {
   "name": "test",
   "storage_type": "webdav",
@@ -1483,10 +1484,10 @@ curl -H "Authorization: Bearer <TOKEN>" \
 
 #### 图片归属与命名规范（实现）
 - Artwork 仅用于“电影”和“单集”的本地侧车图片管理；不管理系列与季图片。
-- 系列与季的图片信息存储在扩展表：`TVSeriesExt.poster_path`、`SeasonExt.poster_path`（可为远端URL或素材逻辑路径）。
+- 系列与季的图片信息存储在扩展表：`SeriesExt.poster_path`、`SeasonExt.poster_path`（可为远端URL或素材逻辑路径）。
 - 电影的图片信息同样在扩展表记录主海报：`MovieExt.poster_path`（来自刮削结果的URL或素材逻辑路径），展示层优先使用该字段。
 - 单集侧车文件采用唯一命名，避免覆盖：`<basename>.poster.jpg`、`<basename>.fanart.jpg`、`<basename>.nfo`。
-- 服务层读取优先级：系列卡片优先 `TVSeriesExt.poster_path`；季卡片优先 `SeasonExt.poster_path`，其次回退到对应核心的 `Artwork`。
+- 服务层读取优先级：系列卡片优先 `SeriesExt.poster_path`；季卡片优先 `SeasonExt.poster_path`，其次回退到对应核心的 `Artwork`。
 
 #### 外部侧车修复流程（脚本）
 位置：`services/media/sidecar_fixup.py`
@@ -2756,7 +2757,7 @@ toolName: CompactFake
   - 若有季/集：预热季缓存（插件声明支持）`metadata_enricher.py:155-160`
   - 合并系列概览与 artworks（若集详情缺失）`metadata_enricher.py:162-176`
 - 持久化分层映射：`metadata_persistence_service.py:98-170, 171-244, 246-279`
-  - `TVSeriesExt`：`overview/season_count/episode_count/rating/aired_date/poster_path` `metadata_persistence_service.py:113-140`
+  - `SeriesExt`：`overview/season_count/episode_count/rating/aired_date/poster_path` `metadata_persistence_service.py:113-140`
   - 系列 `raw_data`：优先写入 `metadata.series`，否则回退 `metadata.raw_data` `metadata_persistence_service.py:141-146`
   - `SeasonExt`：按目标季号填充 `overview/aired_date/episode_count/runtime/rating/poster_path/raw_data` `metadata_persistence_service.py:199-224`
   - `EpisodeExt`：从 `episodes[0]` 写入 `title/aired_date/runtime/rating/vote_count/overview/still_path` `metadata_persistence_service.py:257-279`
@@ -2786,7 +2787,7 @@ toolName: CompactFake
   - 在插件管理器层增加季详情批量预热接口，实现 `get_season_details_many` 编排（基类已预留）`base.py:241-243`
   - 为 `_season_cache` 增加 TTL 与 LRU 驱动、按语言与系列分域，提供显式 `shutdown()` 清理挂钩（现已保证 session 关闭）`tmdb.py:73-80`
 - 契约与持久化一致性
-  - 明确分层数据落库口径：系列→`TVSeriesExt.raw_data`，季→`SeasonExt.raw_data`，集→保留结构字段；如需审计可增设 `EpisodeExt.raw_data` 字段（需迁移与索引评估）
+  - 明确分层数据落库口径：系列→`SeriesExt.raw_data`，季→`SeasonExt.raw_data`，集→保留结构字段；如需审计可增设 `EpisodeExt.raw_data` 字段（需迁移与索引评估）
   - 在 `apply_metadata` 中统一原始数据写入策略：仅一次写入；后续审计字段采用增量 merge（现已实现）`metadata_persistence_service.py:526-549`
 - 观测与质量
   - 在丰富器记录“季缓存命中率”“详情端点调用次数”“失败率”等指标，作为后续降级与重试条件

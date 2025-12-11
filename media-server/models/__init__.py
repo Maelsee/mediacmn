@@ -21,7 +21,7 @@ from .media_models import (  # noqa: F401
     # 电影扩展模型
     MovieExt,
     # 剧集扩展模型
-    TVSeriesExt,
+    SeriesExt,
     SeasonExt,
     EpisodeExt,
     # 文件资源模型
@@ -69,7 +69,7 @@ StorageStatus = StorageStatus
 MediaCore = MediaCore
 MediaVersion = MediaVersion
 MovieExt = MovieExt
-TVSeriesExt = TVSeriesExt
+SeriesExt = SeriesExt
 SeasonExt = SeasonExt
 EpisodeExt = EpisodeExt
 FileAsset = FileAsset

@@ -73,13 +73,13 @@
 
 - 现状评估：
   - `MediaCore.kind` 已覆盖 `movie/tv_series/tv_season/tv_episode`（`models/media_models.py:46`）。
-  - `TVSeriesExt/SeasonExt/EpisodeExt` 字段基本满足通用剧集需求；`EpisodeExt.absolute_episode_number` 预留（注释）`models/media_models.py:205`。
+  - `SeriesExt/SeasonExt/EpisodeExt` 字段基本满足通用剧集需求；`EpisodeExt.absolute_episode_number` 预留（注释）`models/media_models.py:205`。
   - 电影合集已建模为 `Collection`（`models/media_models.py:145`）。
 - 扩展建议（保持兼容，最小化迁移）：
   - 在 `MediaCore` 增加 `sub_kind`（枚举：`variety/anime/documentary/music/short/special`），不改变既有 `kind`；用于细分展示与持久化策略选择。
   - 在 `EpisodeExt` 启用并持久化 `absolute_episode_number` 字段（番剧与国产剧常用），并完善 `episode_type`：`standard/finale/special` 已存在 `models/media_models.py:218`。
-  - 在 `TVSeriesExt` 增加可选 `category_hint`（如 `variety/anime/documentary`），便于查询与聚合；如不改表，可先使用 `MediaCore.group_key/canonical_source` 进行规范化归类（`models/media_models.py:58-62`）。
-  - 不新增 `VarietyShowExt/AnimeExt` 表，优先用现有 `TVSeriesExt/SeasonExt/EpisodeExt` 承载，减少碎片化；若未来出现明显差异化字段（如“期别主题/嘉宾列表”），再考虑单独扩展表，并通过外键与 `MediaCore` 关联。
+  - 在 `SeriesExt` 增加可选 `category_hint`（如 `variety/anime/documentary`），便于查询与聚合；如不改表，可先使用 `MediaCore.group_key/canonical_source` 进行规范化归类（`models/media_models.py:58-62`）。
+  - 不新增 `VarietyShowExt/AnimeExt` 表，优先用现有 `SeriesExt/SeasonExt/EpisodeExt` 承载，减少碎片化；若未来出现明显差异化字段（如“期别主题/嘉宾列表”），再考虑单独扩展表，并通过外键与 `MediaCore` 关联。
 - 规范化与索引：
   - 针对 `MediaCore.kind/sub_kind/year` 建立组合索引，提升查询；
   - 针对 `EpisodeExt(series_core_id, season_number, episode_number)` 已唯一约束 `models/media_models.py:189-191`，继续保留；对 `absolute_episode_number` 增加非唯一索引。

@@ -10,7 +10,7 @@
 模型分类：
 1. 媒体核心模型：MediaCore, MediaVersion
 2. 电影扩展模型：MovieExt  
-3. 剧集扩展模型：TVSeriesExt, SeasonExt, EpisodeExt
+3. 剧集扩展模型：SeriesExt, SeasonExt, EpisodeExt
 4. 文件资源模型：FileAsset
 5. 艺术作品模型：Artwork
 6. 外部ID模型：ExternalID
@@ -44,8 +44,10 @@ class MediaCore(SQLModel, table=True):
     
     # 基础信息
     kind: str = Field(index=True, description="媒体类型：movie|series|season|episode")
+    subtype: Optional[str] = Field(default=None, index=True, description="媒体子类型：scripted|reality|animation|documentary|news|talk|other等")
     title: str = Field(index=True, description="标题")
     original_title: Optional[str] = Field(default=None, description="原始标题")
+    origin_country: Optional[str] = Field(default=None, description="原产国家/地区，多个以逗号分隔")
     year: Optional[int] = Field(default=None, description="年份")
     plot: Optional[str] = Field(default=None, description="剧情简介")
 
@@ -98,6 +100,7 @@ class MovieExt(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True, description="电影扩展记录唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
     core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
+    tittle: Optional[str] = Field(default=None, description="电影标题")
     overview: Optional[str] = Field(default=None, description="电影简介")
     origin_country: Optional[str] = Field(default=None, description="原产国家/地区，多个以逗号分隔")
     tagline: Optional[str] = Field(default=None, description="标语/宣传语")
@@ -110,17 +113,21 @@ class MovieExt(SQLModel, table=True):
     runtime_minutes: Optional[int] = Field(default=None, description="片长（分钟）")
     raw_data: Optional[str] = Field(default=None, description="原始数据JSON")
     nfo_path: Optional[str] = Field(default=None, description="本地NFO文件路径")
-
+    status: Optional[str] = Field(default=None, description="电影状态")
 
 # ==================== 剧集扩展模型 ====================
-class TVSeriesExt(SQLModel, table=True):
+class SeriesExt(SQLModel, table=True):
     """剧集系列扩展模型"""
-    __tablename__ = "tv_series_ext"
+    __tablename__ = "series_ext"
 
     id: Optional[int] = Field(default=None, primary_key=True, description="剧集系列扩展记录唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
     core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
-
+    
+    tittle: Optional[str] = Field(default=None, description="系列名称")
+    # 系列类型
+    series_type: Optional[str] = Field(default=None, description="系列类型：Scripted|Reality|Animation|Documentary|News|Talk|Other等")
+    
     # 播出信息
     aired_date: Optional[datetime] = Field(default=None, description="播出日期")
     last_aired_date: Optional[datetime] = Field(default=None, description="最后播出日期")
@@ -160,7 +167,7 @@ class Collection(SQLModel, table=True):
 
 class SeasonExt(SQLModel, table=True):
     """季度扩展模型"""
-    __tablename__ = "tv_season_ext"
+    __tablename__ = "season_ext"
 
     id: Optional[int] = Field(default=None, primary_key=True, description="季度扩展记录唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
@@ -170,6 +177,7 @@ class SeasonExt(SQLModel, table=True):
     series_core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的系列核心记录ID")
     
     # 季度信息
+    tittle : Optional[str] = Field(default=None, description="季度名称")
     season_number: int = Field(description="季度序号")
     episode_count: Optional[int] = Field(default=None, description="本季集数")
     
@@ -184,13 +192,13 @@ class SeasonExt(SQLModel, table=True):
     overview: Optional[str] = Field(default=None, description="季度简介")
     raw_data: Optional[str] = Field(default=None, description="原始数据JSON")
     nfo_path: Optional[str] = Field(default=None, description="本地NFO文件路径")
-
+    # is_special: bool = Field(default=False, description="是否为特别篇（season0）")
 
 class EpisodeExt(SQLModel, table=True):
     """剧集扩展模型"""
-    __tablename__ = "tv_episode_ext"
+    __tablename__ = "episode_ext"
     __table_args__ = (
-        UniqueConstraint("user_id", "series_core_id", "season_number", "episode_number", name="uq_episode_per_user"),
+        UniqueConstraint("user_id", "series_core_id", "season_number", "episode_number", name="uq_episode_and_user"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True, description="剧集扩展记录唯一标识")
@@ -274,7 +282,7 @@ class Artwork(SQLModel, table=True):
     core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
 
     # 图片信息
-    type: str = Field(index=True, description="图片类型：poster|backdrop|still|banner|cover|folder")
+    type: str = Field(index=True, description="图片类型：poster|backdrop|fanart|banner|cover|folder|still")
     remote_url: Optional[str] = Field(default=None, description="远程图片URL地址")
     local_path: Optional[str] = Field(default=None, description="本地图片存储路径")
     width: Optional[int] = Field(default=None, description="图片宽度（像素）")
@@ -349,9 +357,9 @@ class Credit(SQLModel, table=True):
     person_id: int = Field(index=True, foreign_key="person.id", description="关联的人员记录ID")
 
     # 角色信息
-    role: str = Field(index=True, description="角色类型：cast（演员）|crew（剧组人员）")
+    role: str = Field(index=True, description="角色类型：cast（演员）|crew（剧组人员）|guest(客串)")
     character: Optional[str] = Field(default=None, description="饰演的角色名称（仅演员）")
-    job: Optional[str] = Field(default=None, description="具体职位：导演、编剧、摄影等（仅剧组人员）")
+    job: Optional[str] = Field(default=None, description="具体职位：导演、编剧、摄影、演员")
 
 # ==================== 播放历史模型 ====================
 class PlaybackHistory(SQLModel, table=True):

@@ -162,6 +162,9 @@ class TmdbScraper(ScraperPlugin):
                 original_language=(it.get("original_language") or None),
                 release_date=release_date,
                 vote_average=it.get("vote_average"),
+                vote_count=it.get("vote_count"),
+                origin_country =[c for c in (it.get("origin_country") or [])] if media_type != MediaType.MOVIE else [],
+                popularity=it.get("popularity"),
                 provider=self.name,
                 media_type=media_type.value,
                 poster_path=(f"{self._image_base}/w500{it['poster_path']}" if it.get("poster_path") else None),
@@ -318,6 +321,7 @@ class TmdbScraper(ScraperPlugin):
                     credits=credits,
                     external_ids=external_ids,
                     raw_data=data,
+                    type=data.get("type")
                 )
                 return sd
         except Exception:
@@ -403,6 +407,7 @@ class TmdbScraper(ScraperPlugin):
                     credits=[],
                     external_ids=[ScraperExternalId(provider="tmdb", external_id=str(data.get("id"))) ] if data.get("id") else [],
                     raw_data=data,
+                    episode_type=data.get("episode_type")
                 )
                 return ed
         except Exception:

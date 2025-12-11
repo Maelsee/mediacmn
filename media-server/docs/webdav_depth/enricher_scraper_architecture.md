@@ -71,7 +71,7 @@
 - 文件：`services/media/metadata_persistence_service.py`
 - 电影：顶层字段与 `collection` 映射到 `MovieExt/Collection`。
 - 电视剧分层：
-  - `series` → `TVSeriesExt`（概览/季数/总集数）。
+  - `series` → `SeriesExt`（概览/季数/总集数）。
   - `seasons[]` → 匹配季号写入 `SeasonExt`（概览/播出日期/集数/时长）。
   - `episodes[]` → 匹配集号写入 `EpisodeExt`（标题/概览/播出日期/时长/评分/投票数/still_path）。
 - 通用：`ExternalID/Artwork/Genre/MediaCoreGenre/Person/Credit` 幂等写入。

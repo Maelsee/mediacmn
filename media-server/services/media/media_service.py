@@ -7,7 +7,7 @@ from sqlmodel import Session, select, func, and_, or_
 
 from models.media_models import MediaCore
 from models.media_models import MovieExt, MediaVersion
-from models.media_models import TVSeriesExt, SeasonExt, EpisodeExt
+from models.media_models import SeriesExt, SeasonExt, EpisodeExt
 from models.media_models import FileAsset
 from models.media_models import Artwork
 from models.media_models import ExternalID
@@ -137,8 +137,8 @@ class MediaService:
             })
         # 剧集card 10条
         series_rows = db.exec(
-            select(MediaCore, TVSeriesExt)
-            .join(TVSeriesExt, TVSeriesExt.core_id == MediaCore.id, isouter=True)
+            select(MediaCore, SeriesExt)
+            .join(SeriesExt, SeriesExt.core_id == MediaCore.id, isouter=True)
             .where(and_(MediaCore.user_id == user_id, MediaCore.kind == "tv_series"))
             .order_by(MediaCore.updated_at.desc())
             .limit(10)
@@ -234,7 +234,7 @@ class MediaService:
             for m in m_exts:
                 movie_exts[m.core_id] = m
             
-            t_exts = db.exec(select(TVSeriesExt).where(TVSeriesExt.core_id.in_(core_ids))).all()
+            t_exts = db.exec(select(SeriesExt).where(SeriesExt.core_id.in_(core_ids))).all()
             for t in t_exts:
                 tv_exts[t.core_id] = t
 
@@ -315,7 +315,7 @@ class MediaService:
                 "writers": self._get_crew(db, user_id, core.id, "Writer"),
             }
         else:
-            tv_ext = db.exec(select(TVSeriesExt).where(TVSeriesExt.core_id == core.id)).first()
+            tv_ext = db.exec(select(SeriesExt).where(SeriesExt.core_id == core.id)).first()
             
             # Optimized Season/Episode fetching
             # 1. Fetch all seasons

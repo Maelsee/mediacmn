@@ -18,7 +18,7 @@
 现有系统采用分层媒体模型架构：
 - **MediaCore**: 核心媒体实体，包含基础信息
 - **MovieExt**: 电影扩展信息
-- **TVSeriesExt/SeasonExt/EpisodeExt**: 电视剧分层扩展信息
+- **SeriesExt/SeasonExt/EpisodeExt**: 电视剧分层扩展信息
 - **FileAsset**: 文件资源管理
 - **Artwork**: 艺术作品管理
 

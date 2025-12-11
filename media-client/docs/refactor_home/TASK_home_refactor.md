@@ -24,7 +24,7 @@ graph TD
   - `media-server/api/routes_playback.py` (recent_list)
 - **要求**:
   - 增加 `backdrop_path`, `still_path`, `season_index`, `episode_index`, `episode_title`, `series_name` 字段。
-  - 在 `recent_list` 逻辑中，查询关联的 `MediaCore` / `TVSeriesExt` / `TVEpisodeExt` 填充这些字段。
+  - 在 `recent_list` 逻辑中，查询关联的 `MediaCore` / `SeriesExt` / `TVEpisodeExt` 填充这些字段。
 
 ### Task 2: 前端模型更新
 - **目标**: 更新前端数据模型以匹配新的后端响应。

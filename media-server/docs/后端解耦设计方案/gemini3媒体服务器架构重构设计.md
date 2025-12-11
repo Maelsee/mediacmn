@@ -66,7 +66,7 @@ graph TD
 - `MetadataEnricher` determines type (via `FilenameParser` or user hint) -> gets Strategy -> `strategy.enrich(file)`.
 
 #### 2.2.4 Database Extensibility
-**Current**: `MediaCore` + `MovieExt` / `TVSeriesExt`.
+**Current**: `MediaCore` + `MovieExt` / `SeriesExt`.
 **Proposed**:
 - Keep `MediaCore` for common fields (title, year, plot).
 - Use `MediaExtension` table (Polymorphic) or `JSON` field in `MediaCore` for flexible attributes.
@@ -185,7 +185,7 @@ graph TD
 
 2.2.4 数据库可扩展性
 
-当前状态：MediaCore + MovieExt / TVSeriesExt 扩展表。
+当前状态：MediaCore + MovieExt / SeriesExt 扩展表。
 设计方案：
 • 保留 MediaCore 用于公共字段（标题、年份、剧情）。
 

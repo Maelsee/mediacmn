@@ -9,16 +9,199 @@ from enum import Enum
 from typing import Dict, List, Optional
 
 
+# class MediaType(Enum):
+#     """媒体类型"""
+#     MOVIE = "movie"
+#     TV_SERIES = "tv_series"
+#     TV_SEASON = "tv_season"
+#     TV_EPISODE = "tv_episode"
+
+
+# class ArtworkType(Enum):
+#     """艺术作品类型"""
+#     POSTER = "poster"
+#     BACKDROP = "backdrop"
+#     BANNER = "banner"
+#     THUMB = "thumb"
+#     LOGO = "logo"
+#     CLEARART = "clearart"
+#     DISC = "disc"
+
+
+# class CreditType(Enum):
+#     """演职员类型"""
+#     DIRECTOR = "director"
+#     WRITER = "writer"
+#     ACTOR = "actor"
+#     PRODUCER = "producer"
+#     COMPOSER = "composer"
+#     CINEMATOGRAPHER = "cinematographer"
+#     EDITOR = "editor"
+
+
+# @dataclass
+# class ScraperExternalId:
+#     provider: str
+#     external_id: str
+#     url: Optional[str] = None
+
+
+# @dataclass
+# class ScraperArtwork:
+#     type: ArtworkType
+#     url: str
+#     width: Optional[int] = None
+#     height: Optional[int] = None
+#     language: Optional[str] = None
+#     rating: Optional[float] = None
+#     vote_count: Optional[int] = None
+
+
+# @dataclass
+# class ScraperCredit:
+#     type: CreditType
+#     name: str
+#     role: Optional[str] = None
+#     order: Optional[int] = None
+#     image_url: Optional[str] = None
+#     provider_id: Optional[int] = None
+#     # provider: Optional[str] = None
+    
+   
+
+
+# @dataclass
+# class ScraperSearchResult:
+#     id: str
+#     title: str
+#     original_name: Optional[str] = None
+#     original_language: Optional[str] = None
+#     release_date: Optional[str] = None
+#     vote_average: Optional[float] = None
+#     provider: Optional[str] = None
+#     media_type: Optional[str] = None
+#     poster_path: Optional[str] = None
+#     backdrop_path: Optional[str] = None
+#     year: Optional[int] = None
+#     rating: Optional[float] = None
+#     provider_url: Optional[str] = None
+
+# @dataclass
+# class ScraperMovieDetail:
+#     movie_id: str
+#     title: str
+#     original_title: Optional[str] = None
+#     original_language: Optional[str] = None
+#     origin_country: List[str] = field(default_factory=list)
+#     overview: Optional[str] = None
+#     release_date: Optional[str] = None
+#     runtime: Optional[int] = None
+#     tagline: Optional[str] = None
+#     genres: List[str] = field(default_factory=list)
+#     poster_path: Optional[str] = None
+#     backdrop_path: Optional[str] = None
+#     vote_average: Optional[float] = None
+#     vote_count: Optional[int] = None
+#     imdb_id: Optional[str] = None
+#     status: Optional[str] = None
+#     belongs_to_collection: Optional[Dict] = None
+#     popularity: Optional[float] = None
+#     provider: Optional[str] = None
+#     provider_url: Optional[str] = None
+#     artworks: List[ScraperArtwork] = field(default_factory=list)
+#     credits: List[ScraperCredit] = field(default_factory=list)
+#     external_ids: List[ScraperExternalId] = field(default_factory=list)
+#     raw_data: Optional[Dict] = None
+
+# @dataclass
+# class ScraperSeriesDetail:
+#     series_id: str
+#     name: str
+#     original_name: Optional[str] = None
+#     origin_country: List[str] = field(default_factory=list)
+#     overview: Optional[str] = None
+#     tagline: Optional[str] = None
+#     status: Optional[str] = None
+#     first_air_date: Optional[str] = None
+#     last_air_date: Optional[str] = None
+#     episode_run_time: List[int] = field(default_factory=list)
+#     number_of_episodes: Optional[int] = None
+#     number_of_seasons: Optional[int] = None
+#     genres: List[str] = field(default_factory=list)
+#     poster_path: Optional[str] = None
+#     backdrop_path: Optional[str] = None
+#     vote_average: Optional[float] = None
+#     vote_count: Optional[int] = None
+#     popularity: Optional[float] = None
+#     provider: Optional[str] = None
+#     provider_url: Optional[str] = None
+#     artworks: List[ScraperArtwork] = field(default_factory=list)
+#     credits: List[ScraperCredit] = field(default_factory=list)
+#     external_ids: List[ScraperExternalId] = field(default_factory=list)
+#     raw_data: Optional[Dict] = None
+
+# @dataclass
+# class ScraperEpisodeItem:
+#     episode_id: Optional[str]
+#     episode_number: int
+#     season_number: int
+#     name: str
+#     overview: Optional[str] = None
+#     air_date: Optional[str] = None
+#     runtime: Optional[int] = None
+#     still_path: Optional[str] = None
+#     vote_average: Optional[float] = None
+#     vote_count: Optional[int] = None
+
+# @dataclass
+# class ScraperSeasonDetail:
+#     season_id: Optional[str]
+#     season_number: int
+#     name: Optional[str] = None
+#     poster_path: Optional[str] = None
+#     overview: Optional[str] = None
+#     episode_count: Optional[int] = None
+#     air_date: Optional[str] = None
+#     episodes: List[ScraperEpisodeItem] = field(default_factory=list)
+#     vote_average: Optional[float] = None
+#     provider: Optional[str] = None
+#     provider_url: Optional[str] = None
+#     artworks: List[ScraperArtwork] = field(default_factory=list)
+#     credits: List[ScraperCredit] = field(default_factory=list)
+#     external_ids: List[ScraperExternalId] = field(default_factory=list)
+#     raw_data: Optional[Dict] = None
+
+# @dataclass
+# class ScraperEpisodeDetail:
+#     episode_id: Optional[str]
+#     episode_number: int
+#     season_number: int
+#     name: str
+#     overview: Optional[str] = None
+#     air_date: Optional[str] = None
+#     runtime: Optional[int] = None
+#     still_path: Optional[str] = None
+#     vote_average: Optional[float] = None
+#     vote_count: Optional[int] = None
+#     provider: Optional[str] = None
+#     provider_url: Optional[str] = None
+#     artworks: List[ScraperArtwork] = field(default_factory=list)
+#     credits: List[ScraperCredit] = field(default_factory=list)
+#     external_ids: List[ScraperExternalId] = field(default_factory=list)
+#     raw_data: Optional[Dict] = None
+#     series: Optional["ScraperSeriesDetail"] = None
+#     season: Optional["ScraperSeasonDetail"] = None
+
+
+
+# 原有枚举类不变
 class MediaType(Enum):
-    """媒体类型"""
     MOVIE = "movie"
     TV_SERIES = "tv_series"
     TV_SEASON = "tv_season"
     TV_EPISODE = "tv_episode"
 
-
 class ArtworkType(Enum):
-    """艺术作品类型"""
     POSTER = "poster"
     BACKDROP = "backdrop"
     BANNER = "banner"
@@ -27,9 +210,7 @@ class ArtworkType(Enum):
     CLEARART = "clearart"
     DISC = "disc"
 
-
 class CreditType(Enum):
-    """演职员类型"""
     DIRECTOR = "director"
     WRITER = "writer"
     ACTOR = "actor"
@@ -39,12 +220,12 @@ class CreditType(Enum):
     EDITOR = "editor"
 
 
+# 1. 基础数据类（补充综艺独有字段）
 @dataclass
 class ScraperExternalId:
     provider: str
     external_id: str
     url: Optional[str] = None
-
 
 @dataclass
 class ScraperArtwork:
@@ -56,7 +237,6 @@ class ScraperArtwork:
     rating: Optional[float] = None
     vote_count: Optional[int] = None
 
-
 @dataclass
 class ScraperCredit:
     type: CreditType
@@ -65,11 +245,10 @@ class ScraperCredit:
     order: Optional[int] = None
     image_url: Optional[str] = None
     provider_id: Optional[int] = None
-    # provider: Optional[str] = None
-    
-   
+    is_flying: Optional[bool] = None  # 综艺独有：是否为飞行嘉宾
 
 
+# 2. 搜索详情（无独有字段，保持原有结构）
 @dataclass
 class ScraperSearchResult:
     id: str
@@ -78,14 +257,19 @@ class ScraperSearchResult:
     original_language: Optional[str] = None
     release_date: Optional[str] = None
     vote_average: Optional[float] = None
+    vote_count: Optional[int] = None
+    origin_country: List[str] = field(default_factory=list)
+    original_languages: List[str] = field(default_factory=list)
+    popularity: Optional[float] = None
     provider: Optional[str] = None
     media_type: Optional[str] = None
     poster_path: Optional[str] = None
     backdrop_path: Optional[str] = None
     year: Optional[int] = None
-    rating: Optional[float] = None
     provider_url: Optional[str] = None
 
+
+# 3. 电影详情（无关联，保持原有结构）
 @dataclass
 class ScraperMovieDetail:
     movie_id: str
@@ -113,6 +297,21 @@ class ScraperMovieDetail:
     external_ids: List[ScraperExternalId] = field(default_factory=list)
     raw_data: Optional[Dict] = None
 
+
+# 4. 系列详情（新增综艺独有字段）
+# @dataclass
+# class ScraperSeasonBrief:
+#     """系列详情中的季概要（含综艺特别篇标识）"""
+#     season_id: str
+#     season_number: int
+#     name: Optional[str] = None
+#     overview: Optional[str] = None
+#     poster_path: Optional[str] = None
+#     episode_count: Optional[int] = None
+#     air_date: Optional[str] = None
+#     vote_average: Optional[float] = None
+#     is_special: Optional[bool] = None  # 综艺独有：是否为特别篇（season0）
+
 @dataclass
 class ScraperSeriesDetail:
     series_id: str
@@ -139,9 +338,15 @@ class ScraperSeriesDetail:
     credits: List[ScraperCredit] = field(default_factory=list)
     external_ids: List[ScraperExternalId] = field(default_factory=list)
     raw_data: Optional[Dict] = None
+    # 新增独有字段
+    type: Optional[str] = None  # 综艺：Reality；剧集/动画：Scripted
+    # seasons: List[ScraperSeasonBrief] = field(default_factory=list)  # 季概要列表
 
+
+# 5. 季详情（新增综艺/动画独有字段）
 @dataclass
 class ScraperEpisodeItem:
+    """季详情中的集概要（含综艺期数部分、动画篇章名）"""
     episode_id: Optional[str]
     episode_number: int
     season_number: int
@@ -152,6 +357,9 @@ class ScraperEpisodeItem:
     still_path: Optional[str] = None
     vote_average: Optional[float] = None
     vote_count: Optional[int] = None
+    # 新增独有字段
+    # episode_part: Optional[str] = None  # 综艺：期数部分（上/下）
+    # chapter_name: Optional[str] = None  # 动画：篇章名（如风起天南）
 
 @dataclass
 class ScraperSeasonDetail:
@@ -170,7 +378,13 @@ class ScraperSeasonDetail:
     credits: List[ScraperCredit] = field(default_factory=list)
     external_ids: List[ScraperExternalId] = field(default_factory=list)
     raw_data: Optional[Dict] = None
+    # is_special: Optional[bool] = None  # 综艺独有：是否为特别篇（season0）
 
+    # 新增字段（TMDB原生，现有类缺失）
+    # _id: Optional[str] = None  # 季唯一标识（如ObjectId）
+
+
+# 6. 集详情（新增综艺/动画独有字段）
 @dataclass
 class ScraperEpisodeDetail:
     episode_id: Optional[str]
@@ -191,7 +405,10 @@ class ScraperEpisodeDetail:
     raw_data: Optional[Dict] = None
     series: Optional["ScraperSeriesDetail"] = None
     season: Optional["ScraperSeasonDetail"] = None
-
+    # 新增独有字段
+    episode_type: Optional[str] = None  # TMDB集类型（standard/finale）
+    # episode_part: Optional[str] = None  # 综艺：期数部分（上/下）
+    # chapter_name: Optional[str] = None  # 动画：篇章名（如风起天南）
 
 class ScraperPlugin(ABC):
     @property

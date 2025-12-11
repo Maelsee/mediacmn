@@ -120,7 +120,7 @@ class IMetadataStrategy(ABC):
 ## 5. 数据库与持久化扩展 (Polymorphism & Schema Design)
 
 ### 5.1 现状问题
-`MediaCore` 表虽然通用，但扩展表 (`MovieExt`, `TVSeriesExt`) 是硬编码的。持久化服务 `metadata_persistence_service.py` 也是硬编码的大量 `if/else`。
+`MediaCore` 表虽然通用，但扩展表 (`MovieExt`, `SeriesExt`) 是硬编码的。持久化服务 `metadata_persistence_service.py` 也是硬编码的大量 `if/else`。
 
 ### 5.2 解决方案：组合模式与数据映射器
 

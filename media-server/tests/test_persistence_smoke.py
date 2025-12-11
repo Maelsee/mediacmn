@@ -8,7 +8,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from models.user import User
-from models.media_models import FileAsset, MediaCore, TVSeriesExt, SeasonExt, EpisodeExt
+from models.media_models import FileAsset, MediaCore, SeriesExt, SeasonExt, EpisodeExt
 from services.media.metadata_persistence_service import persistence_service
 from services.scraper.base import ScraperSeriesDetail, ScraperSeasonDetail, ScraperEpisodeDetail, ScraperArtwork, ArtworkType, ScraperMovieDetail
 
@@ -104,7 +104,7 @@ def run():
 
         series_core = session.exec(select(MediaCore).filter(MediaCore.kind == "tv_series", MediaCore.user_id == user_id)).first()
         assert series_core is not None
-        tv_ext = session.exec(select(TVSeriesExt).filter(TVSeriesExt.core_id == series_core.id, TVSeriesExt.user_id == user_id)).first()
+        tv_ext = session.exec(select(SeriesExt).filter(SeriesExt.core_id == series_core.id, SeriesExt.user_id == user_id)).first()
         assert tv_ext is not None
         assert tv_ext.backdrop_path == sd.backdrop_path
         assert tv_ext.status == sd.status

@@ -191,13 +191,13 @@ class SidecarLocalizeProcessor:
                             core2 = s2.exec(select(MediaCore).filter(MediaCore.id == media_file.core_id)).first()
                             if core2:
                                 try:
-                                    from models.media_models import MovieExt, TVSeriesExt, SeasonExt
+                                    from models.media_models import MovieExt, SeriesExt, SeasonExt
                                     if core2.kind == 'movie':
                                         mx2 = s2.exec(select(MovieExt).where(MovieExt.user_id == media_file.user_id, MovieExt.core_id == core2.id)).first()
                                         if mx2:
                                             mx2.nfo_path = nfo_path
                                     elif core2.kind == 'tv_series':
-                                        tv2 = s2.exec(select(TVSeriesExt).where(TVSeriesExt.user_id == media_file.user_id, TVSeriesExt.core_id == core2.id)).first()
+                                        tv2 = s2.exec(select(SeriesExt).where(SeriesExt.user_id == media_file.user_id, SeriesExt.core_id == core2.id)).first()
                                         if tv2:
                                             tv2.nfo_path = nfo_path
                                     elif core2.kind == 'tv_season':
@@ -379,13 +379,13 @@ class SidecarLocalizeProcessor:
                         if core2:
                             nfo_exists2 = await storage_client.exists(nfo_path)
                             try:
-                                from models.media_models import MovieExt, TVSeriesExt, SeasonExt
+                                from models.media_models import MovieExt, SeriesExt, SeasonExt
                                 if core2.kind == 'movie':
                                     mx2 = s2.exec(select(MovieExt).where(MovieExt.user_id == media_file.user_id, MovieExt.core_id == core2.id)).first()
                                     if mx2:
                                         mx2.nfo_path = nfo_path if nfo_exists2 else mx2.nfo_path
                                 elif core2.kind == 'tv_series':
-                                    tv2 = s2.exec(select(TVSeriesExt).where(TVSeriesExt.user_id == media_file.user_id, TVSeriesExt.core_id == core2.id)).first()
+                                    tv2 = s2.exec(select(SeriesExt).where(SeriesExt.user_id == media_file.user_id, SeriesExt.core_id == core2.id)).first()
                                     if tv2:
                                         tv2.nfo_path = nfo_path if nfo_exists2 else tv2.nfo_path
                                 elif core2.kind == 'tv_season':

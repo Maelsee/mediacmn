@@ -8,7 +8,7 @@ from sqlmodel import and_
 
 from core.db import get_session
 from core.security import get_current_subject
-from models.media_models import PlaybackHistory, FileAsset, MediaCore, MovieExt, TVSeriesExt, EpisodeExt, SeasonExt, Artwork
+from models.media_models import PlaybackHistory, FileAsset, MediaCore, MovieExt, SeriesExt, EpisodeExt, SeasonExt, Artwork
 
 router = APIRouter()
 

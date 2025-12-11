@@ -21,7 +21,7 @@ from models.media_models import Genre, MediaCoreGenre  # noqa: F401
 from models.media_models import Person, Credit  # noqa: F401
 from models.media_models import MovieExt, MediaVersion  # noqa: F401
 from models.media_models import FileAsset  # noqa: F401
-from models.media_models import TVSeriesExt, SeasonExt, EpisodeExt  # noqa: F401
+from models.media_models import SeriesExt, SeasonExt, EpisodeExt  # noqa: F401
 from models.media_models import PlaybackHistory  # noqa: F401
 
 logger = logging.getLogger(__name__)
