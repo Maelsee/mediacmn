@@ -1,14 +1,18 @@
 import logging
 import json
+import os
+import hashlib
+import random
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-from sqlmodel import select
+from sqlmodel import Session, select
 
 from models.media_models import (
     MediaCore, ExternalID, FileAsset, Artwork, Genre, MediaCoreGenre,
-    Person, Credit, MovieExt, EpisodeExt, SeasonExt, SeriesExt, Collection
+    Person, Credit, MovieExt, EpisodeExt, SeasonExt, SeriesExt, Collection,MediaVersion
 )
+from models.storage_models import StorageConfig
 from services.scraper import (
     ScraperMovieDetail,
     ScraperSeriesDetail,
@@ -85,6 +89,256 @@ class MetadataPersistenceService:
         except Exception:
             return None
         return None
+
+    # ==================== 版本管理核心辅助方法 ====================
+    def _get_version_tags_and_fingerprint(self, media_file: FileAsset,core:MediaCore,scope) -> str:
+        """
+        生成版本标签与指纹（核心区分字段）
+        格式：scope_coreid_filenamehash_filesize,e.g movie_single_23_756f2a3b6256412_45678900
+        """
+        file_full_path = media_file.full_path or "unknown"
+        filesize = media_file.size or 0
+        filename_hash = hashlib.sha256(file_full_path.encode("utf-8")).hexdigest()[:16]
+        # tags 格式：scope_coreid_filename_filesize,e.g movie_single_23_七月与安生 (2016) - 1080p.mkv_45678900
+        tags = f"{scope}_{core.id}_{filename_hash}_{filesize}"
+
+        fingerprint_str = f"{file_full_path}_{filesize}_{core.id}_{media_file.user_id}"
+        fingerprint_str_hash = hashlib.sha256(fingerprint_str.encode("utf-8")).hexdigest()
+        return tags,fingerprint_str_hash
+
+    def _get_quality_level(self, media_file: FileAsset) -> Optional[str]:
+        """根据分辨率映射质量(未实现!!!)"""
+        example = ["4k", "2160p", "1080p", "720p", "480p"]
+        return example[random.randint(0, len(example) - 1)]
+
+    def _get_file_source(self, session, media_file: FileAsset) -> str:
+        """
+        提取文件来源（provider）
+        逻辑：从文件名中提取可能的来源（如"HDTV"、"Blu-ray"等）
+        """
+        storage_id = media_file.storage_id
+        storage_type = None
+        try:
+            sc = session.exec(select(StorageConfig).where(StorageConfig.id == storage_id)).first() if storage_id else None
+            storage_type = getattr(sc, 'storage_type', None)
+        except Exception as e:
+            logger.error(f"获取存储配置失败：{str(e)}",storage_type)
+            storage_type = None
+        
+        return storage_type or "unknown"
+
+    def _get_season_version_path(self, media_file: FileAsset) -> str:
+        """
+        提取单集文件的父文件夹路径作为季版本的唯一标识
+        逻辑：取文件完整路径的上一级文件夹路径（标准化为绝对路径，统一分隔符）
+        """
+        try:
+            # 标准化路径，处理不同系统的分隔符
+            full_path = os.path.abspath(media_file.full_path)
+            parent_dir = os.path.dirname(full_path)
+            # 统一使用/作为分隔符，避免跨系统差异
+            return parent_dir.replace("\\", "/")
+        except Exception as e:
+            logger.error(f"提取父文件夹路径失败：{str(e)}", exc_info=True)
+            # 降级使用文件名作为路径（避免失败）
+            return f"default_season_path_{media_file.filename}"
+
+    def _generate_season_version_tags(self, season_version_path: str, season_core: MediaCore) -> str:
+        """
+        生成季版本的标签（唯一标识季版本）
+        逻辑：父文件夹路径 + 季核心ID（确保同一季的不同文件夹版本唯一）
+        """
+        # 对路径进行MD5简化，避免标签过长
+        path_hash = hashlib.sha256(season_version_path.encode("utf-8")).hexdigest()[:16]
+        tags = f"season_group_{season_core.id}_{path_hash}"
+        return tags
+
+    def _upsert_season_version(self, session, media_file: FileAsset, season_core: MediaCore) -> int:
+        """
+        创建/更新季版本（season_group）
+        返回：季版本ID
+        """
+        # 1. 提取文件父文件夹路径作为季版本的核心标识
+        season_version_path = self._get_season_version_path(media_file)
+        # 2. 生成季版本的唯一标签
+        season_tags = self._generate_season_version_tags(season_version_path, season_core)
+        # 3. 生成季版本的指纹（基于路径+季核心ID）
+        fingerprint_str = f"{season_version_path}_{season_core.id}_{media_file.user_id}"
+        season_fingerprint = hashlib.sha256(fingerprint_str.encode("utf-8")).hexdigest()
+
+        # 4. 查询是否已有相同的季版本（用户+季核心+标签唯一）
+        existing_season_version = session.exec(select(MediaVersion).where(
+            MediaVersion.user_id == media_file.user_id,
+            MediaVersion.core_id == season_core.id,
+            MediaVersion.tags == season_tags,
+            MediaVersion.scope == "season_group"
+        )).first()
+
+        if existing_season_version:
+            # 更新现有季版本（补充空字段）
+            existing_season_version.variant_fingerprint = existing_season_version.variant_fingerprint or season_fingerprint
+            existing_season_version.updated_at = datetime.now()
+            existing_season_version.season_version_path = season_version_path  # 更新季版本路径
+            logger.debug(f"更新季版本: user_id={media_file.user_id}, season_core_id={season_core.id}, version_id={existing_season_version.id}")
+            return existing_season_version.id
+        else:
+            # 检查该季核心是否已有季版本（第一个版本设为首选）
+            has_existing_season_versions = session.exec(select(MediaVersion).where(
+                MediaVersion.user_id == media_file.user_id,
+                MediaVersion.core_id == season_core.id,
+                MediaVersion.scope == "season_group"
+            )).first() is not None
+
+            # 创建新季版本
+            new_season_version = MediaVersion(
+                user_id=media_file.user_id,
+                core_id=season_core.id,
+                tags=season_tags,
+                scope="season_group",  # 标记为季版本作用域
+                variant_fingerprint=season_fingerprint,
+                preferred=not has_existing_season_versions,  # 第一个季版本设为首选
+                primary_file_asset_id=None,  # 季版本无主文件（管理一批单集文件）
+                parent_version_id=None,  # 季版本无父版本
+                season_version_path=season_version_path,  # 保存季版本路径
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            session.add(new_season_version)
+            session.flush()  # 刷新获取ID
+            logger.debug(f"创建季版本: user_id={media_file.user_id}, season_core_id={season_core.id}, version_id={new_season_version.id}, path={season_version_path}")
+            return new_season_version.id
+
+    def _upsert_media_version(self, session, media_file: FileAsset, core: MediaCore, metadata, season_version_id: Optional[int] = None) -> int:
+        """
+        创建/更新媒体版本（支持episode_child关联到season_group，支持movie）
+        参数：
+            season_version_id: 可选，季版本ID（仅episode类型需要）
+        返回：版本ID
+        """
+       
+
+        # 2. 确定版本作用域
+        if core.kind == "movie":
+            scope = "movie_single"
+        elif core.kind == "episode":
+            scope = "episode_child"  # 单集版本标记为子版本
+        else:
+            scope = "movie_single"  # 兜底
+
+         # 1. 生成版本和指纹关键信息
+        version_tags,variant_fingerprint = self._get_version_tags_and_fingerprint(media_file,core,scope)
+        quality = self._get_quality_level(media_file)
+        edition = self._get_attr(metadata, "edition") or self._get_attr(metadata, "episode_type") or "unknown"
+        source = self._get_file_source(session, media_file)
+        
+
+        # 3. 查询是否已有相同版本（用户+核心+标签唯一）
+        existing_version = session.exec(select(MediaVersion).where(
+            MediaVersion.user_id == media_file.user_id,
+            MediaVersion.core_id == core.id,
+            MediaVersion.tags == version_tags,
+            MediaVersion.scope == scope
+        )).first()
+
+        if existing_version:
+            # 更新现有版本
+            existing_version.quality = existing_version.quality or quality
+            existing_version.source = existing_version.source or source
+            existing_version.edition = existing_version.edition or edition
+            existing_version.variant_fingerprint = existing_version.variant_fingerprint or variant_fingerprint
+            # 若传入季版本ID，更新父版本关联
+            if season_version_id:
+                existing_version.parent_version_id = season_version_id
+            existing_version.updated_at = datetime.now()
+            # 补充主文件ID
+            if not existing_version.primary_file_asset_id:
+                existing_version.primary_file_asset_id = media_file.id
+            logger.debug(f"更新{scope}版本: user_id={media_file.user_id}, core_id={core.id}, tags={version_tags}")
+            return existing_version.id
+        else:
+            # 检查该核心是否已有版本（第一个版本设为首选）
+            has_existing_versions = session.exec(select(MediaVersion).where(
+                MediaVersion.user_id == media_file.user_id,
+                MediaVersion.core_id == core.id,
+                MediaVersion.scope == scope
+            )).first() is not None
+
+            # 创建新版本
+            new_version = MediaVersion(
+                user_id=media_file.user_id,
+                core_id=core.id,
+                tags=version_tags,
+                quality=quality,
+                source=source,
+                edition=edition,
+                scope=scope,
+                variant_fingerprint=variant_fingerprint,
+                preferred=not has_existing_versions,
+                primary_file_asset_id=media_file.id,
+                parent_version_id=season_version_id,  # 关联到季版本（子版本核心）
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            session.add(new_version)
+            session.flush()
+            logger.debug(f"创建{scope}版本: user_id={media_file.user_id}, core_id={core.id}, version_id={new_version.id}, parent_version_id={season_version_id}")
+            return new_version.id
+
+    def batch_operate_episode_versions_by_season(self, session, user_id: int, season_version_id: int, operation: str = "delete") -> bool:
+        """
+        批量操作季版本下的所有单集子版本
+        参数：
+            operation: 操作类型：delete（删除）/set_preferred（设为首选）
+        返回：操作是否成功
+        """
+        try:
+            # 1. 查询季版本下的所有单集子版本
+            episode_versions = session.exec(select(MediaVersion).where(
+                MediaVersion.user_id == user_id,
+                MediaVersion.parent_version_id == season_version_id,
+                MediaVersion.scope == "episode_child"
+            )).all()
+
+            if not episode_versions:
+                logger.warning(f"季版本{season_version_id}下无单集子版本")
+                return True
+
+            # 2. 执行批量操作
+            if operation == "delete":
+                # 级联删除子版本（同时解除文件关联）
+                for version in episode_versions:
+                    # 解除文件关联
+                    session.exec(
+                        f"UPDATE file_asset SET version_id = NULL, updated_at = '{datetime.now()}' WHERE version_id = {version.id} AND user_id = {user_id}"
+                    )
+                    # 删除版本
+                    session.delete(version)
+                # 删除季版本
+                season_version = session.exec(select(MediaVersion).where(MediaVersion.id == season_version_id)).first()
+                if season_version:
+                    session.delete(season_version)
+                logger.info(f"批量删除季版本{season_version_id}及下属{len(episode_versions)}个单集版本")
+
+            elif operation == "set_preferred":
+                # 将季版本设为首选，同时将下属所有单集版本设为首选
+                season_version = session.exec(select(MediaVersion).where(MediaVersion.id == season_version_id)).first()
+                if season_version:
+                    season_version.preferred = True
+                    season_version.updated_at = datetime.now()
+                for version in episode_versions:
+                    version.preferred = True
+                    version.updated_at = datetime.now()
+                logger.info(f"批量将季版本{season_version_id}及下属{len(episode_versions)}个单集版本设为首选")
+
+            session.flush()
+            return True
+        except Exception as e:
+            logger.error(f"批量操作季版本失败：{str(e)}", exc_info=True)
+            return False
+
+
+    
+    # ==================== 持久化元数据方法 ====================
     def _upsert_artworks(self, session, user_id: int, core_id: int, provider: Optional[str], artworks) -> None:
         try:
             if artworks:
@@ -160,7 +414,7 @@ class MetadataPersistenceService:
     def _upsert_genres(self, session, user_id: int, core_id: int, genres) -> None:
         try:
             for genre_name in genres or []:
-                if not genre_name:
+                if not genre_name or "&" in genre_name:
                     continue
                 genre = session.exec(select(Genre).where(Genre.name == genre_name)).first()
                 if not genre:
@@ -200,7 +454,8 @@ class MetadataPersistenceService:
         series_core = session.exec(select(MediaCore).where(
             MediaCore.user_id == user_id,
             MediaCore.kind == "series",
-            MediaCore.title == name_val
+            MediaCore.title == name_val,
+            MediaCore.canonical_tmdb_id == getattr(sd, "series_id", None) if getattr(sd, "series_id", None) else None  
         )).first()
         
         if not series_core:
@@ -231,6 +486,7 @@ class MetadataPersistenceService:
             series_core.display_date = self._parse_dt(getattr(sd, "first_air_date", None))
             series_core.subtype = type_val
             series_core.updated_at = datetime.now()
+            # 或者直接不更新，直接返回
         try:
             if getattr(sd, "provider", None) and getattr(sd, "series_id", None):
                 existing = session.exec(select(ExternalID).where(
@@ -258,7 +514,7 @@ class MetadataPersistenceService:
             tv_ext = SeriesExt(user_id=user_id, core_id=series_core.id)
             session.add(tv_ext)
         try:
-            tv_ext.tittle = name_val or tv_ext.tittle
+            tv_ext.title = name_val or tv_ext.title
             tv_ext.overview = getattr(sd, "overview", None) or tv_ext.overview
             tv_ext.season_count = getattr(sd, "number_of_seasons", None)
             tv_ext.episode_count = getattr(sd, "number_of_episodes", None)
@@ -320,8 +576,8 @@ class MetadataPersistenceService:
         return series_core
     
     def _apply_season_detail(self, session, user_id: int, series_core: Optional[MediaCore], se: ScraperSeasonDetail) -> MediaCore:
-        season_num = getattr(se, "season_number", None) or 1
-        season_name = getattr(se, "name", None) or f"Season {season_num}"
+        season_num = getattr(se, "season_number", None) 
+        season_name = getattr(se, "name", None)
         # season_overview = getattr(se, "overview", None)
         # season_poster_path = getattr(se, "poster_path", None)
         # season_episode_count = getattr(se, "episode_count", None)
@@ -334,7 +590,8 @@ class MetadataPersistenceService:
         try:
             if series_core:
                 existing_se = session.exec(select(SeasonExt).where(SeasonExt.user_id == user_id, SeasonExt.series_core_id == series_core.id, SeasonExt.season_number == season_num)).first()
-        except Exception:
+        except Exception as e:
+            logger.error(f"获取剧集详情失败: {e}")
             existing_se = None
         season_core = None
         if existing_se:
@@ -343,8 +600,11 @@ class MetadataPersistenceService:
             season_core = session.exec(select(MediaCore).where(
                 MediaCore.user_id == user_id,
                 MediaCore.kind == "season",
-                MediaCore.title == season_name
+                MediaCore.title == season_name,  #季title不可用，太多重复
+                MediaCore.canonical_tmdb_id == (getattr(se, "season_id", None) if getattr(se, "season_id", None) else None)
             )).first()
+
+        # 彻底不存在该season
         if not season_core:
             season_core = MediaCore(
                 user_id=user_id, 
@@ -365,12 +625,19 @@ class MetadataPersistenceService:
             season_core.display_poster_path = getattr(se, "poster_path", None)
             season_core.display_rating = getattr(se, "vote_average", None)
             season_core.updated_at = datetime.now()
-        se_ext = session.exec(select(SeasonExt).where(SeasonExt.core_id == season_core.id, SeasonExt.user_id == user_id)).first()
+            # 直接返回或者可以更新已有的数据（我认为可以不更新，减少数据库操作）
+
+        se_ext = session.exec(select(SeasonExt).where(
+            # SeasonExt.core_id == season_core.id,
+            SeasonExt.series_core_id == (series_core.id if series_core else None),
+            SeasonExt.season_number == season_num, 
+            SeasonExt.user_id == user_id,
+            )).first()
         if not se_ext:
             se_ext = SeasonExt(user_id=user_id, core_id=season_core.id, series_core_id=series_core.id if series_core else None, season_number=season_num)
             session.add(se_ext)
         try:
-            se_ext.tittle = season_name or se_ext.tittle
+            se_ext.title = season_name or se_ext.title
             se_ext.overview = getattr(se, "overview", None) or se_ext.overview
             se_ext.episode_count = getattr(se, "episode_count", None)
             se_ext.rating = getattr(se, "vote_average", None)
@@ -385,7 +652,8 @@ class MetadataPersistenceService:
                 raw_data = raw_data._data
             # 序列化为JSON字符串
             se_ext.raw_data = json.dumps(raw_data, ensure_ascii=False) if raw_data else None
-        except Exception:
+        except Exception as e:
+            logger.error(f"更新剧集详情失败: {e}")
             pass
         try:
             if getattr(se_ext, "poster_path", None):
@@ -397,7 +665,8 @@ class MetadataPersistenceService:
                     art_p.provider = getattr(se, "provider", None) or getattr(art_p, "provider", None)
                     art_p.preferred = True
                     # art_p.exists_remote = True
-        except Exception:
+        except Exception as e:
+            logger.error(f"更新剧集海报失败: {e}")
             pass
         try:
             if getattr(se, "provider", None) and getattr(se, "season_id", None):
@@ -409,18 +678,31 @@ class MetadataPersistenceService:
                 )).first()
                 if not existing:
                     session.add(ExternalID(user_id=user_id, core_id=season_core.id, source=se.provider, key=str(se.season_id)))
-        except Exception:
+                season_core.canonical_source = season_core.canonical_source or se.provider
+                season_core.canonical_external_key = season_core.canonical_external_key or str(se.season_id)
+                try:
+                    if se.provider == "tmdb":
+                        sid = int(str(se.season_id)) if str(se.season_id).isdigit() else None
+                        if sid is not None:
+                            season_core.canonical_tmdb_id = season_core.canonical_tmdb_id or sid
+                except Exception as e:
+                    logger.error(f"更新剧集外部ID失败: {e}")
+                    raise
+        except Exception as e:
+            logger.error(f"更新剧集外部ID失败: {e}")
             pass
         try:
             self._upsert_artworks(session, user_id, season_core.id, getattr(se, "provider", None), getattr(se, "artworks", None))
-        except Exception:
+        except Exception as e:
+            logger.error(f"更新剧集海报失败: {e}")
             pass
         try:
             self._upsert_credits(session, user_id, season_core.id, getattr(se, "credits", None), getattr(se, "provider", None))
-        except Exception:
+        except Exception as e:
+            logger.error(f"更新剧集演员失败: {e}")
             pass
         return season_core
-    # 播放链接相关逻辑已移除，直连生成在 routes_media 中实现
+    # 方法入口
     def apply_metadata(self, session, media_file: FileAsset, metadata,metadata_type: str) -> None:
         """
         一次性幂等地将刮削结果写入领域模型，并更新相关扩展信息
@@ -441,32 +723,25 @@ class MetadataPersistenceService:
         if isinstance(metadata, dict):
             metadata = _DictWrapper(metadata)
         
-        core = session.exec(select(MediaCore).where(MediaCore.id == media_file.core_id)).first()
-        # logger.info(f"开始应用元数据：文件ID={media_file.id}, 当前核心ID={getattr(media_file, 'core_id', None)}, 元数据类型={type(metadata)}")
-        # if isinstance(metadata, ScraperMovieDetail):
-        # if hasattr(metadata, "movie_id"):
+        # core = session.exec(select(MediaCore).where(MediaCore.id == media_file.core_id)).first()
+        core = None
         if metadata_type == "movie":
             # logger.info(f"应用电影元数据：文件ID={media_file.id}, 元数据={metadata}")
             core = self._apply_movie_detail(session, media_file, metadata)
-
-        # elif isinstance(metadata, ScraperEpisodeDetail):
+ 
         elif metadata_type == "episode":
             core = self._apply_episode_detail(session, media_file, metadata)
-
-        # elif isinstance(metadata, ScraperSeriesDetail):
+   
         elif metadata_type == "series":
             core = self._apply_series_detail(session, media_file.user_id, metadata)
-            try:
-                if not getattr(media_file, "core_id", None):
-                    media_file.core_id = core.id
-            except Exception:
-                media_file.core_id = getattr(core, "id", None)
-        
-        # elif isinstance(metadata, ScraperSearchResult):
+            if not self._get_attr(media_file, "core_id"):
+                media_file.core_id = core.id
+            
         elif metadata_type == "search_result":
             core = self._apply_search_result(session, media_file, metadata)
 
         else:
+            logger.warning(f"不支持的元数据类型: {metadata_type}")
             return
         
         # 更新mediacore缓存
@@ -475,7 +750,13 @@ class MetadataPersistenceService:
 
     def _apply_movie_detail(self, session, media_file: FileAsset, metadata: ScraperMovieDetail) -> MediaCore:
         # 添加或更新媒体核心元数据
-        core = session.exec(select(MediaCore).where(MediaCore.id == media_file.core_id)).first()
+        core = session.exec(select(MediaCore).where(
+            # MediaCore.id == media_file.core_id,
+            MediaCore.title == metadata.title,
+            MediaCore.kind == "movie",
+            MediaCore.user_id == media_file.user_id,
+            MediaCore.canonical_tmdb_id == getattr(metadata, "movie_id", None) if getattr(metadata, "movie_id", None) else None
+            )).first()
         year_val = None
         try:
             dt = self._parse_dt(getattr(metadata, "release_date", None))
@@ -499,6 +780,8 @@ class MetadataPersistenceService:
             session.add(core)
             session.flush()
             media_file.core_id = core.id
+            logger.info(f"电影中更新了media_file.core_id: {core.id} for file: {media_file.id}")
+
         else:
             core.kind = "movie"
             core.title = metadata.title
@@ -509,6 +792,7 @@ class MetadataPersistenceService:
             core.display_poster_path = getattr(metadata, "poster_path", None)
             core.display_date = self._parse_dt(getattr(metadata, "release_date", None))
             core.updated_at = datetime.now()
+            media_file.core_id = core.id
         
         # 改元信息提供商ID
         if getattr(metadata, "provider", None) and getattr(metadata, "movie_id", None):
@@ -554,7 +838,7 @@ class MetadataPersistenceService:
             session.flush()
         try:
             movie_ext.tagline = getattr(metadata, "tagline", None)
-            movie_ext.tittle = getattr(metadata, "title", None) or movie_ext.tittle
+            movie_ext.title = getattr(metadata, "title", None) or movie_ext.title
             rv = getattr(metadata, "vote_average", None)
             movie_ext.rating = float(rv) if isinstance(rv, (int, float)) else movie_ext.rating
             movie_ext.overview = getattr(metadata, "overview", None) or movie_ext.overview
@@ -650,6 +934,12 @@ class MetadataPersistenceService:
             self._upsert_genres(session, media_file.user_id, core.id, getattr(metadata, "genres", []) or [])
         except Exception:
             pass
+        
+        # 7. 核心逻辑：创建/更新版本，并关联文件到版本
+        version_id = self._upsert_media_version(session, media_file, core, metadata)
+        media_file.version_id = version_id  # 文件关联版本
+        media_file.updated_at = datetime.now()
+
         return core
 
     def _refresh_display_cache_for_core(self, session, core: MediaCore, user_id: int) -> None:
@@ -698,20 +988,30 @@ class MetadataPersistenceService:
             pass
 
     def _apply_episode_detail(self, session, media_file: FileAsset, metadata: ScraperEpisodeDetail) -> MediaCore:
-        core = session.exec(select(MediaCore).where(MediaCore.id == media_file.core_id)).first()
         series_core = None
         season_core = None
+        season_version_id = None
         title_val = getattr(metadata, "name", None) or ""
         try:
             if getattr(metadata, "series", None):
                 series_core = self._apply_series_detail(session, media_file.user_id, metadata.series)
-            if getattr(metadata, "season", None):
+            if getattr(metadata, "season", None) and series_core:
                 season_core = self._apply_season_detail(session, media_file.user_id, series_core, metadata.season)
+                # 新增：创建/更新季版本（基于文件父文件夹路径）
+                season_version_id = self._upsert_season_version(session, media_file, season_core)
         except Exception:
             pass
-        if not core:
+        episode_core = session.exec(select(MediaCore).where(
+            # MediaCore.id == media_file.core_id,
+            MediaCore.user_id == media_file.user_id,
+            MediaCore.kind == "episode",
+            MediaCore.title == title_val,
+            MediaCore.canonical_tmdb_id == getattr(metadata, "episode_id", None) if getattr(metadata, "episode_id", None) else None
+            )).first()
+
+        if not episode_core:
             
-            core = MediaCore(
+            episode_core = MediaCore(
                 user_id=media_file.user_id,
                 kind="episode",
                 title=title_val,
@@ -724,23 +1024,39 @@ class MetadataPersistenceService:
                 created_at=datetime.now(),
                 updated_at=datetime.now()
             )
-            session.add(core)
+            session.add(episode_core)
             session.flush()
-            media_file.core_id = core.id
+            media_file.core_id = episode_core.id
+            logger.info(f"集中更新了media_file.core_id: {episode_core.id} for file: {media_file.id}")
         else:
-            core.kind = "episode"
-            core.title = title_val or core.title
-            core.plot = getattr(metadata, "overview", None) or core.plot
-            core.display_rating = getattr(metadata, "vote_average", None)
-            core.display_poster_path = getattr(metadata, "still_path", None)
-            core.display_date = self._parse_dt(getattr(metadata, "air_date", None))
-            core.updated_at = datetime.now()
-
-        ep_ext = session.exec(select(EpisodeExt).where(EpisodeExt.core_id == core.id, EpisodeExt.user_id == media_file.user_id)).first()
+            episode_core.kind = "episode"
+            episode_core.title = title_val or episode_core.title
+            episode_core.plot = getattr(metadata, "overview", None) or episode_core.plot
+            episode_core.display_rating = getattr(metadata, "vote_average", None)
+            episode_core.display_poster_path = getattr(metadata, "still_path", None)
+            episode_core.display_date = self._parse_dt(getattr(metadata, "air_date", None))
+            episode_core.updated_at = datetime.now()
+            media_file.core_id = episode_core.id
+        ep_ext = session.exec(select(EpisodeExt).where(
+            # EpisodeExt.core_id == episode_core.id, 
+            EpisodeExt.user_id == media_file.user_id,
+            # EpisodeExt.series_core_id == (series_core.id if series_core else None),
+            EpisodeExt.series_core_id == series_core.id if series_core else EpisodeExt.series_core_id.is_(None),
+            EpisodeExt.season_number == getattr(metadata, "season_number", 1),
+            EpisodeExt.episode_number == getattr(metadata, "episode_number", 1)
+            )).first()
         if not ep_ext:
-            ep_ext = EpisodeExt(user_id=media_file.user_id, core_id=core.id, series_core_id=series_core.id if series_core else None, season_core_id=season_core.id if season_core else None, episode_number=getattr(metadata, "episode_number", None) or 1, season_number=getattr(metadata, "season_number", None) or 1)
+            ep_ext = EpisodeExt(
+                user_id=media_file.user_id, 
+                core_id=episode_core.id, 
+                series_core_id=series_core.id if series_core else None, 
+                season_core_id=season_core.id if season_core else None, 
+                episode_number=getattr(metadata, "episode_number", None) or 1, 
+                season_number=getattr(metadata, "season_number", None) or 1
+                )
             session.add(ep_ext)
         try:
+            ep_ext.core_id = episode_core.id # 记录存在但是需要关联到新core_id
             ep_ext.title = title_val or ep_ext.title
             ep_ext.overview = getattr(metadata, "overview", None) or ep_ext.overview
             ep_ext.runtime = getattr(metadata, "runtime", None)
@@ -754,9 +1070,9 @@ class MetadataPersistenceService:
             pass
         try:
             if getattr(ep_ext, "still_path", None):
-                art_s = session.exec(select(Artwork).where(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "still", Artwork.preferred==True)).first()
+                art_s = session.exec(select(Artwork).where(Artwork.user_id == media_file.user_id, Artwork.core_id == episode_core.id, Artwork.type == "still", Artwork.preferred==True)).first()
                 if not art_s:
-                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="still", remote_url=ep_ext.still_path, provider=getattr(metadata, "provider", None), preferred=True))
+                    session.add(Artwork(user_id=media_file.user_id, core_id=episode_core.id, type="still", remote_url=ep_ext.still_path, provider=getattr(metadata, "provider", None), preferred=True))
                 else:
                     art_s.remote_url = art_s.remote_url or ep_ext.still_path
                     art_s.provider = getattr(metadata, "provider", None) or getattr(art_s, "provider", None)
@@ -768,23 +1084,42 @@ class MetadataPersistenceService:
             if getattr(metadata, "provider", None) and getattr(metadata, "episode_id", None):
                 existing = session.exec(select(ExternalID).where(
                     ExternalID.user_id == media_file.user_id,
-                    ExternalID.core_id == core.id,
+                    ExternalID.core_id == episode_core.id,
                     ExternalID.source == metadata.provider,
                     ExternalID.key == str(metadata.episode_id)
                 )).first()
                 if not existing:
-                    session.add(ExternalID(user_id=media_file.user_id, core_id=core.id, source=metadata.provider, key=str(metadata.episode_id)))
+                    session.add(ExternalID(user_id=media_file.user_id, core_id=episode_core.id, source=metadata.provider, key=str(metadata.episode_id)))
+                
+                episode_core.canonical_source = episode_core.canonical_source or metadata.provider
+                episode_core.canonical_external_key = episode_core.canonical_external_key or str(metadata.episode_id)
+                try:
+                    if metadata.provider == "tmdb":
+                        sid = int(metadata.episode_id) if str(metadata.episode_id).isdigit() else None
+                        if sid is not None:
+                            episode_core.canonical_tmdb_id = episode_core.canonical_tmdb_id or sid
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.info(f"应用剧集外部ID失败：{str(e)}")
+            pass
+        try:
+            self._upsert_artworks(session, media_file.user_id, episode_core.id, getattr(metadata, "provider", None), getattr(metadata, "artworks", None))
         except Exception:
             pass
         try:
-            self._upsert_artworks(session, media_file.user_id, core.id, getattr(metadata, "provider", None), getattr(metadata, "artworks", None))
+            self._upsert_credits(session, media_file.user_id, episode_core.id, getattr(metadata, "credits", None), getattr(metadata, "provider", None))
         except Exception:
             pass
-        try:
-            self._upsert_credits(session, media_file.user_id, core.id, getattr(metadata, "credits", None), getattr(metadata, "provider", None))
-        except Exception:
-            pass
-        return core
+        
+        # 7. 核心逻辑：创建/更新单集子版本，并关联到季版本
+        # 传入season_version_id，让单集版本关联到季版本
+        version_id = self._upsert_media_version(session, media_file, episode_core, metadata, season_version_id)
+        media_file.version_id = version_id  # 文件关联单集版本
+        media_file.season_version_id = season_version_id  # 文件关联季版本
+        media_file.updated_at = datetime.now()
+
+        return episode_core
 
     def _apply_search_result(self, session, media_file: FileAsset, metadata: ScraperSearchResult) -> MediaCore:
         core = session.exec(select(MediaCore).where(MediaCore.id == media_file.core_id)).first()
@@ -847,233 +1182,5 @@ class MetadataPersistenceService:
             pass
         return core
 
-
-    # 更新所有MediaCore的显示缓存（批量）
-    def backfill_display_cache(self, session, user_id: Optional[int] = None) -> None:
-        try:
-            cores = []
-            cores.extend(session.exec(select(MediaCore).where(MediaCore.kind == 'series')).all() or [])
-            cores.extend(session.exec(select(MediaCore).where(MediaCore.kind == 'season')).all() or [])
-            for c in cores:
-                if user_id and c.user_id != user_id:
-                    continue
-                self._refresh_display_cache_for_core(session, c, c.user_id)
-        except Exception:
-            pass
-        session.flush()
-
-    def backfill_canonical_and_plot(self, session, user_id: Optional[int] = None) -> None:
-        try:
-            series_list = session.exec(
-                select(MediaCore).where(MediaCore.kind == 'series')
-            ).all()
-            for sc in series_list:
-                if user_id and sc.user_id != user_id:
-                    continue
-                tv = session.exec(select(SeriesExt).where(SeriesExt.core_id == sc.id, SeriesExt.user_id == sc.user_id)).first()
-                if tv:
-                    if not sc.plot and tv.overview:
-                        sc.plot = tv.overview
-                    tmdb_id = None
-                    try:
-                        if tv.raw_data:
-                            import json as _json
-                            data = _json.loads(tv.raw_data)
-                            tmdb_id = str(data.get('id')) if isinstance(data.get('id'), (int, str)) else None
-                    except Exception:
-                        tmdb_id = None
-                    if tmdb_id and not sc.canonical_external_key:
-                        sc.canonical_tmdb_id = int(tmdb_id) if tmdb_id.isdigit() else sc.canonical_tmdb_id
-                        sc.canonical_source = sc.canonical_source or 'tmdb'
-                        sc.canonical_external_key = sc.canonical_external_key or tmdb_id
-                        existing = session.exec(select(ExternalID).where(
-                            ExternalID.user_id == sc.user_id,
-                            ExternalID.core_id == sc.id,
-                            ExternalID.source == 'tmdb',
-                            ExternalID.key == tmdb_id
-                        )).first()
-                        if not existing:
-                            session.add(ExternalID(user_id=sc.user_id, core_id=sc.id, source='tmdb', key=tmdb_id))
-
-            seasons = session.exec(select(MediaCore).where(MediaCore.kind == 'season')).all()
-            for scc in seasons:
-                if user_id and scc.user_id != user_id:
-                    continue
-                se = session.exec(select(SeasonExt).where(SeasonExt.core_id == scc.id, SeasonExt.user_id == scc.user_id)).first()
-                if se:
-                    if not scc.plot and se.overview:
-                        scc.plot = se.overview
-                    if se.series_core_id:
-                        series_core = session.exec(select(MediaCore).where(MediaCore.id == se.series_core_id)).first()
-                        if series_core and series_core.canonical_external_key:
-                            scc.canonical_tmdb_id = scc.canonical_tmdb_id or series_core.canonical_tmdb_id
-                            scc.canonical_source = scc.canonical_source or series_core.canonical_source
-                            scc.canonical_external_key = scc.canonical_external_key or series_core.canonical_external_key
-        except Exception:
-            pass
-        session.flush()
-
-
-    def bind_version(self, session, media_file: FileAsset, parse_out) -> None:
-        """
-        绑定媒体版本并选择首选版本
-        
-        参数:
-            session: SQLModel 会话
-            media_file: 媒体文件记录（用于设置 primary_file_asset_id）
-            parse_out: 文件解析结果（用于提取质量/来源等标签）
-        行为:
-            - 创建/更新 MediaVersion（scope: movie_single/season_group/series_group）
-            - 根据质量与覆盖度选择 preferred 版本
-        """
-        core = session.exec(select(MediaCore).where(MediaCore.id == media_file.core_id)).first()
-        if not core:
-            return
-        scope = None
-        if core.kind == "movie":
-            scope = "movie_single"
-        elif core.kind in ("season",):
-            scope = "season_group"
-        elif core.kind in ("series",):
-            scope = "series_group"
-        else:
-            return
-        quality = None
-        source = None
-        edition = None
-        if parse_out and getattr(parse_out, 'resolution_tags', None):
-            if len(parse_out.resolution_tags) > 0:
-                quality = parse_out.resolution_tags[0]
-        qt = set(parse_out.quality_tags or []) if parse_out else set()
-        for s in ["web", "bluray", "dvd", "hdtv"]:
-            for pat in list(qt):
-                if s in pat.lower():
-                    source = s
-                    break
-            if source:
-                break
-        variant_fingerprint = "|".join([v for v in [quality or "", source or "", edition or ""]])
-        from models.media_models import MediaVersion, EpisodeExt, SeasonExt
-        mv = session.exec(select(MediaVersion).where(
-            MediaVersion.user_id == media_file.user_id,
-            MediaVersion.core_id == core.id,
-            MediaVersion.scope == scope,
-            MediaVersion.variant_fingerprint == variant_fingerprint
-        )).first()
-        if not mv:
-            mv = MediaVersion(
-                user_id=media_file.user_id,
-                core_id=core.id,
-                tags="",
-                quality=quality,
-                source=source,
-                edition=edition,
-                scope=scope,
-                variant_fingerprint=variant_fingerprint,
-                preferred=False,
-                primary_file_asset_id=media_file.id if scope == "movie_single" else None
-            )
-            session.add(mv)
-            session.flush()
-        media_file.version_id = mv.id
-        try:
-            if scope == "movie_single":
-                versions = session.exec(select(MediaVersion).where(
-                    MediaVersion.user_id == media_file.user_id,
-                    MediaVersion.core_id == core.id,
-                    MediaVersion.scope == "movie_single"
-                )).all()
-                if versions:
-                    best = None
-                    best_key = (999, 999)
-                    for v in versions:
-                        key = (self._quality_rank(v.quality), self._source_rank(v.source))
-                        if key < best_key:
-                            best_key = key
-                            best = v
-                    for v in versions:
-                        v.preferred = (v.id == best.id)
-                    session.flush()
-            elif scope == "season_group":
-                versions = session.exec(select(MediaVersion).where(
-                    MediaVersion.user_id == media_file.user_id,
-                    MediaVersion.core_id == core.id,
-                    MediaVersion.scope == "season_group"
-                )).all()
-                if versions:
-                    total_eps = len(session.exec(select(EpisodeExt).where(EpisodeExt.season_core_id == core.id, EpisodeExt.user_id == media_file.user_id)).all())
-                    if total_eps == 0:
-                        se = session.exec(select(SeasonExt).where(SeasonExt.core_id == core.id, SeasonExt.user_id == media_file.user_id)).first()
-                        total_eps = se.episode_count or 0 if se else 0
-                    best = None
-                    best_key = (-1, 999)
-                    for v in versions:
-                        cov = session.exec(select(FileAsset).join(EpisodeExt, FileAsset.episode_core_id == EpisodeExt.core_id).where(
-                            FileAsset.user_id == media_file.user_id,
-                            FileAsset.version_id == v.id,
-                            EpisodeExt.season_core_id == core.id
-                        )).count()
-                        key = (cov, self._quality_rank(v.quality))
-                        if key > best_key:
-                            best_key = key
-                            best = v
-                    for v in versions:
-                        v.preferred = (best is not None and v.id == best.id)
-                    session.flush()
-            elif scope == "series_group":
-                versions = session.exec(select(MediaVersion).where(
-                    MediaVersion.user_id == media_file.user_id,
-                    MediaVersion.core_id == core.id,
-                    MediaVersion.scope == "series_group"
-                )).all()
-                if versions:
-                    best = None
-                    best_key = (-1, 999)
-                    for v in versions:
-                        cov = session.exec(select(FileAsset).join(EpisodeExt).where(
-                            FileAsset.episode_core_id == EpisodeExt.core_id,
-                            FileAsset.user_id == media_file.user_id,
-                            FileAsset.version_id == v.id,
-                            EpisodeExt.series_core_id == core.id
-                        )).count()
-                        key = (cov, self._quality_rank(v.quality))
-                        if key > best_key:
-                            best_key = key
-                            best = v
-                    for v in versions:
-                        v.preferred = (best is not None and v.id == best.id)
-                    session.flush()
-        except Exception:
-            pass
-
-    def _quality_rank(self, q: Optional[str]) -> int:
-        """
-        质量优先级排序（数值越小质量越高）
-        
-        支持: 4k/2160p/1080p/720p/480p
-        """
-        order = ["4k", "2160p", "1080p", "720p", "480p"]
-        if not q:
-            return len(order)
-        ql = q.lower()
-        for i, v in enumerate(order):
-            if v in ql:
-                return i
-        return len(order)
-
-    def _source_rank(self, s: Optional[str]) -> int:
-        """
-        来源优先级排序（数值越小来源越优）
-        
-        支持: bluray/web/hdtv/dvd
-        """
-        order = ["bluray", "web", "hdtv", "dvd"]
-        if not s:
-            return len(order)
-        sl = s.lower()
-        for i, v in enumerate(order):
-            if v in sl:
-                return i
-        return len(order)
 
 persistence_service = MetadataPersistenceService()

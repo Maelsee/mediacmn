@@ -329,11 +329,27 @@ class MetadataEnricher:
                     logger.error(f"❌ 获取详细信息失败: {e}")
 
                 # logger.info(f"🎉 元数据丰富完成: 文件ID={media_file.id}, 结果：{asdict(details_obj)}")
+                # quality = None
+                # if getattr(out, 'resolution_tags', None):
+                #     quality = out.resolution_tags[0] if len(out.resolution_tags) > 0 else None
+                # source = None
+                # if getattr(out, 'quality_tags', None):
+                #     qt = [q.lower() for q in out.quality_tags]
+                #     for s in ['web', 'bluray', 'dvd', 'hdtv']:
+                #         if any(s in q for q in qt):
+                #             source = s
+                #             break
+
                 return {
                     "user_id": media_file.user_id,
                     "file_id": media_file.id,  
                     "contract_type": contract_type,
-                    "contract_payload": asdict(details_obj) if details_obj else asdict(best_match)
+                    "contract_payload": asdict(details_obj) if details_obj else asdict(best_match),
+                    # "version_context": {
+                    #     "scope": scope,
+                    #     "quality": quality,
+                    #     "source": source
+                    # },
                 }
                 
                 # # 入队持久化任务（解耦写库）上一版本的任务队列

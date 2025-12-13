@@ -66,7 +66,7 @@ class ScraperCredit:
 # 2. 搜索详情（无独有字段，保持原有结构）
 @dataclass
 class ScraperSearchResult:
-    id: str
+    id: int
     title: str
     original_name: Optional[str] = None
     original_language: Optional[str] = None
@@ -87,7 +87,7 @@ class ScraperSearchResult:
 # 3. 电影详情（无关联，保持原有结构）
 @dataclass
 class ScraperMovieDetail:
-    movie_id: str
+    movie_id: int
     title: str
     original_title: Optional[str] = None
     original_language: Optional[str] = None
@@ -129,7 +129,7 @@ class ScraperMovieDetail:
 
 @dataclass
 class ScraperSeriesDetail:
-    series_id: str
+    series_id: int
     name: str
     original_name: Optional[str] = None
     origin_country: List[str] = field(default_factory=list)
@@ -162,7 +162,7 @@ class ScraperSeriesDetail:
 @dataclass
 class ScraperEpisodeItem:
     """季详情中的集概要（含综艺期数部分、动画篇章名）"""
-    episode_id: Optional[str]
+    episode_id: Optional[int]
     episode_number: int
     season_number: int
     name: str
@@ -178,7 +178,7 @@ class ScraperEpisodeItem:
 
 @dataclass
 class ScraperSeasonDetail:
-    season_id: Optional[str]
+    season_id: Optional[int]
     season_number: int
     name: Optional[str] = None
     poster_path: Optional[str] = None
@@ -202,7 +202,7 @@ class ScraperSeasonDetail:
 # 6. 集详情（新增综艺/动画独有字段）
 @dataclass
 class ScraperEpisodeDetail:
-    episode_id: Optional[str]
+    episode_id: Optional[int]
     episode_number: int
     season_number: int
     name: str
@@ -266,19 +266,19 @@ class ScraperPlugin(ABC):
         pass
     
     @abstractmethod
-    async def get_movie_details(self, movie_id: str, language: str = "zh-CN") -> Optional[ScraperMovieDetail]:
+    async def get_movie_details(self, movie_id: int, language: str = "zh-CN") -> Optional[ScraperMovieDetail]:
         pass
     
     @abstractmethod
-    async def get_series_details(self, series_id: str, language: str = "zh-CN") -> Optional[ScraperSeriesDetail]:
+    async def get_series_details(self, series_id: int, language: str = "zh-CN") -> Optional[ScraperSeriesDetail]:
         pass
     
     @abstractmethod
-    async def get_season_details(self, series_id: str, season_number: int, language: str = "zh-CN") -> Optional[ScraperSeasonDetail]:
+    async def get_season_details(self, series_id: int, season_number: int, language: str = "zh-CN") -> Optional[ScraperSeasonDetail]:
         pass
     
     @abstractmethod
-    async def get_episode_details(self, series_id: str, season_number: int, episode_number: int, language: str = "zh-CN") -> Optional[ScraperEpisodeDetail]:
+    async def get_episode_details(self, series_id: int, season_number: int, episode_number: int, language: str = "zh-CN") -> Optional[ScraperEpisodeDetail]:
         pass
     
     @property
@@ -290,14 +290,14 @@ class ScraperPlugin(ABC):
             "multi_lang": True,
             "rate_limit_exposed": True,
         }
-    
-    async def get_series_details_many(self, series_ids: List[str], language: str = "zh-CN") -> Dict[str, ScraperSeriesDetail]:
+
+    async def get_series_details_many(self, series_ids: List[int], language: str = "zh-CN") -> Dict[int, ScraperSeriesDetail]:
         return {}
     
-    async def get_season_details_many(self, requests: List[tuple], language: str = "zh-CN") -> Dict[tuple, ScraperSeasonDetail]:
+    async def get_season_details_many(self, season_ids: List[int], language: str = "zh-CN") -> Dict[int, ScraperSeasonDetail]:
         return {}
     
-    async def get_artworks(self, provider_id: str, media_type: MediaType,
+    async def get_artworks(self, provider_id: int, media_type: MediaType,
                           language: str = "zh-CN") -> List[ScraperArtwork]:
         if media_type == MediaType.MOVIE:
             d = await self.get_movie_details(provider_id, language)
@@ -308,7 +308,7 @@ class ScraperPlugin(ABC):
         else:
             return []
     
-    async def get_credits(self, provider_id: str, media_type: MediaType,
+    async def get_credits(self, provider_id: int, media_type: MediaType,
                         language: str = "zh-CN") -> List[ScraperCredit]:
         if media_type == MediaType.MOVIE:
             d = await self.get_movie_details(provider_id, language)

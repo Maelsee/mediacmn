@@ -38,6 +38,7 @@ from sqlmodel import UniqueConstraint, BigInteger, Column,Field, SQLModel
 class MediaCore(SQLModel, table=True):
     """媒体核心模型 - 所有媒体类型的基础实体"""
     __tablename__ = "media_core"
+    
 
     id: Optional[int] = Field(default=None, primary_key=True, description="媒体核心记录唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
@@ -47,7 +48,7 @@ class MediaCore(SQLModel, table=True):
     subtype: Optional[str] = Field(default=None, index=True, description="媒体子类型：scripted|reality|animation|documentary|news|talk|other等")
     title: str = Field(index=True, description="标题")
     original_title: Optional[str] = Field(default=None, description="原始标题")
-    origin_country: Optional[str] = Field(default=None, description="原产国家/地区，多个以逗号分隔")
+    # origin_country: Optional[str] = Field(default=None, description="原产国家/地区，多个以逗号分隔")
     year: Optional[int] = Field(default=None, description="年份")
     plot: Optional[str] = Field(default=None, description="剧情简介")
 
@@ -67,40 +68,49 @@ class MediaCore(SQLModel, table=True):
     created_at: datetime = Field(default_factory=get_utc_now_factory(), description="创建时间")
     updated_at: datetime = Field(default_factory=get_utc_now_factory(), description="更新时间")
 
-
 class MediaVersion(SQLModel, table=True):
-    """媒体版本模型 - 管理同一媒体的不同版本信息"""
+    """媒体版本模型 - 新增父版本关联，支持层级管理"""
     __tablename__ = "media_version"
     __table_args__ = (
         UniqueConstraint("user_id", "core_id", "tags", name="uq_media_version"),
     )
 
-    id: Optional[int] = Field(default=None, primary_key=True, description="媒体版本记录唯一标识")
+    id: Optional[int] = Field(default=None, primary_key=True, description="版本记录唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
-    core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
+    core_id: int = Field(index=True, foreign_key="media_core.id", description="关联媒体核心ID")
 
     # 版本标识
-    tags: str = Field(description="版本标签，用于区分不同版本")
-    quality: Optional[str] = Field(default=None, description="质量等级")
-    source: Optional[str] = Field(default=None, description="来源")
-    edition: Optional[str] = Field(default=None, description="版本信息")
+    tags: str = Field(description="版本标签（分辨率,编码,来源,Edition），如：1080p,H.264,DTS,Director's Cut,tmdb")
+    quality: Optional[str] = Field(default=None, description="质量等级：high(4K)|medium(1080p)|low(720p及以下)")
+    source: Optional[str] = Field(default=None, description="版本来源（tmdb|本地|other）")
+    edition: Optional[str] = Field(default=None, description="版本类型（Director's Cut|Theatrical|Standard）")
 
     # 版本作用域与指纹
-    scope: Optional[str] = Field(default=None, description="版本作用域：movie_single|season_group|series_group")
-    variant_fingerprint: Optional[str] = Field(default=None, index=True, description="版本规范化指纹，用于唯一聚合")
-    preferred: bool = Field(default=False, description="是否为默认首选版本")
-    primary_file_asset_id: Optional[int] = Field(default=None, description="电影版本的主视频文件ID，仅movie_single使用")
+    scope: Optional[str] = Field(default=None, description="版本作用域：movie_single|season_group|episode_child")
+    variant_fingerprint: Optional[str] = Field(default=None, index=True, description="版本指纹（MD5哈希，用于去重）")
+    preferred: bool = Field(default=False, description="是否默认首选版本")
+    primary_file_asset_id: Optional[int] = Field(default=None, description="主视频文件ID（仅movie_single/episode_child生效）")
 
+    # 新增：父版本ID（用于episode_child关联到season_group）
+    parent_version_id: Optional[int] = Field(default=None, index=True, foreign_key="media_version.id", description="父版本ID（季版本ID）")
+    # 新增：季版本路径（用于剧集关联）
+    season_version_path: Optional[str] = Field(default=None, description="季版本路径（用于剧集关联）")
+    # 时间戳
+    created_at: datetime = Field(default_factory=get_utc_now_factory(), description="版本创建时间")
+    updated_at: datetime = Field(default_factory=get_utc_now_factory(), description="版本更新时间")
 
 # ==================== 电影扩展模型 ====================
 class MovieExt(SQLModel, table=True):
     """电影扩展模型 - 存储电影特有的扩展字段"""
     __tablename__ = "movie_ext"
-
+    # 唯一约束：同一用户下，电影核心记录唯一
+    __table_args__ = (
+        UniqueConstraint("user_id", "core_id", name="uq_movie_and_user"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True, description="电影扩展记录唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
     core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
-    tittle: Optional[str] = Field(default=None, description="电影标题")
+    title: Optional[str] = Field(default=None, description="电影标题")
     overview: Optional[str] = Field(default=None, description="电影简介")
     origin_country: Optional[str] = Field(default=None, description="原产国家/地区，多个以逗号分隔")
     tagline: Optional[str] = Field(default=None, description="标语/宣传语")
@@ -119,12 +129,13 @@ class MovieExt(SQLModel, table=True):
 class SeriesExt(SQLModel, table=True):
     """剧集系列扩展模型"""
     __tablename__ = "series_ext"
+    
 
     id: Optional[int] = Field(default=None, primary_key=True, description="剧集系列扩展记录唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
     core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
     
-    tittle: Optional[str] = Field(default=None, description="系列名称")
+    title: Optional[str] = Field(default=None, description="系列名称")
     # 系列类型
     series_type: Optional[str] = Field(default=None, description="系列类型：Scripted|Reality|Animation|Documentary|News|Talk|Other等")
     
@@ -168,6 +179,10 @@ class Collection(SQLModel, table=True):
 class SeasonExt(SQLModel, table=True):
     """季度扩展模型"""
     __tablename__ = "season_ext"
+    # 唯一约束：同一用户下，系列+季度序号唯一
+    __table_args__ = (
+        UniqueConstraint("user_id", "series_core_id", "season_number", name="uq_season_and_user"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True, description="季度扩展记录唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
@@ -177,7 +192,7 @@ class SeasonExt(SQLModel, table=True):
     series_core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的系列核心记录ID")
     
     # 季度信息
-    tittle : Optional[str] = Field(default=None, description="季度名称")
+    title : Optional[str] = Field(default=None, description="季度名称")
     season_number: int = Field(description="季度序号")
     episode_count: Optional[int] = Field(default=None, description="本季集数")
     
@@ -246,7 +261,8 @@ class FileAsset(SQLModel, table=True):
 
     # 关联信息 - 可绑定到不同类型的媒体记录
     core_id: Optional[int] = Field(default=None, index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
-    version_id: Optional[int] = Field(default=None, index=True, foreign_key="media_version.id", description="关联的媒体版本记录ID")
+    version_id: Optional[int] = Field(default=None, index=True, foreign_key="media_version.id", description="关联的媒体版本记录ID(电影版本,集版本)")
+    season_version_id: Optional[int] = Field(default=None, index=True, foreign_key="media_version.id", description="关联的季度版本记录ID")
     episode_core_id: Optional[int] = Field(default=None, index=True, foreign_key="media_core.id", description="关联的剧集核心记录ID")
     
     # 文件元信息

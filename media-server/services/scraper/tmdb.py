@@ -154,7 +154,7 @@ class TmdbScraper(ScraperPlugin):
                     year = datetime.strptime(release_date[:10], "%Y-%m-%d").year
                 except Exception:
                     year = None
-            eid = str(it.get("id")) if it.get("id") is not None else None
+            eid = it.get("id") if it.get("id") is not None else None
             return ScraperSearchResult(
                 id=eid,
                 title=title,
@@ -175,7 +175,7 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return None
 
-    async def get_movie_details(self, movie_id: str, language: str = "zh-CN") -> Optional[ScraperMovieDetail]:
+    async def get_movie_details(self, movie_id: int, language: str = "zh-CN") -> Optional[ScraperMovieDetail]:
         """获取 TMDB 电影详情，包含外部ID、图像、演职员"""
         try:
             session = await self._ensure_session()
@@ -196,7 +196,7 @@ class TmdbScraper(ScraperPlugin):
             title = data.get("title") or ""
             original_title = data.get("original_title") or None
             release_date = data.get("release_date") or None
-            eid = str(data.get("id")) if data.get("id") is not None else None
+            eid = data.get("id") if data.get("id") is not None else None
             external_ids: List[ScraperExternalId] = []
             if eid:
                 external_ids.append(ScraperExternalId(provider="tmdb", external_id=eid, url=f"https://www.themoviedb.org/movie/{eid}"))
@@ -230,7 +230,7 @@ class TmdbScraper(ScraperPlugin):
                 # provider = self.name
                 credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url, provider_id=provider_id))
             md = ScraperMovieDetail(
-                movie_id=eid or "",
+                movie_id=eid,
                 title=title,
                 original_title=original_title if original_title != title else None,
                 original_language=(data.get("original_language") or None),
@@ -259,7 +259,7 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return None
 
-    async def get_series_details(self, series_id: str, language: str = "zh-CN") -> Optional[ScraperSeriesDetail]:
+    async def get_series_details(self, series_id: int, language: str = "zh-CN") -> Optional[ScraperSeriesDetail]:
         try:
             session = await self._ensure_session()
             auth = self._auth()
@@ -269,7 +269,7 @@ class TmdbScraper(ScraperPlugin):
                 if resp.status != 200:
                     return None
                 data = await resp.json()
-                eid = str(data.get("id")) if data.get("id") is not None else None
+                eid = data.get("id") if data.get("id") is not None else None
                 external_ids: List[ScraperExternalId] = []
                 if eid:
                     external_ids.append(ScraperExternalId(provider="tmdb", external_id=eid, url=f"https://www.themoviedb.org/tv/{eid}"))
@@ -297,7 +297,7 @@ class TmdbScraper(ScraperPlugin):
                     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
                     credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url))
                 sd = ScraperSeriesDetail(
-                    series_id=eid or "",
+                    series_id=eid,
                     name=data.get("name") or "",
                     original_name=(data.get("original_name") or None),
                     origin_country=[c for c in (data.get("origin_country") or [])],
@@ -327,7 +327,7 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return None
 
-    async def get_season_details(self, series_id: str, season_number: int, language: str = "zh-CN") -> Optional[ScraperSeasonDetail]:
+    async def get_season_details(self, series_id: int, season_number: int, language: str = "zh-CN") -> Optional[ScraperSeasonDetail]:
         try:
             session = await self._ensure_session()
             auth = self._auth()
@@ -340,7 +340,7 @@ class TmdbScraper(ScraperPlugin):
                 episodes: List[ScraperEpisodeItem] = []
                 for ep in data.get("episodes", []) or []:
                     episodes.append(ScraperEpisodeItem(
-                        episode_id=str(ep.get("id")) if ep.get("id") else None,
+                        episode_id=ep.get("id") if ep.get("id") else None,
                         episode_number=ep.get("episode_number") or 0,
                         season_number=season_number,
                         name=ep.get("name") or "",
@@ -352,7 +352,7 @@ class TmdbScraper(ScraperPlugin):
                         vote_count=ep.get("vote_count"),
                     ))
                 sd = ScraperSeasonDetail(
-                    season_id=str(data.get("id")) if data.get("id") else None,
+                    season_id=data.get("id") if data.get("id") else None,
                     season_number=season_number,
                     name=data.get("name"),
                     poster_path=(f"{self._image_base}/w500{data['poster_path']}" if data.get("poster_path") else None),
@@ -375,7 +375,7 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return None
 
-    async def get_episode_details(self, series_id: str, season_number: int, episode_number: int, language: str = "zh-CN") -> Optional[ScraperEpisodeDetail]:
+    async def get_episode_details(self, series_id: int, season_number: int, episode_number: int, language: str = "zh-CN") -> Optional[ScraperEpisodeDetail]:
         try:
             session = await self._ensure_session()
             auth = self._auth()
@@ -388,7 +388,7 @@ class TmdbScraper(ScraperPlugin):
                 air_date = data.get("air_date")
                 title = data.get("name") or ""
                 ed = ScraperEpisodeDetail(
-                    episode_id=str(data.get("id")) if data.get("id") else None,
+                    episode_id=data.get("id") if data.get("id") else None,
                     episode_number=episode_number,
                     season_number=season_number,
                     name=title,

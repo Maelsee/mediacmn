@@ -79,7 +79,8 @@ class SeasonDetail(BaseModel):
     cast: Optional[List[CreditItem]] = None
     runtime: Optional[int] = None
     runtime_text: Optional[str] = None
-    episodes: Optional[List[SeasonEpisode]] = None
+    versions: Optional[List[dict]] = None
+    
 
 
 
