@@ -14,7 +14,7 @@ async def details_raw(provider_id: str, media_type: str, language: Optional[str]
         mt = MediaType(media_type)
         lang = language or s.default_language
         auth = s._auth()
-        params = {**auth['params'], 'language': lang}
+        params = {**auth['params'], 'language': lang,"append_to_response": "external_ids,images,credits"}
         if mt == MediaType.MOVIE:
             url = f"{s._base_url}/movie/{provider_id}"
         else:
@@ -31,7 +31,7 @@ def main():
     import argparse
     p = argparse.ArgumentParser(description='TMDB 原始详情 JSON 输出')
     p.add_argument('provider_id', type=str)
-    p.add_argument('media_type', type=str, choices=[MediaType.MOVIE.value, MediaType.TV_SERIES.value])
+    p.add_argument('media_type', type=str, choices=[MediaType.MOVIE.value, MediaType.TV_SERIES.value, MediaType.TV_SEASON.value])
     p.add_argument('--language', type=str, default=None)
     a = p.parse_args()
     asyncio.run(details_raw(a.provider_id, a.media_type, a.language))

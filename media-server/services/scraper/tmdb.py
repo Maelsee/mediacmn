@@ -102,7 +102,8 @@ class TmdbScraper(ScraperPlugin):
             ]
             for ep in endpoints:
                 try:
-                    async with await self._get(ep, params=auth["params"], headers=auth["headers"]) as resp:
+                    session = await self._ensure_session()
+                    async with session.get(ep, params=auth["params"], headers=auth["headers"]) as resp:
                         if resp.status == 200:
                             return True
                 except Exception:
@@ -122,7 +123,7 @@ class TmdbScraper(ScraperPlugin):
                     params["year"] = year
                 else:
                     params["first_air_date_year"] = year
-            async with await self._get(url, params=params, headers=auth["headers"]) as resp:
+            async with session.get(url, params=params, headers=auth["headers"]) as resp:
                 if resp.status != 200:
                     return []
                 data = await resp.json()
@@ -132,7 +133,7 @@ class TmdbScraper(ScraperPlugin):
                     sr = self._convert_search_result(it, media_type, language)
                     if sr:
                         results.append(sr)
-                results.sort(key=lambda x: (x.vote_average or 0, x.year or 0), reverse=True)
+                # results.sort(key=lambda x: (x.vote_average or 0, x.year or 0), reverse=True)
                 return results
         except Exception:
             return []
@@ -197,49 +198,53 @@ class TmdbScraper(ScraperPlugin):
             original_title = data.get("original_title") or None
             release_date = data.get("release_date") or None
             eid = data.get("id") if data.get("id") is not None else None
-            external_ids: List[ScraperExternalId] = []
-            if eid:
-                external_ids.append(ScraperExternalId(provider="tmdb", external_id=eid, url=f"https://www.themoviedb.org/movie/{eid}"))
-            imdb_id = data.get("imdb_id")
-            if imdb_id:
-                external_ids.append(ScraperExternalId(provider="imdb", external_id=imdb_id, url=f"https://www.imdb.com/title/{imdb_id}"))
+            # external_ids: List[ScraperExternalId] = []
+            # if eid:
+            #     external_ids.append(ScraperExternalId(provider="tmdb", external_id=eid, url=f"https://www.themoviedb.org/movie/{eid}"))
+            # imdb_id = data.get("imdb_id")
+            # if imdb_id:
+            #     external_ids.append(ScraperExternalId(provider="imdb", external_id=imdb_id, url=f"https://www.imdb.com/title/{imdb_id}"))
             
-            arts: List[ScraperArtwork] = []
-            # 写入 tmdb 提供的海报和背景图
-            imgs = data.get("images") or {}
-            for poster in (imgs.get("posters") or [])[:5]:
-                if poster.get("file_path"):
-                    arts.append(ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{poster['file_path']}", width=poster.get("width"), height=poster.get("height"), language=poster.get("iso_639_1"), rating=poster.get("vote_average"), vote_count=poster.get("vote_count")))
-            for backdrop in (imgs.get("backdrops") or [])[:3]:
-                if backdrop.get("file_path"):
-                    arts.append(ScraperArtwork(type=ArtworkType.BACKDROP, url=f"{self._image_base}/w1280{backdrop['file_path']}", width=backdrop.get("width"), height=backdrop.get("height"), language=backdrop.get("iso_639_1"), rating=backdrop.get("vote_average"), vote_count=backdrop.get("vote_count")))
-            credits: List[ScraperCredit] = []
-            cr = data.get("credits") or {}
-            for cast in cr.get("cast", [])[:20]:
-                profile_path = cast.get("profile_path")
-                image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-                provider_id = cast.get("id")
-                # provider = self.name
-                credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), role=cast.get("character"), order=cast.get("order"), image_url=image_url, provider_id=provider_id))
-            for crew in cr.get("crew", [])[:15]:
-                job = (crew.get("job") or "").lower()
-                ctype = CreditType.DIRECTOR if job == "director" else CreditType.WRITER if job == "writer" else CreditType.PRODUCER if job == "producer" else CreditType.ACTOR
-                profile_path = crew.get("profile_path")
-                image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-                provider_id = crew.get("id")
-                # provider = self.name
-                credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url, provider_id=provider_id))
+            # arts: List[ScraperArtwork] = []
+            # # 写入 tmdb 提供的海报和背景图
+            # imgs = data.get("images") or {}
+            # for poster in (imgs.get("posters") or [])[:5]:
+            #     if poster.get("file_path"):
+            #         arts.append(ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{poster['file_path']}", width=poster.get("width"), height=poster.get("height"), language=poster.get("iso_639_1"), rating=poster.get("vote_average"), vote_count=poster.get("vote_count")))
+            # for backdrop in (imgs.get("backdrops") or [])[:3]:
+            #     if backdrop.get("file_path"):
+            #         arts.append(ScraperArtwork(type=ArtworkType.BACKDROP, url=f"{self._image_base}/w1280{backdrop['file_path']}", width=backdrop.get("width"), height=backdrop.get("height"), language=backdrop.get("iso_639_1"), rating=backdrop.get("vote_average"), vote_count=backdrop.get("vote_count")))
+            # credits: List[ScraperCredit] = []
+            # cr = data.get("credits") or {}
+            # for cast in cr.get("cast", [])[:20]:
+            #     profile_path = cast.get("profile_path")
+            #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
+            #     provider_id = cast.get("id")
+            #     # provider = self.name
+            #     credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), role=cast.get("character"), order=cast.get("order"), image_url=image_url, provider_id=provider_id))
+            # for crew in cr.get("crew", [])[:15]:
+            #     job = (crew.get("job") or "").lower()
+            #     ctype = CreditType.DIRECTOR if job == "director" else CreditType.WRITER if job == "writer" else CreditType.PRODUCER if job == "producer" else CreditType.ACTOR
+            #     profile_path = crew.get("profile_path")
+            #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
+            #     provider_id = crew.get("id")
+            #     # provider = self.name
+            #     credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url, provider_id=provider_id))
+            external_ids=self._get_external_ids(data)
+            arts=self._get_artworks(data)
+            credits=self._get_credits(data.get("credits") or {})
+            genres=self._get_genres(data)
             md = ScraperMovieDetail(
                 movie_id=eid,
                 title=title,
-                original_title=original_title if original_title != title else None,
+                original_title=original_title,
                 original_language=(data.get("original_language") or None),
                 origin_country =[c for c in (data.get("origin_country") or [])],
                 overview=data.get("overview"),
                 release_date=release_date,
                 runtime=data.get("runtime"),
                 tagline=data.get("tagline"),
-                genres=[g.get("name") for g in (data.get("genres") or []) if g.get("name")],
+                genres=genres,
                 poster_path=(f"{self._image_base}/w500{data['poster_path']}" if data.get("poster_path") else None),
                 backdrop_path=(f"{self._image_base}/w1280{data['backdrop_path']}" if data.get("backdrop_path") else None),
                 vote_average=data.get("vote_average"),
@@ -270,32 +275,36 @@ class TmdbScraper(ScraperPlugin):
                     return None
                 data = await resp.json()
                 eid = data.get("id") if data.get("id") is not None else None
-                external_ids: List[ScraperExternalId] = []
-                if eid:
-                    external_ids.append(ScraperExternalId(provider="tmdb", external_id=eid, url=f"https://www.themoviedb.org/tv/{eid}"))
-                tvdb_id = (data.get("external_ids") or {}).get("tvdb_id") if isinstance(data.get("external_ids"), dict) else None
-                if tvdb_id:
-                    external_ids.append(ScraperExternalId(provider="tvdb", external_id=str(tvdb_id), url=f"https://thetvdb.com/?tab=series&id={tvdb_id}"))
-                arts: List[ScraperArtwork] = []
-                imgs = data.get("images") or {}
-                for poster in (imgs.get("posters") or [])[:5]:
-                    if poster.get("file_path"):
-                        arts.append(ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{poster['file_path']}", width=poster.get("width"), height=poster.get("height"), language=poster.get("iso_639_1"), rating=poster.get("vote_average"), vote_count=poster.get("vote_count")))
-                for backdrop in (imgs.get("backdrops") or [])[:3]:
-                    if backdrop.get("file_path"):
-                        arts.append(ScraperArtwork(type=ArtworkType.BACKDROP, url=f"{self._image_base}/w1280{backdrop['file_path']}", width=backdrop.get("width"), height=backdrop.get("height"), language=backdrop.get("iso_639_1"), rating=backdrop.get("vote_average"), vote_count=backdrop.get("vote_count")))
-                credits: List[ScraperCredit] = []
-                cr = data.get("credits") or {}
-                for cast in cr.get("cast", [])[:20]:
-                    profile_path = cast.get("profile_path")
-                    image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-                    credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), role=cast.get("character"), order=cast.get("order"), image_url=image_url))
-                for crew in cr.get("crew", [])[:15]:
-                    job = (crew.get("job") or "").lower()
-                    ctype = CreditType.DIRECTOR if job == "director" else CreditType.WRITER if job == "writer" else CreditType.PRODUCER if job == "producer" else CreditType.ACTOR
-                    profile_path = crew.get("profile_path")
-                    image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-                    credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url))
+                # external_ids: List[ScraperExternalId] = []
+                # if eid:
+                #     external_ids.append(ScraperExternalId(provider="tmdb", external_id=eid, url=f"https://www.themoviedb.org/tv/{eid}"))
+                # tvdb_id = (data.get("external_ids") or {}).get("tvdb_id") if isinstance(data.get("external_ids"), dict) else None
+                # if tvdb_id:
+                #     external_ids.append(ScraperExternalId(provider="tvdb", external_id=str(tvdb_id), url=f"https://thetvdb.com/?tab=series&id={tvdb_id}"))
+                # arts: List[ScraperArtwork] = []
+                # imgs = data.get("images") or {}
+                # for poster in (imgs.get("posters") or [])[:5]:
+                #     if poster.get("file_path"):
+                #         arts.append(ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{poster['file_path']}", width=poster.get("width"), height=poster.get("height"), language=poster.get("iso_639_1"), rating=poster.get("vote_average"), vote_count=poster.get("vote_count")))
+                # for backdrop in (imgs.get("backdrops") or [])[:3]:
+                #     if backdrop.get("file_path"):
+                #         arts.append(ScraperArtwork(type=ArtworkType.BACKDROP, url=f"{self._image_base}/w1280{backdrop['file_path']}", width=backdrop.get("width"), height=backdrop.get("height"), language=backdrop.get("iso_639_1"), rating=backdrop.get("vote_average"), vote_count=backdrop.get("vote_count")))
+                # credits: List[ScraperCredit] = []
+                # cr = data.get("credits") or {}
+                # for cast in cr.get("cast", [])[:20]:
+                #     profile_path = cast.get("profile_path")
+                #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
+                #     credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), role=cast.get("character"), order=cast.get("order"), image_url=image_url))
+                # for crew in cr.get("crew", [])[:15]:
+                #     job = (crew.get("job") or "").lower()
+                #     ctype = CreditType.DIRECTOR if job == "director" else CreditType.WRITER if job == "writer" else CreditType.PRODUCER if job == "producer" else CreditType.ACTOR
+                #     profile_path = crew.get("profile_path")
+                #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
+                #     credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url))
+                external_ids=self._get_external_ids(data)
+                arts=self._get_artworks(data)
+                credits=self._get_credits(data.get("credits") or {})
+                genres=self._get_genres(data)
                 sd = ScraperSeriesDetail(
                     series_id=eid,
                     name=data.get("name") or "",
@@ -309,7 +318,7 @@ class TmdbScraper(ScraperPlugin):
                     episode_run_time=[int(x) for x in (data.get("episode_run_time") or []) if isinstance(x, (int, float))],
                     number_of_episodes=data.get("number_of_episodes"),
                     number_of_seasons=data.get("number_of_seasons"),
-                    genres=[g.get("name") for g in (data.get("genres") or []) if g.get("name")],
+                    genres=genres,
                     poster_path=(f"{self._image_base}/w500{data['poster_path']}" if data.get("poster_path") else None),
                     backdrop_path=(f"{self._image_base}/w1280{data['backdrop_path']}" if data.get("backdrop_path") else None),
                     vote_average=data.get("vote_average"),
@@ -331,12 +340,47 @@ class TmdbScraper(ScraperPlugin):
         try:
             session = await self._ensure_session()
             auth = self._auth()
-            params = {**auth["params"], "language": language}
+            params = {**auth["params"], "language": language, "append_to_response": "external_ids,images,credits"}
             url = f"{self._base_url}/tv/{series_id}/season/{season_number}"
-            async with await self._get(url, params=params, headers=auth["headers"]) as resp:
+            async with session.get(url, params=params, headers=auth["headers"]) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
+
+                eid = data.get("id") if data.get("id") is not None else None
+                # external_ids: List[ScraperExternalId] = []
+                # if eid:
+                #     external_ids.append(ScraperExternalId(provider="tmdb", external_id=eid, url=f"https://www.themoviedb.org/tv/{series_id}/season/{season_number}"))
+                # tvdb_id = (data.get("external_ids") or {}).get("tvdb_id") if isinstance(data.get("external_ids"), dict) else None
+                # if tvdb_id:
+                #     external_ids.append(ScraperExternalId(provider="tvdb", external_id=str(tvdb_id), url=f"https://thetvdb.com/?tab=season&id={tvdb_id}"))
+                
+                # arts: List[ScraperArtwork] = []
+                # imgs = data.get("images") or {}
+                # for poster in (imgs.get("posters") or [])[:5]:
+                #     if poster.get("file_path"):
+                #         arts.append(ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{poster['file_path']}", width=poster.get("width"), height=poster.get("height"), language=poster.get("iso_639_1"), rating=poster.get("vote_average"), vote_count=poster.get("vote_count")))
+                # for backdrop in (imgs.get("backdrops") or [])[:3]:
+                #     if backdrop.get("file_path"):
+                #         arts.append(ScraperArtwork(type=ArtworkType.BACKDROP, url=f"{self._image_base}/w1280{backdrop['file_path']}", width=backdrop.get("width"), height=backdrop.get("height"), language=backdrop.get("iso_639_1"), rating=backdrop.get("vote_average"), vote_count=backdrop.get("vote_count")))
+                # credits: List[ScraperCredit] = []
+                # cr = data.get("credits") or {}
+                # for cast in cr.get("cast", [])[:20]:
+                #     profile_path = cast.get("profile_path")
+                #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
+                #     credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), role=cast.get("character"), order=cast.get("order"), image_url=image_url))
+                # for crew in cr.get("crew", [])[:15]:
+                #     job = (crew.get("job") or "").lower()
+                #     ctype = CreditType.DIRECTOR if job == "director" else CreditType.WRITER if job == "writer" else CreditType.PRODUCER if job == "producer" else CreditType.ACTOR
+                #     profile_path = crew.get("profile_path")
+                #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
+                #     credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url))
+                external_ids=self._get_external_ids(data)
+                arts=self._get_artworks(data)
+                credits=self._get_credits(data.get("credits") or {})
+                genres=self._get_genres(data)
+
+
                 episodes: List[ScraperEpisodeItem] = []
                 for ep in data.get("episodes", []) or []:
                     episodes.append(ScraperEpisodeItem(
@@ -352,7 +396,7 @@ class TmdbScraper(ScraperPlugin):
                         vote_count=ep.get("vote_count"),
                     ))
                 sd = ScraperSeasonDetail(
-                    season_id=data.get("id") if data.get("id") else None,
+                    season_id=eid,
                     season_number=season_number,
                     name=data.get("name"),
                     poster_path=(f"{self._image_base}/w500{data['poster_path']}" if data.get("poster_path") else None),
@@ -362,13 +406,11 @@ class TmdbScraper(ScraperPlugin):
                     episodes=episodes,
                     vote_average=data.get("vote_average"),
                     provider=self.name,
+                    genres=genres,
                     provider_url=url,
-                    artworks=(
-                        [ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{data['poster_path']}", language=language)]
-                        if data.get("poster_path") else []
-                    ),
-                    credits=[],
-                    external_ids=[],
+                    artworks=arts,
+                    credits=credits,
+                    external_ids=external_ids,
                     raw_data=data,
                 )
                 return sd
@@ -379,14 +421,17 @@ class TmdbScraper(ScraperPlugin):
         try:
             session = await self._ensure_session()
             auth = self._auth()
-            params = {**auth["params"], "language": language}
+            params = {**auth["params"], "language": language, "append_to_response": "external_ids,images"}
             url = f"{self._base_url}/tv/{series_id}/season/{season_number}/episode/{episode_number}"
-            async with await self._get(url, params=params, headers=auth["headers"]) as resp:
+            async with session.get(url, params=params, headers=auth["headers"]) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
                 air_date = data.get("air_date")
                 title = data.get("name") or ""
+                arts=self._get_artworks(data)
+                external_ids=self._get_external_ids(data)
+                # credits=self._get_credits(data.get("credits") or {})
                 ed = ScraperEpisodeDetail(
                     episode_id=data.get("id") if data.get("id") else None,
                     episode_number=episode_number,
@@ -400,15 +445,69 @@ class TmdbScraper(ScraperPlugin):
                     vote_count=data.get("vote_count"),
                     provider=self.name,
                     provider_url=url,
-                    artworks=(
-                        [ScraperArtwork(type=ArtworkType.THUMB, url=f"{self._image_base}/w500{data['still_path']}", language=language)]
-                        if data.get("still_path") else []
-                    ),
+                    artworks=arts,
                     credits=[],
-                    external_ids=[ScraperExternalId(provider="tmdb", external_id=str(data.get("id"))) ] if data.get("id") else [],
+                    external_ids=external_ids,
                     raw_data=data,
                     episode_type=data.get("episode_type")
                 )
                 return ed
         except Exception:
             return None
+
+    def _get_artworks(self, data: dict, language: str = "zh-CN") -> List[ScraperArtwork]:
+        artworks = []
+        # 主海报/背景
+        if data.get("poster_path"):
+            artworks.append(ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{data['poster_path']}", language=language, is_primary=True))
+        if data.get("backdrop_path"):
+            artworks.append(ScraperArtwork(type=ArtworkType.BACKDROP, url=f"{self._image_base}/w1280{data['backdrop_path']}", language=language, is_primary=True))
+        if data.get("still_path"):
+            artworks.append(ScraperArtwork(type=ArtworkType.STILL, url=f"{self._image_base}/w500{data['still_path']}", language=language, is_primary=True))
+        # 其他海报/背景
+        imgs = data.get("images") or {}
+        for poster in (imgs.get("posters") or [])[:2]:
+            if poster.get("file_path"):
+                artworks.append(ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{poster['file_path']}", width=poster.get("width"), height=poster.get("height"), language=poster.get("iso_639_1"), rating=poster.get("vote_average"), vote_count=poster.get("vote_count"), is_primary=False))
+        for backdrop in (imgs.get("backdrops") or [])[:2]:
+            if backdrop.get("file_path"):
+                artworks.append(ScraperArtwork(type=ArtworkType.BACKDROP, url=f"{self._image_base}/w1280{backdrop['file_path']}", width=backdrop.get("width"), height=backdrop.get("height"), language=backdrop.get("iso_639_1"), rating=backdrop.get("vote_average"), vote_count=backdrop.get("vote_count"), is_primary=False))
+                
+        return artworks
+
+    def _get_credits(self, data: dict) -> List[ScraperCredit]:
+        credits = []
+        # 主演员
+        for cast in (data.get("cast") or [])[:15]:
+            if cast.get("profile_path"):
+                credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), original_name=cast.get("original_name"), character=cast.get("character"), order=cast.get("order"), image_url=f"{self._image_base}/w500{cast['profile_path']}", provider_id=cast.get("id"),is_flying=False))
+        # 工作人员：导演、编剧、制片人
+        for crew in (data.get("crew") or [])[:15]:
+            job = (crew.get("job") or "").lower()
+            ctype = CreditType.DIRECTOR if job == "director" else CreditType.WRITER if job == "writer" else CreditType.PRODUCER if job == "producer" else CreditType.EDITOR if job == "editor" else None
+            if ctype:
+                credits.append(ScraperCredit(type=ctype, name=crew.get("name"), original_name=crew.get("original_name"), character=crew.get("job"), order=crew.get("order"), image_url=f"{self._image_base}/w500{crew['profile_path']}", provider_id=crew.get("id"),is_flying=False))
+        # 飞行嘉宾/客串
+        if data.get("guest_stars"):
+            for guest in (data.get("guest_stars") or [])[:10]:
+                if guest.get("profile_path"):
+                    credits.append(ScraperCredit(type=CreditType.ACTOR, name=guest.get("name"), original_name=guest.get("original_name"), character=guest.get("character"), order=guest.get("order"), image_url=f"{self._image_base}/w500{guest['profile_path']}", provider_id=guest.get("id"), is_flying=True))
+        # logger.info(f"tmdb演员表: {credits}")
+        return credits
+
+    def _get_external_ids(self, data: dict) -> List[ScraperExternalId]:
+        external_ids = []
+        if data.get("id"):
+            external_ids.append(ScraperExternalId(provider="tmdb", external_id=str(data.get("id"))))
+        ext_ids = data.get("external_ids") or {}
+        if ext_ids.get("imdb_id"):
+            external_ids.append(ScraperExternalId(provider="imdb", external_id=ext_ids.get("imdb_id"))) 
+        if ext_ids.get("tvdb_id"):
+            external_ids.append(ScraperExternalId(provider="tvdb", external_id=str(ext_ids.get("tvdb_id"))))    
+        return external_ids
+
+    def _get_genres(self, data: dict) -> List[str]:
+        genres = []
+        for genre in (data.get("genres") or []):
+            genres.append(genre.get("name"))
+        return genres

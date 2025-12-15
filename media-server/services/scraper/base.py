@@ -12,15 +12,16 @@ from typing import Dict, List, Optional
 # 原有枚举类不变
 class MediaType(Enum):
     MOVIE = "movie"
-    TV_SERIES = "tv_series"
-    TV_SEASON = "tv_season"
-    TV_EPISODE = "tv_episode"
+    TV_SERIES = "series"
+    TV_SEASON = "season"
+    TV_EPISODE = "episode"
 
 class ArtworkType(Enum):
     POSTER = "poster"
     BACKDROP = "backdrop"
     BANNER = "banner"
     THUMB = "thumb"
+    STILL = "still"
     LOGO = "logo"
     CLEARART = "clearart"
     DISC = "disc"
@@ -29,6 +30,7 @@ class CreditType(Enum):
     DIRECTOR = "director"
     WRITER = "writer"
     ACTOR = "actor"
+    GUEST = "guest"
     PRODUCER = "producer"
     COMPOSER = "composer"
     CINEMATOGRAPHER = "cinematographer"
@@ -51,18 +53,19 @@ class ScraperArtwork:
     language: Optional[str] = None
     rating: Optional[float] = None
     vote_count: Optional[int] = None
+    is_primary: Optional[bool] = None  #是否为主要海报/背景
 
 @dataclass
 class ScraperCredit:
     type: CreditType
     name: str
-    role: Optional[str] = None
+    original_name: Optional[str] = None
+    character: Optional[str] = None
     order: Optional[int] = None
     image_url: Optional[str] = None
     provider_id: Optional[int] = None
     is_flying: Optional[bool] = None  # 综艺独有：是否为飞行嘉宾
-
-
+    
 # 2. 搜索详情（无独有字段，保持原有结构）
 @dataclass
 class ScraperSearchResult:
@@ -113,19 +116,6 @@ class ScraperMovieDetail:
     raw_data: Optional[Dict] = None
 
 
-# 4. 系列详情（新增综艺独有字段）
-# @dataclass
-# class ScraperSeasonBrief:
-#     """系列详情中的季概要（含综艺特别篇标识）"""
-#     season_id: str
-#     season_number: int
-#     name: Optional[str] = None
-#     overview: Optional[str] = None
-#     poster_path: Optional[str] = None
-#     episode_count: Optional[int] = None
-#     air_date: Optional[str] = None
-#     vote_average: Optional[float] = None
-#     is_special: Optional[bool] = None  # 综艺独有：是否为特别篇（season0）
 
 @dataclass
 class ScraperSeriesDetail:
@@ -157,7 +147,6 @@ class ScraperSeriesDetail:
     type: Optional[str] = None  # 综艺：Reality；剧集/动画：Scripted
     # seasons: List[ScraperSeasonBrief] = field(default_factory=list)  # 季概要列表
 
-
 # 5. 季详情（新增综艺/动画独有字段）
 @dataclass
 class ScraperEpisodeItem:
@@ -176,6 +165,8 @@ class ScraperEpisodeItem:
     # episode_part: Optional[str] = None  # 综艺：期数部分（上/下）
     # chapter_name: Optional[str] = None  # 动画：篇章名（如风起天南）
 
+
+
 @dataclass
 class ScraperSeasonDetail:
     season_id: Optional[int]
@@ -191,12 +182,15 @@ class ScraperSeasonDetail:
     provider_url: Optional[str] = None
     artworks: List[ScraperArtwork] = field(default_factory=list)
     credits: List[ScraperCredit] = field(default_factory=list)
+    genres: List[str] = field(default_factory=list)
     external_ids: List[ScraperExternalId] = field(default_factory=list)
     raw_data: Optional[Dict] = None
     # is_special: Optional[bool] = None  # 综艺独有：是否为特别篇（season0）
 
     # 新增字段（TMDB原生，现有类缺失）
     # _id: Optional[str] = None  # 季唯一标识（如ObjectId）
+
+
 
 
 # 6. 集详情（新增综艺/动画独有字段）

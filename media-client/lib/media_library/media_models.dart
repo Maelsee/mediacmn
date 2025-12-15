@@ -42,12 +42,14 @@ class HomeCardsResponse {
   final List<HomeCardItem> movie;
   final List<HomeCardItem> tv;
   final List<HomeCardItem> animation;
+  final List<HomeCardItem> reality;
 
   HomeCardsResponse({
     required this.genres,
     required this.movie,
     required this.tv,
     required this.animation,
+    required this.reality,
   });
 
   factory HomeCardsResponse.fromJson(Map<String, dynamic> json) =>
@@ -68,6 +70,11 @@ class HomeCardsResponse {
                 .toList() ??
             const [],
         animation: (json['animation'] as List?)
+                ?.cast<Map<String, dynamic>>()
+                .map(HomeCardItem.fromJson)
+                .toList() ??
+            const [],
+        reality: (json['reality'] as List?)
                 ?.cast<Map<String, dynamic>>()
                 .map(HomeCardItem.fromJson)
                 .toList() ??

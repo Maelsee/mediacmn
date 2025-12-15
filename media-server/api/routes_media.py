@@ -28,7 +28,7 @@ def filter_media_cards(
     page: int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=200),
     q: Optional[str] = Query(None, description="关键字"),
-    type: Optional[str] = Query(None, description="movie|tv|animation"),
+    type: Optional[str] = Query(None, description="movie|tv|animation|reality"),
     genres: Optional[str] = Query(None, description="逗号分隔的分类"),
     year: Optional[int] = Query(None),
     year_start: Optional[int] = Query(None),
@@ -44,7 +44,7 @@ def filter_media_cards(
         - page: int
         - page_size: int
         - q: Optional[str]
-        - type: Optional[str] = Query(None, description="movie|tv")
+        - type: Optional[str] = Query(None, description="movie|tv|animation|reality")
         - genres: Optional[str]
         - year: Optional[int]
         - year_start: Optional[int]

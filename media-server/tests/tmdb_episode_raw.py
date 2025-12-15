@@ -11,7 +11,7 @@ async def episode_raw(series_id: str, season_number: int, episode_number: int, l
     try:
         lang = language or s.default_language
         auth = s._auth()
-        params = {**auth['params'], 'language': lang}
+        params = {**auth['params'], 'language': lang,"append_to_response": "external_ids,images,credits"}
         url = f"{s._base_url}/tv/{series_id}/season/{season_number}/episode/{episode_number}"
         async with await s._get(url, params=params, headers=auth['headers']) as resp:
             data = await resp.json()

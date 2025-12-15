@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List
 from core.config import get_settings
 import redis
 import json
-from sqlmodel import Session, select, func, and_, or_
+from sqlmodel import Session, select, func, and_, or_, case
 
 import logging
 logger = logging.getLogger(__name__)
@@ -196,7 +196,7 @@ class MediaService:
         tv_rows = db.exec(
             select(MediaCore, SeriesExt)
             .join(SeriesExt, SeriesExt.core_id == MediaCore.id, isouter=True)
-            .where(and_(MediaCore.user_id == user_id, MediaCore.kind == "series",MediaCore.subtype == 'Scripted'))
+            .where(and_(MediaCore.user_id == user_id, MediaCore.kind == "series",MediaCore.subtype == 'TV'))
             .order_by(MediaCore.updated_at.desc())
             .limit(10)
         ).all()
@@ -244,8 +244,33 @@ class MediaService:
                 "release_date": released,
                 "media_type": "animation",
             })
-
-        return {"genres": genre_cards, "movie": movie_cards, "tv": tv_cards, "animation": animation_cards}
+        # 真人秀card 10条
+        reality_rows = db.exec(
+            select(MediaCore, SeriesExt)
+            .join(SeriesExt, SeriesExt.core_id == MediaCore.id, isouter=True)
+            .where(and_(MediaCore.user_id == user_id, MediaCore.kind == "series", MediaCore.subtype == 'Reality'))
+            .order_by(MediaCore.updated_at.desc())
+            .limit(10)
+        ).all()
+        reality_cards: List[Dict[str, Any]] = []
+        for core, series_ext in reality_rows:
+            released = None
+            rd = getattr(core, "display_date", None)
+            if rd:
+                try:
+                    released = rd.isoformat()
+                except Exception:
+                    released = rd
+            poster_url2 = getattr(core, "display_poster_path", None) or (getattr(series_ext, "poster_path", None) if series_ext else None)
+            reality_cards.append({
+                "id": core.id,
+                "name": core.title,
+                "cover_url": poster_url2,
+                "rating": getattr(core, "display_rating", None) or (getattr(series_ext, "rating", None) if series_ext else None),
+                "release_date": released,
+                "media_type": "reality",
+            })
+        return {"genres": genre_cards, "movie": movie_cards, "tv": tv_cards, "animation": animation_cards, "reality": reality_cards}
     
     def filter_media_cards(
         self,
@@ -268,9 +293,11 @@ class MediaService:
             if type_filter == "movie":
                 stmt = stmt.where(MediaCore.kind == "movie")
             elif type_filter in ("tv", "series"):
-                stmt = stmt.where(MediaCore.kind == "series", MediaCore.subtype == 'Scripted')
+                stmt = stmt.where(MediaCore.kind == "series", MediaCore.subtype == 'TV')
             elif type_filter == "animation":
                 stmt = stmt.where(MediaCore.kind == "series", MediaCore.subtype == 'Animation')
+            elif type_filter == "reality":
+                stmt = stmt.where(MediaCore.kind == "series", MediaCore.subtype == 'Reality')
         if q:
             like_q = f"%{q}%"
             stmt = stmt.where(or_(MediaCore.title.ilike(like_q), MediaCore.original_title.ilike(like_q)))
@@ -525,20 +552,121 @@ class MediaService:
         ).all()
         return list(genres)
 
+    # def _get_cast(self, db: Session, user_id: int, core_id: int) -> List[Dict[str, Any]]:
+    #     """获取演员列表。"""
+    #     # Optimized to select all needed fields in one query
+    #     actor = db.exec(
+    #         select(Person.name, Credit.character, Person.profile_url)
+    #         .join(Credit, Credit.person_id == Person.id)
+    #         .where(and_(
+    #             Credit.user_id == user_id,
+    #             Credit.core_id == core_id,
+    #             Credit.role == "cast"
+    #         ))
+    #     ).all()
+        
+
+    #     return [{"name": name, "character": character, "image_url": purl} for name, character, purl in actor]
+    
+
+    # def _get_cast(self, db: Session, user_id: int, core_id: int) -> List[Dict[str, Any]]:
+    #     """获取演职员列表：导演在前，演员/客串在后（单查询优化版）"""
+    #     # 单查询合并两类数据：导演（crew+director/客串（cast+guest）
+    #     # 用func.IF添加类型标识，用于排序和character赋值
+    #     query = select(
+    #         Person.name,
+    #         Credit.character,
+    #         Person.profile_url,
+    #         # 类型标识：满足导演条件则为"director"，否则为"performer"
+    #         func.IF(
+    #             and_(Credit.role == "crew", Credit.job == "director"),  # 注：此处job="director"可能是笔误，建议确认是否为"导演"
+    #             "director", 
+    #             "performer"
+    #         ).label("person_type")
+    #     ).join(
+    #         Credit, Credit.person_id == Person.id
+    #     ).where(
+    #         and_(
+    #             Credit.user_id == user_id,
+    #             Credit.core_id == core_id,
+    #             # 合并条件：导演 OR 演员/客串
+    #             or_(
+    #                 and_(Credit.role == "crew", Credit.job == "director"),  # 导演条件
+    #                 Credit.role.in_(["cast", "guest"])  # 演员（cast）+ 客串（guest）条件
+    #             )
+    #         )
+    #     ).order_by(
+    #         # 按类型标识升序："director"（导演）在前，"performer"（演员/客串）在后
+    #         func.IF(
+    #             and_(Credit.role == "crew", Credit.job == "director"),
+    #             "director", 
+    #             "performer"
+    #         ),
+    #         Credit.order.asc(),
+    #     )
+
+    #     # 执行单次查询
+    #     results = db.exec(query).all()
+
+    #     # 处理结果：根据类型标识赋值character
+    #     return [
+    #         {
+    #             "name": name,
+    #             # 导演固定显示"导演"，演员/客串用原始character
+    #             "character": "导演" if person_type == "director" else character,
+    #             "image_url": profile_url
+    #         }
+    #         for name, character, profile_url, person_type in results
+    #     ]
+
     def _get_cast(self, db: Session, user_id: int, core_id: int) -> List[Dict[str, Any]]:
-        """获取演员列表。"""
-        # Optimized to select all needed fields in one query
-        people = db.exec(
-            select(Person.name, Credit.character, Person.profile_url)
-            .join(Credit, Credit.person_id == Person.id)
-            .where(and_(
+        """获取演职员列表：导演在前，演员/客串在后（单查询优化版）"""
+        # 1. 定义条件：判断是否为“导演”（crew角色 + job=director）
+        is_director = and_(Credit.role == "crew", Credit.job == "director")
+        
+        # 2. 单查询合并数据：用case()替代func.IF()
+        query = select(
+            Person.name,
+            Credit.character,
+            Person.profile_url,
+            # 条件判断：是导演则为"director"，否则为"performer"（替代原func.IF）
+            case(
+                (is_director, "director"),  # 条件1：满足则返回"director"
+                else_="performer"           # 其他情况返回"performer"
+            ).label("person_type")
+        ).join(
+            Credit, Credit.person_id == Person.id
+        ).where(
+            and_(
                 Credit.user_id == user_id,
                 Credit.core_id == core_id,
-                Credit.role == "cast"
-            ))
-        ).all()
-        return [{"name": name, "character": character, "image_url": purl} for name, character, purl in people]
-    
+                # 合并条件：导演（crew+director） OR 演员/客串（cast/guest）
+                or_(
+                    is_director,  # 复用上面定义的“导演条件”，避免重复代码
+                    Credit.role.in_(["cast", "guest"])
+                )
+            )
+        ).order_by(
+            # 排序：导演在前（"director"），演员/客串在后（"performer"）（替代原func.IF）
+            case(
+                (is_director, "director"),
+                else_="performer"
+            ),
+            Credit.order.asc()  # 原排序逻辑保留
+        )
+
+        # 执行查询并处理结果（原逻辑不变）
+        results = db.exec(query).all()
+        return [
+            {
+                "name": name,
+                "character": "导演" if person_type == "director" else character,  # 导演固定显示“导演”
+                "image_url": profile_url
+            }
+            for name, character, profile_url, person_type in results
+        ]
+
+
     def _get_crew(self, db: Session, user_id: int, core_id: int, job: str) -> List[Dict[str, Any]]:
         people = db.exec(
             select(Person.name, Credit.character, Person.profile_url)
@@ -607,9 +735,6 @@ class MediaService:
             })
         
         return result
-
-    # Removed _get_seasons, _get_episodes, _get_episode_assets as they are now integrated into get_media_detail
-    # Removed _get_primary_artwork, _to_artwork_url if unused (kept _to_human_size etc as helpers)
 
     def list_media_files(
         self, 
@@ -1240,7 +1365,7 @@ class MediaService:
                         episodes_list.sort(key=lambda x: x["episode_number"])
                         # ======================================================
 
-                    # 7.6 组装季版本数据（含存储名称）- 修复 sample_asset 索引错误
+                    # 7.6 组装季版本数据（含存储名称）- 修复 sample_asset·                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              · 索引错误
                     storage_name = "未知存储"
                     if current_ep_versions:
                         first_ep_version_id = current_ep_versions[0].id
@@ -1260,15 +1385,7 @@ class MediaService:
 
                 # 7.7 组装季数据（含总集数）- 修复 episode_count_map 未定义
                 total_episode_count = episode_count_map.get(s_core.id, 0)
-                # 处理 air_date：兼容 first_aired 或 aired_date 字段
-                # air_date = None
-                # if hasattr(s_ext, "first_aired") and s_ext.first_aired:
-                #     air_date = s_ext.first_aired.isoformat() if isinstance(s_ext.first_aired, datetime) else str(s_ext.first_aired)
-                # elif hasattr(s_ext, "aired_date") and s_ext.aired_date:
-                #     air_date = s_ext.aired_date.isoformat() if isinstance(s_ext.aired_date, datetime) else str(s_ext.aired_date)
-                # r = getattr(s_ext, "runtime", None) or (getattr(series_ext, "episode_run_time", None) if series_ext else None)
-                # ov = getattr(s_ext, "overview", None) or (getattr(series_ext, "overview", None) if series_ext else None) or s_core.plot
-                # rtg = getattr(s_ext, "rating", None) or (getattr(series_ext, "rating", None) if series_ext else None)
+               
                 r=getattr(s_ext, "runtime", None) or (getattr(series_ext, "episode_run_time", None) if series_ext else None)
                 enriched_seasons.append({
                     "id": s_core.id,
@@ -1321,6 +1438,8 @@ class MediaService:
         }
 
         return result
+
+
 # "season":[
 #     {
 #         "id": 1,

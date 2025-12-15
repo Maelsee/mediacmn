@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     SCRAPER_FALLBACK_SERIES: bool = Field(default=False, description="剧集是否启用语言回退")
     ENABLE_SCRAPERS: Union[str, List[str], None] = Field(default=["tmdb"], description="启用的刮削器插件")
     # 侧车本地化（NFO/海报）开关与限制
-    SIDE_CAR_LOCALIZATION_ENABLED: bool = Field(default=True, description="是否启用侧车异步本地化")
+    SIDE_CAR_LOCALIZATION_ENABLED: bool = Field(default=False, description="是否启用侧车异步本地化")
     SIDE_CAR_LOCALIZATION_ARTWORK_LIMIT: int = Field(default=2, description="侧车阶段写入的艺术作品最大数量")
     TASK_EXECUTOR_COUNT: int = Field(default=1, description="统一任务执行器（侧车文件上传）并发数")
 

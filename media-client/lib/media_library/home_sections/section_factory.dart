@@ -33,6 +33,12 @@ class SectionFactory {
           kind: 'animation',
           items: state.data?.animation ?? [],
         );
+      case '综艺':
+        return MediaListSection(
+          title: '综艺',
+          kind: 'reality',
+          items: state.data?.reality ?? [],
+        );
       default:
         return const SizedBox.shrink();
     }

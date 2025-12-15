@@ -26,11 +26,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from utils.time_compat import get_utc_now_factory
 
-from sqlmodel import UniqueConstraint, BigInteger, Column,Field, SQLModel
+from sqlmodel import UniqueConstraint, BigInteger, Column, Field, SQLModel, JSON
 
 
 
@@ -38,6 +38,7 @@ from sqlmodel import UniqueConstraint, BigInteger, Column,Field, SQLModel
 class MediaCore(SQLModel, table=True):
     """媒体核心模型 - 所有媒体类型的基础实体"""
     __tablename__ = "media_core"
+    __table_args__ = (UniqueConstraint("user_id", "kind", "tmdb_id",name="uix_media_core_user_id_kind_tmdb_id"),)
     
 
     id: Optional[int] = Field(default=None, primary_key=True, description="媒体核心记录唯一标识")
@@ -45,10 +46,10 @@ class MediaCore(SQLModel, table=True):
     
     # 基础信息
     kind: str = Field(index=True, description="媒体类型：movie|series|season|episode")
-    subtype: Optional[str] = Field(default=None, index=True, description="媒体子类型：scripted|reality|animation|documentary|news|talk|other等")
+    subtype: Optional[str] = Field(default=None, index=True, description="系类媒体子类型：scripted|reality|animation|documentary|news|talk|other等")
     title: str = Field(index=True, description="标题")
     original_title: Optional[str] = Field(default=None, description="原始标题")
-    # origin_country: Optional[str] = Field(default=None, description="原产国家/地区，多个以逗号分隔")
+    # origin_country: Optional[List[str]] = Field(default=None, description="原产国家/地区，多个值以列表形式存储")
     year: Optional[int] = Field(default=None, description="年份")
     plot: Optional[str] = Field(default=None, description="剧情简介")
 
@@ -58,10 +59,10 @@ class MediaCore(SQLModel, table=True):
     display_date: Optional[datetime] = Field(default=None, description="用于列表展示的日期缓存（上映/首播）")
     
     # 分组与规范化
-    group_key: Optional[str] = Field(default=None, index=True, description="分组键，用于媒体分组")
-    canonical_tmdb_id: Optional[int] = Field(default=None, index=True, description="规范化TMDB ID")
-    canonical_source: Optional[str] = Field(default=None, index=True, description="规范化主来源，如tmdb|douban|tvdb|imdb")
-    canonical_external_key: Optional[str] = Field(default=None, index=True, description="规范化主来源ID值")
+    # group_key: Optional[str] = Field(default=None, index=True, description="分组键，用于媒体分组")
+    tmdb_id: Optional[str] = Field(default=None, index=True, description="TMDB ID")
+    # canonical_source: Optional[str] = Field(default=None, index=True, description="规范化主来源，如tmdb|douban|tvdb|imdb")
+    # canonical_external_key: Optional[str] = Field(default=None, index=True, description="规范化主来源ID值")
     
     
     # 时间戳
@@ -112,7 +113,8 @@ class MovieExt(SQLModel, table=True):
     core_id: int = Field(index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
     title: Optional[str] = Field(default=None, description="电影标题")
     overview: Optional[str] = Field(default=None, description="电影简介")
-    origin_country: Optional[str] = Field(default=None, description="原产国家/地区，多个以逗号分隔")
+     # 关键修改：List[str] 改为用 JSON 类型存储
+    origin_country: Optional[List[str]] = Field(default=None,sa_column=Column(JSON),description="原产国家/地区，多个值以列表形式存储")
     tagline: Optional[str] = Field(default=None, description="标语/宣传语")
     collection_id: Optional[int] = Field(default=None, description="所属电影合集ID")
     rating: Optional[float] = Field(default=None, description="评分")
@@ -143,8 +145,8 @@ class SeriesExt(SQLModel, table=True):
     aired_date: Optional[datetime] = Field(default=None, description="播出日期")
     last_aired_date: Optional[datetime] = Field(default=None, description="最后播出日期")
     
-    origin_country: Optional[str] = Field(default=None, description="原产国家/地区，多个以逗号分隔")
-    
+    # 关键修改：List[str] 改为用 JSON 类型存储
+    origin_country: Optional[List[str]] = Field(default=None,sa_column=Column(JSON),description="原产国家/地区，多个值以列表形式存储")
     # 统计信息
     episode_count: Optional[int] = Field(default=None, description="总集数")
     season_count: Optional[int] = Field(default=None, description="总季数")
@@ -358,6 +360,7 @@ class Person(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True, description="人员记录唯一标识")
     # user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
     name: str = Field(index=True, description="人员姓名")
+    original_name: Optional[str] = Field(default=None, description="人员原始姓名")
     provider_id: Optional[int] = Field(default=None, index=True, description="TMDB人员ID（用于外部关联）")
     profile_url: Optional[str] = Field(default=None, description="人员头像URL（规范化: http(s)绝对路径）")
     provider: Optional[str] = Field(default=None, description="数据来源提供者")
@@ -373,10 +376,11 @@ class Credit(SQLModel, table=True):
     person_id: int = Field(index=True, foreign_key="person.id", description="关联的人员记录ID")
 
     # 角色信息
-    role: str = Field(index=True, description="角色类型：cast（演员）|crew（剧组人员）|guest(客串)")
+    role: str = Field(index=True, description="角色类型：cast（演员/常驻）|crew（剧组人员）|guest（客串）")
     character: Optional[str] = Field(default=None, description="饰演的角色名称（仅演员）")
-    job: Optional[str] = Field(default=None, description="具体职位：导演、编剧、摄影、演员")
-
+    job: Optional[str] = Field(default=None, description="具体职位：导演、编剧、摄影、演员等")
+    order: Optional[int] = Field(default=None, description="排序索引（用于 Crew 角色）")
+    # guest: Optional[bool] = Field(default=False, description="是否为 Guest 角色")
 # ==================== 播放历史模型 ====================
 class PlaybackHistory(SQLModel, table=True):
     __tablename__ = "playback_history"

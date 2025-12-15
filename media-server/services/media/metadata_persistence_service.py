@@ -4,7 +4,8 @@ import os
 import hashlib
 import random
 from datetime import datetime
-from typing import Optional, Dict, Any
+from re import L
+from typing import Optional, Dict, Any, List
 
 from sqlmodel import Session, select
 
@@ -91,7 +92,7 @@ class MetadataPersistenceService:
         return None
 
     # ==================== 版本管理核心辅助方法 ====================
-    def _get_version_tags_and_fingerprint(self, media_file: FileAsset,core:MediaCore,scope) -> str:
+    def _get_version_tags_and_fingerprint(self, media_file: FileAsset,core:MediaCore,scope) -> tuple[str,str]:
         """
         生成版本标签与指纹（核心区分字段）
         格式：scope_coreid_filenamehash_filesize,e.g movie_single_23_756f2a3b6256412_45678900
@@ -339,78 +340,214 @@ class MetadataPersistenceService:
 
     
     # ==================== 持久化元数据方法 ====================
-    def _upsert_artworks(self, session, user_id: int, core_id: int, provider: Optional[str], artworks) -> None:
-        try:
-            if artworks:
-                for a in artworks:
-                    # 支持 dict 和 dataclass：先尝试 dict.get，再用 getattr
-                    a_type = self._get_attr(a, "type")
-                    # 处理 Enum 类型：如果是 Enum，取其 value；如果已是字符串，直接使用
-                    if hasattr(a_type, "value"):
-                        _t = a_type.value
-                    else:
-                        _t = a_type
-                    _t = "still" if _t == "thumb" else _t
-                    by_type = session.exec(select(Artwork).where(
-                        Artwork.user_id == user_id,
-                        Artwork.core_id == core_id,
-                        Artwork.type == _t
-                    )).first()
-                    if by_type:
-                        try:
-                            if not getattr(by_type, "remote_url", None):
-                                by_type.remote_url = self._get_attr(a, "url")
-                        except Exception:
-                            by_type.remote_url = self._get_attr(a, "url")
-                        by_type.provider = provider
-                        by_type.language = self._get_attr(a, "language") or getattr(by_type, "language", None)
-                        by_type.preferred = getattr(by_type, "preferred", False)
-                        # by_type.exists_remote = True
-                    else:
-                        session.add(Artwork(user_id=user_id, core_id=core_id, type=_t, remote_url=self._get_attr(a, "url"), local_path=None, provider=provider, language=self._get_attr(a, "language"), preferred=False, exists_local=False))
-        except Exception:
-            pass
-    def _upsert_credits(self, session, user_id: int, core_id: int, credits, provider: Optional[str]) -> None:
-        try:
-            if credits:
-                for c in credits:
-                    name = self._get_attr(c, "name")
-                    provider_id = self._get_attr(c, "provider_id")
+    # def _upsert_artworks(self, session, user_id: int, core_id: int, provider: Optional[str], artworks) -> None:
+    #     try:
+    #         if artworks:
+    #             for a in artworks:
+    #                 # 支持 dict 和 dataclass：先尝试 dict.get，再用 getattr
+    #                 a_type = self._get_attr(a, "type")
+    #                 # 处理 Enum 类型：如果是 Enum，取其 value；如果已是字符串，直接使用
+    #                 if hasattr(a_type, "value"):
+    #                     _t = a_type.value
+    #                 else:
+    #                     _t = a_type
+    #                 _t = "still" if _t == "thumb" else _t
+    #                 by_type = session.exec(select(Artwork).where(
+    #                     Artwork.user_id == user_id,
+    #                     Artwork.core_id == core_id,
+    #                     Artwork.type == _t
+    #                 )).first()
+    #                 if by_type:
+    #                     try:
+    #                         if not getattr(by_type, "remote_url", None):
+    #                             by_type.remote_url = self._get_attr(a, "url")
+    #                     except Exception:
+    #                         by_type.remote_url = self._get_attr(a, "url")
+    #                     by_type.provider = provider
+    #                     by_type.language = self._get_attr(a, "language") or getattr(by_type, "language", None)
+    #                     by_type.preferred = getattr(by_type, "preferred", False)
+    #                     # by_type.exists_remote = True
+    #                 else:
+    #                     session.add(Artwork(user_id=user_id, core_id=core_id, type=_t, remote_url=self._get_attr(a, "url"), local_path=None, provider=provider, language=self._get_attr(a, "language"), preferred=False, exists_local=False))
+    #     except Exception:
+    #         pass
 
-                    if not name:
-                        continue
-                    person = session.exec(select(Person).where(Person.provider_id == provider_id, Person.name == name,Person.provider == provider)).first()
-                    if not person:
-                        purl = self._get_attr(c, "image_url")
-                        person = Person(provider=provider, provider_id=provider_id, name=name, profile_url=purl)
-                        session.add(person)
-                        session.flush()
+    def _upsert_artworks(self, session, user_id: int, core_id: int, provider: Optional[str], artworks) -> None:
+        if not artworks:  # 空列表直接返回，避免无效循环
+            return
+
+        for artwork in artworks:
+            try:
+                # 1. 提取Artwork的核心属性（支持dict/dataclass）
+                a_type = self._get_attr(artwork, "type")
+                a_url = self._get_attr(artwork, "url")
+                a_language = self._get_attr(artwork, "language")
+                a_preferred = self._get_attr(artwork, "is_primary") is True  # 默认为False
+                a_width = self._get_attr(artwork, "width")
+                a_height = self._get_attr(artwork, "height")
+                
+
+                # 处理ArtworkType枚举（转为字符串value）
+                _t = a_type.value if hasattr(a_type, "value") else a_type
+                if not _t or not a_url:  # 类型/URL为空时跳过（避免无效数据）
+                    continue
+
+                # 2. 拆分“首选”和“非首选”逻辑处理
+                if a_preferred:
+                    # --------------------------
+                    # 首选Artwork：同类型下仅允许1张
+                    # --------------------------
+                    # 步骤1：先将该类型下所有已有“首选”设为“非首选”（保证唯一首选）
+                    existing_preferred = session.exec(
+                        select(Artwork).where(
+                            Artwork.user_id == user_id,
+                            Artwork.core_id == core_id,
+                            Artwork.type == _t,
+                            Artwork.preferred == True
+                        )
+                    ).all()
+                    for ep in existing_preferred:
+                        ep.preferred = False
+
+                    # 步骤2：查询是否已有“同类型+同URL”的记录（可能之前是非首选）
+                    existing = session.exec(
+                        select(Artwork).where(
+                            Artwork.user_id == user_id,
+                            Artwork.core_id == core_id,
+                            Artwork.type == _t,
+                            Artwork.remote_url == a_url
+                        )
+                    ).first()
+
+                    if existing:
+                        # 更新已有记录为“首选”，并同步其他字段
+                        existing.preferred = True
+                        existing.provider = provider or existing.provider
+                        existing.language = a_language or existing.language
+                        existing.width = a_width or existing.width
+                        existing.height = a_height or existing.height
+                       
                     else:
-                        try:
-                            if not getattr(person, "profile_url", None) and self._get_attr(c, "image_url"):
-                                person.profile_url = self._get_attr(c, "image_url")
-                        except Exception:
-                            pass
-                    # 处理 Enum 类型：如果是 Enum，取其 value；如果已是字符串，直接使用
-                    c_type = self._get_attr(c, "type")
-                    if hasattr(c_type, "value"):
-                        role_type = c_type.value
+                        # 新增首选记录
+                        session.add(Artwork(
+                            user_id=user_id,
+                            core_id=core_id,
+                            type=_t,
+                            remote_url=a_url,
+                            local_path=None,
+                            provider=provider,
+                            language=a_language,
+                            preferred=True,
+                            exists_local=False,
+                            width=a_width,
+                            height=a_height,
+                            
+                        ))
+
+                else:
+                    # --------------------------
+                    # 非首选Artwork：按“类型+URL”唯一标识（支持多图）
+                    # --------------------------
+                    # 步骤1：查询是否已有“同类型+同URL”的非首选记录（避免重复）
+                    existing = session.exec(
+                        select(Artwork).where(
+                            Artwork.user_id == user_id,
+                            Artwork.core_id == core_id,
+                            Artwork.type == _t,
+                            Artwork.remote_url == a_url,
+                            Artwork.preferred == False  # 仅匹配非首选
+                        )
+                    ).first()
+
+                    if existing:
+                        # 更新已有非首选记录的字段（如语言、评分等可能变化）
+                        existing.provider = provider or existing.provider
+                        existing.language = a_language or existing.language
+                        existing.width = a_width or existing.width
+                        existing.height = a_height or existing.height
+                        
                     else:
-                        role_type = c_type
-                    role = "cast" if role_type == "actor" else "crew"
-                    character = self._get_attr(c, "role") if role == "cast" else None
-                    job = role_type 
-                    existing = session.exec(select(Credit).where(
-                        Credit.user_id == user_id,
-                        Credit.core_id == core_id,
-                        Credit.person_id == person.id,
-                        Credit.role == role,
-                        Credit.job == job
-                    )).first()
-                    if not existing:
-                        session.add(Credit(user_id=user_id, core_id=core_id, person_id=person.id, role=role, character=character, job=job))
-        except Exception:
-            pass
+                        # 新增非首选记录（不影响其他非首选）
+                        session.add(Artwork(
+                            user_id=user_id,
+                            core_id=core_id,
+                            type=_t,
+                            remote_url=a_url,
+                            local_path=None,
+                            provider=provider,
+                            language=a_language,
+                            preferred=False,
+                            exists_local=False,
+                            width=a_width,
+                            height=a_height,
+                           
+                        ))
+
+            except Exception as e:
+                # 细化异常捕获，避免吞掉所有错误（建议添加日志）
+                print(f"处理Artwork失败（URL: {a_url}）：{str(e)}")
+                # 如需回滚局部错误：session.rollback()
+                pass 
+    
+    def _upsert_credits(self, session, user_id: int, core_id: int, credits, provider: Optional[str]) -> None:
+        logger.info(f"开始处理Credits，共 {len(credits)} 条记录")
+        if not credits:
+            return
+        
+        for c in credits:
+            if not c:
+                continue
+
+            name = self._get_attr(c, "name")
+            original_name = self._get_attr(c, "original_name")
+            provider_id = self._get_attr(c, "provider_id")
+            purl = self._get_attr(c, "image_url")
+            if not name:
+                continue
+            person = session.exec(select(Person).where(Person.provider_id == provider_id, Person.name == name,Person.provider == provider)).first()
+            if not person:       
+                person = Person(provider=provider, provider_id=provider_id, name=name,original_name=original_name, profile_url=purl)
+                session.add(person)
+                session.flush()
+            else:
+                try:
+                    
+                    person.original_name = original_name or person.original_name
+                    if not getattr(person, "profile_url", None) and purl:
+                        person.profile_url = purl
+                except Exception as e:
+                    logger.error(f"更新Person profile_url失败: {e}", exc_info=True)
+                    pass
+            # 处理 Enum 类型：如果是 Enum，取其 value；如果已是字符串，直接使用
+            c_type = self._get_attr(c, "type")
+            if hasattr(c_type, "value"):
+                role_type = c_type.value
+            else:
+                role_type = c_type
+            role = "cast" if role_type == "actor" else "crew"
+            role = "guest" if self._get_attr(c, "is_flying") else role
+
+
+            character = self._get_attr(c, "character") if role == "cast" else None # 演员角色名称,导演就是"Director"
+            job = role_type # actor/director/writer
+            order = self._get_attr(c, "order")
+            existing = session.exec(select(Credit).where(
+                Credit.user_id == user_id,
+                Credit.core_id == core_id,
+                Credit.person_id == person.id,
+                Credit.role == role,
+                Credit.job == job,
+                # Credit.order == order
+            )).first()
+            if not existing:
+                session.add(Credit(user_id=user_id, core_id=core_id, person_id=person.id, role=role, character=character, job=job, order=order))
+                session.flush()
+            else:
+                existing.role = role
+                existing.character = character
+                existing.job = job
+                existing.order = order
+             
     def _upsert_genres(self, session, user_id: int, core_id: int, genres) -> None:
         try:
             for genre_name in genres or []:
@@ -426,24 +563,87 @@ class MetadataPersistenceService:
                     session.add(MediaCoreGenre(user_id=user_id, core_id=core_id, genre_id=genre.id))
         except Exception:
             pass
+    
+    def _upsert_external_ids(self, session, user_id: int, core_id: int, external_ids) -> None:
+        try:
+            if not external_ids:
+                return
+            
+            for eid in external_ids:
+                if not eid:
+                    continue
+                # 3. 用self._get_attr兼容dict和_DictWrapper/对象（代替eid.get()）
+                provider = self._get_attr(eid, "provider")  # 无默认值，不存在则返回None
+                external_id = self._get_attr(eid, "external_id")  # 原始外部ID（未转str）
+
+                # 4. 过滤无效数据（provider为空或external_id为空）
+                if not provider or external_id is None:
+                    logger.debug(f"跳过无效外部ID（provider={provider}, external_id={external_id}）")
+                    continue
+
+                external_id = str(external_id)
+
+                existing = session.exec(select(ExternalID).where(
+                    ExternalID.user_id == user_id,
+                    ExternalID.core_id == core_id,
+                    ExternalID.source == provider,
+                    # ExternalID.key == external_id
+                )).first()
+                if not existing:
+                    session.add(ExternalID(user_id=user_id, core_id=core_id, source=provider, key=external_id))
+                    session.flush()
+                else:
+                    existing.key = external_id
+                # 更新核心表的tmdb_id
+                if provider == 'tmdb':
+                    media_core = session.exec(select(MediaCore).where(MediaCore.user_id == user_id, MediaCore.id == core_id)).first()
+                    if media_core :
+                        media_core.tmdb_id = external_id 
+                        
+        except Exception as e:
+            logger.error(f"更新ExternalIDs失败: {e}", exc_info=True)
+            pass
+    
+    def _check_series_type(self, type: str, genres: List[str]) -> str:
+        """判断系列类型(TV/Animation/Reality)"""
+        if type:
+            if type.lower() in ["reality", "variety", "真人秀"]:
+                return "Reality"
+            elif type.lower() in ["animation", "动画"]:
+                return "Animation"
+        if genres :
+            for genre in genres:
+                logger.info(f"检查genres决定类型: {genre}")
+                # genre_name = genre.get("name", "").lower()
+                if genre.lower() in ["动画", "animation"]:
+                    return "Animation"
+                if genre.lower() in ["真人秀", "reality", "variety"]:
+                    return "Reality"
+        return "TV"
+        
     def _apply_series_detail(self, session, user_id: int, sd: ScraperSeriesDetail) -> MediaCore:
         name_val = getattr(sd, "name", None) or getattr(sd, "original_name", None) or ""
         genres = getattr(sd, "genres", []) or [] 
         type_val = getattr(sd, "type", None)  # Scripted|Reality(Variety)|Animation|Documentary|News|Talk Show|Other
+        # try:
+        #     has_animation = False
+        #     if genres and type_val != "Animation":
+        #         for genre in genres:
+        #             logger.info(f"检查类型动画: {genre}")
+        #             # genre_name = genre.get("name", "").lower()
+        #             if genre.lower() in ["动画", "animation"]:
+        #                 has_animation = True
+        #                 break
+        #     # 扩展动画类型
+        #     type_val = "Animation" if has_animation else type_val 
+        # except Exception as e:
+        #     logger.error(f"Error checking animation type: {e}")
+        #     pass  
         try:
-            has_animation = False
-            if genres and type_val != "Animation":
-                for genre in genres:
-                    logger.info(f"检查类型动画: {genre}")
-                    # genre_name = genre.get("name", "").lower()
-                    if genre.lower() in ["动画", "animation"]:
-                        has_animation = True
-                        break
-            # 扩展动画类型
-            type_val = "Animation" if has_animation else type_val 
+            type_val = self._check_series_type(type_val, genres)
         except Exception as e:
-            logger.error(f"Error checking animation type: {e}")
-            pass  
+            logger.error(f"系类类型判断出错: {e}")
+            type_val = "TV"
 
         year_val = None
         try:
@@ -455,7 +655,7 @@ class MetadataPersistenceService:
             MediaCore.user_id == user_id,
             MediaCore.kind == "series",
             MediaCore.title == name_val,
-            MediaCore.canonical_tmdb_id == getattr(sd, "series_id", None) if getattr(sd, "series_id", None) else None  
+            MediaCore.tmdb_id == getattr(sd, "series_id", None) if getattr(sd, "provider", None) == "tmdb" else None  
         )).first()
         
         if not series_core:
@@ -487,28 +687,31 @@ class MetadataPersistenceService:
             series_core.subtype = type_val
             series_core.updated_at = datetime.now()
             # 或者直接不更新，直接返回
-        try:
-            if getattr(sd, "provider", None) and getattr(sd, "series_id", None):
-                existing = session.exec(select(ExternalID).where(
-                    ExternalID.user_id == user_id,
-                    ExternalID.core_id == series_core.id,
-                    ExternalID.source == sd.provider,
-                    ExternalID.key == str(sd.series_id)
-                )).first()
-                if not existing:
-                    session.add(ExternalID(user_id=user_id, core_id=series_core.id, source=sd.provider, key=str(sd.series_id)))
-                    session.flush()
-                series_core.canonical_source = series_core.canonical_source or sd.provider
-                series_core.canonical_external_key = series_core.canonical_external_key or str(sd.series_id)
-                try:
-                    if sd.provider == "tmdb":
-                        sid = int(str(sd.series_id)) if str(sd.series_id).isdigit() else None
-                        if sid is not None:
-                            series_core.canonical_tmdb_id = series_core.canonical_tmdb_id or sid
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        # try:
+        #     if getattr(sd, "provider", None) and getattr(sd, "series_id", None):
+        #         existing = session.exec(select(ExternalID).where(
+        #             ExternalID.user_id == user_id,
+        #             ExternalID.core_id == series_core.id,
+        #             ExternalID.source == sd.provider,
+        #             ExternalID.key == str(sd.series_id)
+        #         )).first()
+        #         if not existing:
+        #             session.add(ExternalID(user_id=user_id, core_id=series_core.id, source=sd.provider, key=str(sd.series_id)))
+        #             session.flush()
+        #         series_core.canonical_source = series_core.canonical_source or sd.provider
+        #         series_core.canonical_external_key = series_core.canonical_external_key or str(sd.series_id)
+        #         try:
+        #             if sd.provider == "tmdb":
+        #                 sid = int(str(sd.series_id)) if str(sd.series_id).isdigit() else None
+        #                 if sid is not None:
+        #                     series_core.tmdb_id = series_core.tmdb_id or sid
+        #         except Exception:
+        #             pass
+        # except Exception:
+        #     pass
+
+        
+        
         tv_ext = session.exec(select(SeriesExt).where(SeriesExt.core_id == series_core.id, SeriesExt.user_id == user_id)).first()
         if not tv_ext:
             tv_ext = SeriesExt(user_id=user_id, core_id=series_core.id)
@@ -523,7 +726,7 @@ class MetadataPersistenceService:
                 tv_ext.episode_run_time = int(rt[0]) if isinstance(rt[0], (int, float)) else None
             tv_ext.status = getattr(sd, "status", None)
             tv_ext.rating = getattr(sd, "vote_average", None)
-            tv_ext.origin_country = ",".join(getattr(sd, "origin_country", []) or [])
+            tv_ext.origin_country = list(getattr(sd, "origin_country", []) or [])
             try:
                 fd = getattr(sd, "first_air_date", None)
                 ld = getattr(sd, "last_air_date", None)
@@ -540,52 +743,53 @@ class MetadataPersistenceService:
             tv_ext.raw_data = json.dumps(raw_data, ensure_ascii=False) if raw_data else None
         except Exception:
             pass
-        try:
-            if getattr(tv_ext, "poster_path", None):
-                art_p = session.exec(select(Artwork).where(Artwork.user_id == user_id, Artwork.core_id == series_core.id, Artwork.type == "poster", Artwork.preferred==True)).first()
-                if not art_p:
-                    session.add(Artwork(user_id=user_id, core_id=series_core.id, type="poster", remote_url=tv_ext.poster_path, provider=getattr(sd, "provider", None), preferred=True))
-                else:
-                    art_p.remote_url = art_p.remote_url or tv_ext.poster_path
-                    art_p.provider = getattr(sd, "provider", None) or getattr(art_p, "provider", None)
-                    art_p.preferred = True
-                    # art_p.exists_remote = True
-            if getattr(tv_ext, "backdrop_path", None):
-                art_b = session.exec(select(Artwork).where(Artwork.user_id == user_id, Artwork.core_id == series_core.id, Artwork.type == "backdrop", Artwork.preferred==True)).first()
-                if not art_b:
-                    session.add(Artwork(user_id=user_id, core_id=series_core.id, type="backdrop", remote_url=tv_ext.backdrop_path, provider=getattr(sd, "provider", None), preferred=True))
-                else:
-                    art_b.remote_url = art_b.remote_url or tv_ext.backdrop_path
-                    art_b.provider = getattr(sd, "provider", None) or getattr(art_b, "provider", None)
-                    art_b.preferred = True
-                    # art_b.exists_remote = True
-        except Exception:
-            pass
+        # try:
+        #     if getattr(tv_ext, "poster_path", None):
+        #         art_p = session.exec(select(Artwork).where(Artwork.user_id == user_id, Artwork.core_id == series_core.id, Artwork.type == "poster", Artwork.preferred==True)).first()
+        #         if not art_p:
+        #             session.add(Artwork(user_id=user_id, core_id=series_core.id, type="poster", remote_url=tv_ext.poster_path, provider=getattr(sd, "provider", None), preferred=True))
+        #         else:
+        #             art_p.remote_url = art_p.remote_url or tv_ext.poster_path
+        #             art_p.provider = getattr(sd, "provider", None) or getattr(art_p, "provider", None)
+        #             art_p.preferred = True
+        #             # art_p.exists_remote = True
+        #     if getattr(tv_ext, "backdrop_path", None):
+        #         art_b = session.exec(select(Artwork).where(Artwork.user_id == user_id, Artwork.core_id == series_core.id, Artwork.type == "backdrop", Artwork.preferred==True)).first()
+        #         if not art_b:
+        #             session.add(Artwork(user_id=user_id, core_id=series_core.id, type="backdrop", remote_url=tv_ext.backdrop_path, provider=getattr(sd, "provider", None), preferred=True))
+        #         else:
+        #             art_b.remote_url = art_b.remote_url or tv_ext.backdrop_path
+        #             art_b.provider = getattr(sd, "provider", None) or getattr(art_b, "provider", None)
+        #             art_b.preferred = True
+        #             # art_b.exists_remote = True
+        # except Exception:
+        #     pass
         try:
             self._upsert_genres(session, user_id, series_core.id, getattr(sd, "genres", []) or [])
-        except Exception:
+        except Exception as e:
+            logger.error(f"更新剧集流派失败: {e}")
             pass
         try:
             self._upsert_artworks(session, user_id, series_core.id, getattr(sd, "provider", None), getattr(sd, "artworks", None))
-        except Exception:
+        except Exception as e:
+            logger.error(f"更新剧集海报失败: {e}")
             pass
+        # try:
+        #     self._upsert_credits(session, user_id, series_core.id, getattr(sd, "credits", None), getattr(sd, "provider", None))
+        # except Exception as e:
+        #     logger.error(f"更新剧集演员失败: {e}")
+        #     pass
         try:
-            self._upsert_credits(session, user_id, series_core.id, getattr(sd, "credits", None), getattr(sd, "provider", None))
-        except Exception:
+            self._upsert_external_ids(session, user_id, series_core.id, getattr(sd, "external_ids", None))
+        except Exception as e:
+            logger.error(f"更新剧集外部ID失败: {e}")
             pass
         return series_core
     
     def _apply_season_detail(self, session, user_id: int, series_core: Optional[MediaCore], se: ScraperSeasonDetail) -> MediaCore:
         season_num = getattr(se, "season_number", None) 
         season_name = getattr(se, "name", None)
-        # season_overview = getattr(se, "overview", None)
-        # season_poster_path = getattr(se, "poster_path", None)
-        # season_episode_count = getattr(se, "episode_count", None)
-        # air_date = getattr(se, "air_date", None)
-        # episodes = getattr(se, "episodes", [])
-        # vote_average = getattr(se, "vote_average", None)
-        # provider = getattr(se, "provider", None)
-        # provider_url = getattr(se, "provider_url", None)
+       
         existing_se = None
         try:
             if series_core:
@@ -601,7 +805,7 @@ class MetadataPersistenceService:
                 MediaCore.user_id == user_id,
                 MediaCore.kind == "season",
                 MediaCore.title == season_name,  #季title不可用，太多重复
-                MediaCore.canonical_tmdb_id == (getattr(se, "season_id", None) if getattr(se, "season_id", None) else None)
+                MediaCore.tmdb_id == (getattr(se, "season_id", None) if getattr(se, "season_id", None) else None)
             )).first()
 
         # 彻底不存在该season
@@ -655,42 +859,42 @@ class MetadataPersistenceService:
         except Exception as e:
             logger.error(f"更新剧集详情失败: {e}")
             pass
-        try:
-            if getattr(se_ext, "poster_path", None):
-                art_p = session.exec(select(Artwork).where(Artwork.user_id == user_id, Artwork.core_id == season_core.id, Artwork.type == "poster", Artwork.preferred==True)).first()
-                if not art_p:
-                    session.add(Artwork(user_id=user_id, core_id=season_core.id, type="poster", remote_url=se_ext.poster_path, provider=getattr(se, "provider", None), preferred=True))
-                else:
-                    art_p.remote_url = art_p.remote_url or se_ext.poster_path
-                    art_p.provider = getattr(se, "provider", None) or getattr(art_p, "provider", None)
-                    art_p.preferred = True
-                    # art_p.exists_remote = True
-        except Exception as e:
-            logger.error(f"更新剧集海报失败: {e}")
-            pass
-        try:
-            if getattr(se, "provider", None) and getattr(se, "season_id", None):
-                existing = session.exec(select(ExternalID).where(
-                    ExternalID.user_id == user_id,
-                    ExternalID.core_id == season_core.id,
-                    ExternalID.source == se.provider,
-                    ExternalID.key == str(se.season_id)
-                )).first()
-                if not existing:
-                    session.add(ExternalID(user_id=user_id, core_id=season_core.id, source=se.provider, key=str(se.season_id)))
-                season_core.canonical_source = season_core.canonical_source or se.provider
-                season_core.canonical_external_key = season_core.canonical_external_key or str(se.season_id)
-                try:
-                    if se.provider == "tmdb":
-                        sid = int(str(se.season_id)) if str(se.season_id).isdigit() else None
-                        if sid is not None:
-                            season_core.canonical_tmdb_id = season_core.canonical_tmdb_id or sid
-                except Exception as e:
-                    logger.error(f"更新剧集外部ID失败: {e}")
-                    raise
-        except Exception as e:
-            logger.error(f"更新剧集外部ID失败: {e}")
-            pass
+        # try:
+        #     if getattr(se_ext, "poster_path", None):
+        #         art_p = session.exec(select(Artwork).where(Artwork.user_id == user_id, Artwork.core_id == season_core.id, Artwork.type == "poster", Artwork.preferred==True)).first()
+        #         if not art_p:
+        #             session.add(Artwork(user_id=user_id, core_id=season_core.id, type="poster", remote_url=se_ext.poster_path, provider=getattr(se, "provider", None), preferred=True))
+        #         else:
+        #             art_p.remote_url = art_p.remote_url or se_ext.poster_path
+        #             art_p.provider = getattr(se, "provider", None) or getattr(art_p, "provider", None)
+        #             art_p.preferred = True
+        #             # art_p.exists_remote = True
+        # except Exception as e:
+        #     logger.error(f"更新剧集海报失败: {e}")
+        #     pass
+        # try:
+        #     if getattr(se, "provider", None) and getattr(se, "season_id", None):
+        #         existing = session.exec(select(ExternalID).where(
+        #             ExternalID.user_id == user_id,
+        #             ExternalID.core_id == season_core.id,
+        #             ExternalID.source == se.provider,
+        #             ExternalID.key == str(se.season_id)
+        #         )).first()
+        #         if not existing:
+        #             session.add(ExternalID(user_id=user_id, core_id=season_core.id, source=se.provider, key=str(se.season_id)))
+        #         season_core.canonical_source = season_core.canonical_source or se.provider
+        #         season_core.canonical_external_key = season_core.canonical_external_key or str(se.season_id)
+        #         try:
+        #             if se.provider == "tmdb":
+        #                 sid = int(str(se.season_id)) if str(se.season_id).isdigit() else None
+        #                 if sid is not None:
+        #                     season_core.tmdb_id = season_core.tmdb_id or sid
+        #         except Exception as e:
+        #             logger.error(f"更新剧集外部ID失败: {e}")
+        #             raise
+        # except Exception as e:
+        #     logger.error(f"更新剧集外部ID失败: {e}")
+        #     pass
         try:
             self._upsert_artworks(session, user_id, season_core.id, getattr(se, "provider", None), getattr(se, "artworks", None))
         except Exception as e:
@@ -700,6 +904,11 @@ class MetadataPersistenceService:
             self._upsert_credits(session, user_id, season_core.id, getattr(se, "credits", None), getattr(se, "provider", None))
         except Exception as e:
             logger.error(f"更新剧集演员失败: {e}")
+            pass
+        try:
+            self._upsert_external_ids(session, user_id, season_core.id, getattr(se, "external_ids", None))
+        except Exception as e:
+            logger.error(f"更新剧集外部ID失败: {e}")
             pass
         return season_core
     # 方法入口
@@ -755,7 +964,7 @@ class MetadataPersistenceService:
             MediaCore.title == metadata.title,
             MediaCore.kind == "movie",
             MediaCore.user_id == media_file.user_id,
-            MediaCore.canonical_tmdb_id == getattr(metadata, "movie_id", None) if getattr(metadata, "movie_id", None) else None
+            MediaCore.tmdb_id == getattr(metadata, "movie_id", None) if getattr(metadata, "movie_id", None) else None
             )).first()
         year_val = None
         try:
@@ -795,41 +1004,41 @@ class MetadataPersistenceService:
             media_file.core_id = core.id
         
         # 改元信息提供商ID
-        if getattr(metadata, "provider", None) and getattr(metadata, "movie_id", None):
-            existing = session.exec(select(ExternalID).where(
-                ExternalID.user_id == media_file.user_id,
-                ExternalID.core_id == core.id,
-                ExternalID.source == metadata.provider,
-                ExternalID.key == str(metadata.movie_id)
-            )).first()
-            if not existing:
-                session.add(ExternalID(user_id=media_file.user_id, core_id=core.id, source=metadata.provider, key=str(metadata.movie_id)))
-                session.flush()
-            core.canonical_source = core.canonical_source or metadata.provider
-            core.canonical_external_key = core.canonical_external_key or str(metadata.movie_id)
-            try:
-                if metadata.provider == "tmdb":
-                    mid = int(str(metadata.movie_id)) if str(metadata.movie_id).isdigit() else None
-                    if mid is not None:
-                        core.canonical_tmdb_id = core.canonical_tmdb_id or mid
-            except Exception:
-                pass
+        # if getattr(metadata, "provider", None) and getattr(metadata, "movie_id", None):
+        #     existing = session.exec(select(ExternalID).where(
+        #         ExternalID.user_id == media_file.user_id,
+        #         ExternalID.core_id == core.id,
+        #         ExternalID.source == metadata.provider,
+        #         ExternalID.key == str(metadata.movie_id)
+        #     )).first()
+        #     if not existing:
+        #         session.add(ExternalID(user_id=media_file.user_id, core_id=core.id, source=metadata.provider, key=str(metadata.movie_id)))
+        #         session.flush()
+        #     core.canonical_source = core.canonical_source or metadata.provider
+        #     core.canonical_external_key = core.canonical_external_key or str(metadata.movie_id)
+        #     try:
+        #         if metadata.provider == "tmdb":
+        #             mid = int(str(metadata.movie_id)) if str(metadata.movie_id).isdigit() else None
+        #             if mid is not None:
+        #                 core.tmdb_id = core.tmdb_id or mid
+        #     except Exception:
+        #         pass
 
         # 外部平台信息列表（tmdb，imdb）
-        try:
-            for eid in getattr(metadata, "external_ids", []) or []:
-                if not eid or not getattr(eid, "provider", None) or not getattr(eid, "external_id", None):
-                    continue
-                existing = session.exec(select(ExternalID).where(
-                    ExternalID.user_id == media_file.user_id,
-                    ExternalID.core_id == core.id,
-                    ExternalID.source == eid.provider,
-                    ExternalID.key == str(eid.external_id)
-                )).first()
-                if not existing:
-                    session.add(ExternalID(user_id=media_file.user_id, core_id=core.id, source=eid.provider, key=str(eid.external_id)))
-        except Exception:
-            pass
+        # try:
+        #     for eid in getattr(metadata, "external_ids", []) or []:
+        #         if not eid or not getattr(eid, "provider", None) or not getattr(eid, "external_id", None):
+        #             continue
+        #         existing = session.exec(select(ExternalID).where(
+        #             ExternalID.user_id == media_file.user_id,
+        #             ExternalID.core_id == core.id,
+        #             ExternalID.source == eid.provider,
+        #             ExternalID.key == str(eid.external_id)
+        #         )).first()
+        #         if not existing:
+        #             session.add(ExternalID(user_id=media_file.user_id, core_id=core.id, source=eid.provider, key=str(eid.external_id)))
+        # except Exception:
+        #     pass
         # 电影详细信息
         movie_ext = session.exec(select(MovieExt).where(MovieExt.user_id == media_file.user_id, MovieExt.core_id == core.id)).first()
         if not movie_ext:
@@ -842,7 +1051,7 @@ class MetadataPersistenceService:
             rv = getattr(metadata, "vote_average", None)
             movie_ext.rating = float(rv) if isinstance(rv, (int, float)) else movie_ext.rating
             movie_ext.overview = getattr(metadata, "overview", None) or movie_ext.overview
-            movie_ext.origin_country = ",".join(getattr(metadata, "origin_country", []))
+            movie_ext.origin_country = list(getattr(metadata, "origin_country", []))
             # logger.info(f"原国家: {getattr(metadata, 'origin_country', None)}")
 
         except Exception:
@@ -868,7 +1077,7 @@ class MetadataPersistenceService:
             movie_ext.raw_data = json.dumps(raw_data, ensure_ascii=False) if raw_data else None
            
         except Exception as e:
-            # logger.info(f"原始数据转换失败errer:{str(e)}")
+            logger.info(f"电影原始数据转换失败errer:{str(e)}")
             pass
         try:
             col = getattr(metadata, "belongs_to_collection", None)
@@ -901,29 +1110,29 @@ class MetadataPersistenceService:
             pass
 
         # 直接根据 metadata 的 poster/backdrop 写入 Artwork，避免需要二次查询
-        try:
-            ppath = getattr(metadata, "poster_path", None)
-            bpath = getattr(metadata, "backdrop_path", None)
-            prov = getattr(metadata, "provider", None)
-            if ppath:
-                art_p = session.exec(select(Artwork).where(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "poster", Artwork.preferred==True)).first()
-                if not art_p:
-                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="poster", remote_url=ppath, provider=prov, preferred=True))
-                else:
-                    art_p.remote_url = art_p.remote_url or ppath
-                    art_p.provider = prov or getattr(art_p, "provider", None)
-                    art_p.preferred = True
-                #     art_p.exists_remote = True
-            if bpath:
-                art_b = session.exec(select(Artwork).where(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "backdrop", Artwork.preferred==True)).first()
-                if not art_b:
-                    session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="backdrop", remote_url=bpath, provider=prov, preferred=True))
-                else:
-                    art_b.remote_url = art_b.remote_url or bpath
-                    art_b.provider = prov or getattr(art_b, "provider", None)
-                    art_b.preferred = True
-        except Exception:
-            pass
+        # try:
+        #     ppath = getattr(metadata, "poster_path", None)
+        #     bpath = getattr(metadata, "backdrop_path", None)
+        #     prov = getattr(metadata, "provider", None)
+        #     if ppath:
+        #         art_p = session.exec(select(Artwork).where(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "poster", Artwork.preferred==True)).first()
+        #         if not art_p:
+        #             session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="poster", remote_url=ppath, provider=prov, preferred=True))
+        #         else:
+        #             art_p.remote_url = art_p.remote_url or ppath
+        #             art_p.provider = prov or getattr(art_p, "provider", None)
+        #             art_p.preferred = True
+        #         #     art_p.exists_remote = True
+        #     if bpath:
+        #         art_b = session.exec(select(Artwork).where(Artwork.user_id == media_file.user_id, Artwork.core_id == core.id, Artwork.type == "backdrop", Artwork.preferred==True)).first()
+        #         if not art_b:
+        #             session.add(Artwork(user_id=media_file.user_id, core_id=core.id, type="backdrop", remote_url=bpath, provider=prov, preferred=True))
+        #         else:
+        #             art_b.remote_url = art_b.remote_url or bpath
+        #             art_b.provider = prov or getattr(art_b, "provider", None)
+        #             art_b.preferred = True
+        # except Exception:
+        #     pass
         # 演职人员信息
         try:
             self._upsert_credits(session, media_file.user_id, core.id, getattr(metadata, "credits", None), getattr(metadata, "provider", None))
@@ -932,6 +1141,11 @@ class MetadataPersistenceService:
         # 类型信息
         try:
             self._upsert_genres(session, media_file.user_id, core.id, getattr(metadata, "genres", []) or [])
+        except Exception:
+            pass
+        
+        try:
+            self._upsert_external_ids(session, media_file.user_id, core.id, getattr(metadata, "external_ids", None))
         except Exception:
             pass
         
@@ -999,14 +1213,15 @@ class MetadataPersistenceService:
                 season_core = self._apply_season_detail(session, media_file.user_id, series_core, metadata.season)
                 # 新增：创建/更新季版本（基于文件父文件夹路径）
                 season_version_id = self._upsert_season_version(session, media_file, season_core)
-        except Exception:
+        except Exception as e:
+            logger.error(f"创建/更新季版本失败: {e}", exc_info=True)
             pass
         episode_core = session.exec(select(MediaCore).where(
             # MediaCore.id == media_file.core_id,
             MediaCore.user_id == media_file.user_id,
             MediaCore.kind == "episode",
             MediaCore.title == title_val,
-            MediaCore.canonical_tmdb_id == getattr(metadata, "episode_id", None) if getattr(metadata, "episode_id", None) else None
+            MediaCore.tmdb_id == getattr(metadata, "episode_id", None) if getattr(metadata, "episode_id", None) else None
             )).first()
 
         if not episode_core:
@@ -1041,7 +1256,7 @@ class MetadataPersistenceService:
             # EpisodeExt.core_id == episode_core.id, 
             EpisodeExt.user_id == media_file.user_id,
             # EpisodeExt.series_core_id == (series_core.id if series_core else None),
-            EpisodeExt.series_core_id == series_core.id if series_core else EpisodeExt.series_core_id.is_(None),
+            EpisodeExt.series_core_id == series_core.id if series_core else EpisodeExt.series_core_id,
             EpisodeExt.season_number == getattr(metadata, "season_number", 1),
             EpisodeExt.episode_number == getattr(metadata, "episode_number", 1)
             )).first()
@@ -1066,51 +1281,61 @@ class MetadataPersistenceService:
             ep_ext.episode_type = getattr(metadata, "episode_type", None)
             ad = getattr(metadata, "air_date", None)
             ep_ext.aired_date = self._parse_dt(ad) if ad else ep_ext.aired_date
-        except Exception:
-            pass
-        try:
-            if getattr(ep_ext, "still_path", None):
-                art_s = session.exec(select(Artwork).where(Artwork.user_id == media_file.user_id, Artwork.core_id == episode_core.id, Artwork.type == "still", Artwork.preferred==True)).first()
-                if not art_s:
-                    session.add(Artwork(user_id=media_file.user_id, core_id=episode_core.id, type="still", remote_url=ep_ext.still_path, provider=getattr(metadata, "provider", None), preferred=True))
-                else:
-                    art_s.remote_url = art_s.remote_url or ep_ext.still_path
-                    art_s.provider = getattr(metadata, "provider", None) or getattr(art_s, "provider", None)
-                    art_s.preferred = True
-                    # art_s.exists_remote = True
-        except Exception:
-            pass
-        try:
-            if getattr(metadata, "provider", None) and getattr(metadata, "episode_id", None):
-                existing = session.exec(select(ExternalID).where(
-                    ExternalID.user_id == media_file.user_id,
-                    ExternalID.core_id == episode_core.id,
-                    ExternalID.source == metadata.provider,
-                    ExternalID.key == str(metadata.episode_id)
-                )).first()
-                if not existing:
-                    session.add(ExternalID(user_id=media_file.user_id, core_id=episode_core.id, source=metadata.provider, key=str(metadata.episode_id)))
-                
-                episode_core.canonical_source = episode_core.canonical_source or metadata.provider
-                episode_core.canonical_external_key = episode_core.canonical_external_key or str(metadata.episode_id)
-                try:
-                    if metadata.provider == "tmdb":
-                        sid = int(metadata.episode_id) if str(metadata.episode_id).isdigit() else None
-                        if sid is not None:
-                            episode_core.canonical_tmdb_id = episode_core.canonical_tmdb_id or sid
-                except Exception:
-                    pass
         except Exception as e:
-            logger.info(f"应用剧集外部ID失败：{str(e)}")
+            logger.error(f"更新EpisodeExt失败: {e}", exc_info=True)
             pass
+        # try:
+        #     if getattr(ep_ext, "still_path", None):
+        #         art_s = session.exec(select(Artwork).where(Artwork.user_id == media_file.user_id, Artwork.core_id == episode_core.id, Artwork.type == "still", Artwork.preferred==True)).first()
+        #         if not art_s:
+        #             session.add(Artwork(user_id=media_file.user_id, core_id=episode_core.id, type="still", remote_url=ep_ext.still_path, provider=getattr(metadata, "provider", None), preferred=True))
+        #         else:
+        #             art_s.remote_url = art_s.remote_url or ep_ext.still_path
+        #             art_s.provider = getattr(metadata, "provider", None) or getattr(art_s, "provider", None)
+        #             art_s.preferred = True
+        #             # art_s.exists_remote = True
+        # except Exception:
+        #     pass
+        # try:
+        #     if getattr(metadata, "provider", None) and getattr(metadata, "episode_id", None):
+        #         existing = session.exec(select(ExternalID).where(
+        #             ExternalID.user_id == media_file.user_id,
+        #             ExternalID.core_id == episode_core.id,
+        #             ExternalID.source == metadata.provider,
+        #             ExternalID.key == str(metadata.episode_id)
+        #         )).first()
+        #         if not existing:
+        #             session.add(ExternalID(user_id=media_file.user_id, core_id=episode_core.id, source=metadata.provider, key=str(metadata.episode_id)))
+                
+        #         episode_core.canonical_source = episode_core.canonical_source or metadata.provider
+        #         episode_core.canonical_external_key = episode_core.canonical_external_key or str(metadata.episode_id)
+        #         try:
+        #             if metadata.provider == "tmdb":
+        #                 sid = int(metadata.episode_id) if str(metadata.episode_id).isdigit() else None
+        #                 if sid is not None:
+        #                     episode_core.tmdb_id = episode_core.tmdb_id or sid
+        #         except Exception:
+        #             pass
+        # except Exception as e:
+        #     logger.error(f"应用剧集外部ID失败：{str(e)}", exc_info=True)
+        #     pass
         try:
             self._upsert_artworks(session, media_file.user_id, episode_core.id, getattr(metadata, "provider", None), getattr(metadata, "artworks", None))
-        except Exception:
+        except Exception as e:
+            logger.error(f"应用剧集封面失败：{str(e)}", exc_info=True)
             pass
         try:
             self._upsert_credits(session, media_file.user_id, episode_core.id, getattr(metadata, "credits", None), getattr(metadata, "provider", None))
-        except Exception:
+        except Exception as e:
+            logger.error(f"应用剧集演员失败：{str(e)}", exc_info=True)
             pass
+        
+        try:
+            self._upsert_external_ids(session, media_file.user_id, episode_core.id, getattr(metadata, "external_ids", None))
+        except Exception as e:
+            logger.error(f"应用剧集外部ID失败：{str(e)}", exc_info=True)
+            pass
+        
         
         # 7. 核心逻辑：创建/更新单集子版本，并关联到季版本
         # 传入season_version_id，让单集版本关联到季版本
@@ -1146,25 +1371,25 @@ class MetadataPersistenceService:
             core.title = title_val
             core.year = year_val
             core.updated_at = datetime.now()
-        try:
-            prov = getattr(metadata, "provider", None)
-            pid = getattr(metadata, "id", None)
-            if prov and pid:
-                existing = session.exec(select(ExternalID).where(
-                    ExternalID.user_id == media_file.user_id,
-                    ExternalID.core_id == core.id,
-                    ExternalID.source == prov,
-                    ExternalID.key == str(pid)
-                )).first()
-                if not existing:
-                    session.add(ExternalID(user_id=media_file.user_id, core_id=core.id, source=prov, key=str(pid)))
-                    session.flush()
-                core.canonical_source = core.canonical_source or prov
-                core.canonical_external_key = core.canonical_external_key or str(pid)
-                if prov == "tmdb" and str(pid).isdigit():
-                    core.canonical_tmdb_id = core.canonical_tmdb_id or int(str(pid))
-        except Exception:
-            pass
+        # try:
+        #     prov = getattr(metadata, "provider", None)
+        #     pid = getattr(metadata, "id", None)
+        #     if prov and pid:
+        #         existing = session.exec(select(ExternalID).where(
+        #             ExternalID.user_id == media_file.user_id,
+        #             ExternalID.core_id == core.id,
+        #             ExternalID.source == prov,
+        #             ExternalID.key == str(pid)
+        #         )).first()
+        #         if not existing:
+        #             session.add(ExternalID(user_id=media_file.user_id, core_id=core.id, source=prov, key=str(pid)))
+        #             session.flush()
+        #         core.canonical_source = core.canonical_source or prov
+        #         core.canonical_external_key = core.canonical_external_key or str(pid)
+        #         if prov == "tmdb" and str(pid).isdigit():
+        #             core.tmdb_id = core.tmdb_id or int(str(pid))
+        # except Exception:
+        #     pass
         try:
             if kind_val == "movie":
                 mx = session.exec(select(MovieExt).where(MovieExt.core_id == core.id, MovieExt.user_id == media_file.user_id)).first()

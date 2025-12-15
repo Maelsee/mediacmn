@@ -3906,6 +3906,190 @@ tmdb根据动画Id查询动画集详情,/tv/{series_id}/season/{season_number}/e
 "vote_count": 3}
 ```
 
+```json
+"guest_stars": [
+        {
+          "character": "",
+          "credit_id": "664b28987ac3faa57d79951b",
+          "order": 500,
+          "adult": false,
+          "gender": 2,
+          "id": 1435966,
+          "known_for_department": "Acting",
+          "name": "贾乃亮",
+          "original_name": "Jia Nailiang",
+          "popularity": 0.5871,
+          "profile_path": "/co6kY9ZfILAKZFd0BCbPUWxi5Ct.jpg"
+        },
+        {
+          "character": "",
+          "credit_id": "664b28a10466c53fdfdfa944",
+          "order": 501,
+          "adult": false,
+          "gender": 2,
+          "id": 1519031,
+          "known_for_department": "Acting",
+          "name": "艾伦",
+          "original_name": "艾伦",
+          "popularity": 1.0972,
+          "profile_path": "/r2LykUtJ1fXCFKuzuS1vaGF9s3p.jpg"
+        },
+        {
+          "character": "",
+          "credit_id": "664b28aea140894fa1ed39f7",
+          "order": 502,
+          "adult": false,
+          "gender": 1,
+          "id": 2440951,
+          "known_for_department": "Acting",
+          "name": "周也",
+          "original_name": "周也",
+          "popularity": 3.3089,
+          "profile_path": "/alqSqe6RmhIkZ6eUcjDXS6QTJhS.jpg"
+        },
+        {
+          "character": "",
+          "credit_id": "664b28b444eb4f6d0a933285",
+          "order": 503,
+          "adult": false,
+          "gender": 2,
+          "id": 1882288,
+          "known_for_department": "Acting",
+          "name": "白举纲",
+          "original_name": "白举纲",
+          "popularity": 0.7977,
+          "profile_path": "/zKy7NpPKkb7aCkneYETdZFhd5Wo.jpg"
+        }
+      ]
+    
+
+
+"external_ids": {
+    "freebase_mid": null,
+    "freebase_id": null,
+    "tvdb_id": null,
+    "tvrage_id": null,
+    "wikidata_id": null
+  },
+  "images": {
+    "posters": [
+      {
+        "aspect_ratio": 0.667,
+        "height": 1620,
+        "iso_3166_1": "CN",
+        "iso_639_1": "zh",
+        "file_path": "/2Mq2wbXlPRoFogV6AntWG8JauTb.jpg",
+        "vote_average": 3.334,
+        "vote_count": 1,
+        "width": 1080
+      },
+      {
+        "aspect_ratio": 0.667,
+        "height": 1500,
+        "iso_3166_1": "CN",
+        "iso_639_1": "zh",
+        "file_path": "/rAjijcApwQqGX63R4evF6BM8wr1.jpg",
+        "vote_average": 2.278,
+        "vote_count": 3,
+        "width": 1000
+      },
+      {
+        "aspect_ratio": 0.667,
+        "height": 750,
+        "iso_3166_1": "CN",
+        "iso_639_1": "zh",
+        "file_path": "/kMwEOnBwN0ZboVAOQfQBl5wZ7v3.jpg",
+        "vote_average": 0.0,
+        "vote_count": 0,
+        "width": 500
+      },
+      {
+        "aspect_ratio": 0.667,
+        "height": 1620,
+        "iso_3166_1": "CN",
+        "iso_639_1": "zh",
+        "file_path": "/wKyvcBWqOR6Sd5iz9H5z1i3h1sd.jpg",
+        "vote_average": 0.0,
+        "vote_count": 0,
+        "width": 1080
+      }
+    ]
+  },
+  "credits": {
+    
+    "cast": [
+      {
+        "adult": false,
+        "gender": 2,
+        "id": 1519026,
+        "known_for_department": "Acting",
+        "name": "沈腾",
+        "original_name": "沈腾",
+        "popularity": 2.3194,
+        "profile_path": "/h9l1fHqty8EdCqDWNWjO5tp48xZ.jpg",
+        "character": "",
+        "credit_id": "64c6969d63e6fb00e12b4210",
+        "order": 0
+      },
+      {
+        "adult": false,
+        "gender": 2,
+        "id": 1948101,
+        "known_for_department": "Acting",
+        "name": "范丞丞",
+        "original_name": "范丞丞",
+        "popularity": 2.101,
+        "profile_path": "/mmpJ9EcYweG9pr1iU5q5aqcsusG.jpg",
+        "character": "",
+        "credit_id": "64c696b263aad2020ec3db77",
+        "order": 2
+      },
+      {
+        "adult": false,
+        "gender": 1,
+        "id": 1541648,
+        "known_for_department": "Acting",
+        "name": "金晨",
+        "original_name": "金晨",
+        "popularity": 3.2439,
+        "profile_path": "/wVsQG1eNFFmCI3HTaje4Rox8SFA.jpg",
+        "character": "",
+        "credit_id": "64c696e041aac40fb5486964",
+        "order": 3
+      },
+      {
+        "adult": false,
+        "gender": 2,
+        "id": 2295882,
+        "known_for_department": "Acting",
+        "name": "贾冰",
+        "original_name": "贾冰",
+        "popularity": 2.0417,
+        "profile_path": "/pum0e3d2ZVq9XZyNohZSXt46bkH.jpg",
+        "character": "",
+        "credit_id": "64c696a641aac40fb2da3733",
+        "order": 4
+      }
+    ],
+    "crew": [
+      {
+        "adult": false,
+        "gender": 0,
+        "id": 5594036,
+        "known_for_department": "Directing",
+        "name": "吴井能",
+        "original_name": "吴井能",
+        "popularity": 0.0368,
+        "profile_path": null,
+        "credit_id": "6888f4e03f0038be0aed00e2",
+        "department": "Directing",
+        "job": "Director"
+      }
+    ]
+  }
+
+```
+
 
 
 search信息必须有的字段
