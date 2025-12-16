@@ -225,6 +225,35 @@ class VersionItem {
       );
 }
 
+class SeasonVersionItem {
+  final int id;
+  final String? versionTags;
+  final String? seasonVersionPath;
+  final String? storageName;
+  final int? episodeCount;
+  final List<EpisodeDetail> episodes;
+
+  SeasonVersionItem(
+      {required this.id,
+      this.versionTags,
+      this.seasonVersionPath,
+      this.storageName,
+      this.episodeCount,
+      this.episodes = const []});
+  factory SeasonVersionItem.fromJson(Map<String, dynamic> json) =>
+      SeasonVersionItem(
+        id: (json['id'] ?? 0) as int,
+        versionTags: json['version_tags'] as String?,
+        seasonVersionPath: json['season_version_path'] as String?,
+        storageName: json['storage_name'] as String?,
+        episodeCount: (json['episode_count'] as num?)?.toInt(),
+        episodes: ((json['episodes'] as List?)?.cast<Map<String, dynamic>>() ??
+                const [])
+            .map(EpisodeDetail.fromJson)
+            .toList(),
+      );
+}
+
 class SeasonDetail {
   final int seasonNumber;
   final String? overview;
@@ -234,7 +263,8 @@ class SeasonDetail {
   final List<CastItem>? cast;
   final int? runtime;
   final String? runtimeText;
-  final List<EpisodeDetail> episodes;
+  final List<SeasonVersionItem>? versions;
+  // final List<EpisodeDetail> episodes;
   SeasonDetail({
     required this.seasonNumber,
     this.overview,
@@ -244,7 +274,7 @@ class SeasonDetail {
     this.cast,
     this.runtime,
     this.runtimeText,
-    this.episodes = const [],
+    this.versions = const [],
   });
   factory SeasonDetail.fromJson(Map<String, dynamic> json) => SeasonDetail(
         seasonNumber: (json['season_number'] ?? 0) as int,
@@ -259,9 +289,9 @@ class SeasonDetail {
                 .toList(),
         runtime: (json['runtime'] as num?)?.toInt(),
         runtimeText: json['runtime_text'] as String?,
-        episodes: ((json['episodes'] as List?)?.cast<Map<String, dynamic>>() ??
+        versions: ((json['versions'] as List?)?.cast<Map<String, dynamic>>() ??
                 const [])
-            .map(EpisodeDetail.fromJson)
+            .map(SeasonVersionItem.fromJson)
             .toList(),
       );
 }
@@ -302,18 +332,47 @@ class AssetItem {
   final String type;
   final int? size;
   final String? sizeText;
+  final StorageItem? storageItem;  // 1. 改成单个对象，允许为空（用 ?）
   AssetItem(
       {required this.fileId,
       required this.path,
       required this.type,
       this.size,
-      this.sizeText});
+      this.sizeText,
+      this.storageItem,  // 2. 移除默认空列表，改为可空
+  });
   factory AssetItem.fromJson(Map<String, dynamic> json) => AssetItem(
         fileId: (json['file_id'] ?? 0) as int,
         path: (json['path'] ?? '') as String,
         type: (json['type'] ?? '') as String,
         size: (json['size'] as num?)?.toInt(),
         sizeText: json['size_text'] as String?,
+        // storageItems: (() {
+        //   final list =
+        //       (json['storage_items'] as List?)?.cast<Map<String, dynamic>>();
+        //   if (list != null && list.isNotEmpty) {
+        //     return list.map(StorageItem.fromJson).toList();
+        //   }
+        //   final single = json['storage'] as Map<String, dynamic>?;
+        //   if (single != null) {
+        //     return [StorageItem.fromJson(single)];
+        //   }
+        //   return <StorageItem>[];
+        // })(),
+        // 3. 解析 API 的 "storage" 字段（单个对象），而不是 "storage_items" 数组
+        storageItem: json['storage'] != null 
+            ? StorageItem.fromJson(json['storage'] as Map<String, dynamic>) 
+            : null,
+      );
+}
+
+class StorageItem {
+  final String storageName;
+  final String storageType;
+  StorageItem({required this.storageName, required this.storageType});
+  factory StorageItem.fromJson(Map<String, dynamic> json) => StorageItem(
+        storageName: (json['name'] ?? '') as String,
+        storageType: (json['type'] ?? '') as String,
       );
 }
 

@@ -71,14 +71,7 @@ class MediaService:
                 return a
         return assets[0]
 
-    # def _get_storage_info(self, db: Session, storage_id: Optional[int]) -> Optional[Dict[str, Any]]:
-    #     if not storage_id:
-    #         return None
-        
-    #     st = db.exec(select(StorageConfig).where(StorageConfig.id == storage_id)).first()
-    #     if not st:
-    #         return None
-    #     return {"id": st.id, "name": st.name, "type": st.storage_type}
+
     
     def _get_storage_info(self, db: Session, storage_id: Optional[int]) -> Optional[Dict[str, Any]]:
         if not storage_id:
@@ -665,7 +658,6 @@ class MediaService:
             }
             for name, character, profile_url, person_type in results
         ]
-
 
     def _get_crew(self, db: Session, user_id: int, core_id: int, job: str) -> List[Dict[str, Any]]:
         people = db.exec(

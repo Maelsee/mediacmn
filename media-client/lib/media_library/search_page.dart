@@ -25,6 +25,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   List<HomeCardItem> _items = [];
   bool _loading = false;
   String? _error;
+  // 分页状态
+  int _page = 1;
+  bool _hasMore = true;
+  bool _loadingMore = false;
+  String? _loadError;
+  final ScrollController _controller = ScrollController();
 
   String _selectedType = '全部';
   String _selectedSort = '最新更新';
@@ -114,12 +120,19 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
     // 初始加载
     _search();
+    // 监听滚动以触发懒加载
+    _controller.addListener(_onScroll);
   }
 
   Future<void> _search() async {
     setState(() {
       _loading = true;
       _error = null;
+      // 重置分页
+      _page = 1;
+      _hasMore = true;
+      _loadingMore = false;
+      _loadError = null;
     });
     try {
       final api = ref.read(apiClientProvider);
@@ -137,8 +150,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
       final res = await api.searchMedia(
         _q.text,
-        page: 1,
-        pageSize: 50, // 默认一页50
+        page: _page,
+        pageSize: 30,
         kind: kind,
         genres: [_selectedGenre],
         year: _selectedYear,
@@ -146,13 +159,74 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         sort: sort,
       );
       setState(() {
-        _items = res.items;
+        _items = List.of(res.items);
+        _hasMore = _items.length < res.total;
+        _page += 1;
       });
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
       setState(() => _loading = false);
     }
+  }
+
+  void _onScroll() {
+    if (_loading || _loadingMore || !_hasMore) return;
+    if (!_controller.hasClients) return;
+    final position = _controller.position;
+    if (position.pixels >= position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() {
+      _loadingMore = true;
+      _loadError = null;
+    });
+    try {
+      final api = ref.read(apiClientProvider);
+      // 映射排序与类型
+      String? sort;
+      if (_selectedSort == '最新更新') sort = 'updated';
+      if (_selectedSort == '最新上映') sort = 'released';
+      if (_selectedSort == '影片评分') sort = 'rating';
+      String? kind = _selectedType;
+      if (kind == '电影') kind = 'movie';
+      if (kind == '电视剧') kind = 'tv';
+      final res = await api.searchMedia(
+        _q.text,
+        page: _page,
+        pageSize: 30,
+        kind: kind,
+        genres: [_selectedGenre],
+        year: _selectedYear,
+        region: _selectedRegion,
+        sort: sort,
+      );
+      setState(() {
+        _items.addAll(res.items);
+        _hasMore = _items.length < res.total;
+        _page += 1;
+      });
+    } catch (e) {
+      setState(() {
+        _loadError = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingMore = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -241,6 +315,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     : _items.isEmpty
                         ? const Center(child: Text('暂无相关内容'))
                         : GridView.builder(
+                            controller: _controller,
                             padding: const EdgeInsets.all(12),
                             gridDelegate:
                                 const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -249,13 +324,17 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                               mainAxisSpacing: 12,
                               crossAxisSpacing: 12,
                             ),
-                            itemCount: _items.length,
+                            itemCount: _items.length + 1,
                             itemBuilder: (ctx, i) {
-                              return MediaCard(
-                                item: _items[i],
-                                width: double.infinity,
-                                height: 220,
-                              );
+                              if (i == _items.length) {
+                                return _buildFooter(ctx);
+                              } else {
+                                return MediaCard(
+                                  item: _items[i],
+                                  width: double.infinity,
+                                  height: 220,
+                                );
+                              }
                             },
                           ),
           ),
@@ -328,5 +407,39 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         },
       ),
     );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    if (_loadingMore) {
+      return Center(
+        child: Text(
+          '加载更多...',
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: Colors.white70),
+        ),
+      );
+    }
+    if (_loadError != null) {
+      return Center(
+        child: TextButton(
+          onPressed: _loadMore,
+          child: const Text('点击重试'),
+        ),
+      );
+    }
+    if (!_hasMore) {
+      return Center(
+        child: Text(
+          '没有更多内容了',
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: Colors.white54),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }

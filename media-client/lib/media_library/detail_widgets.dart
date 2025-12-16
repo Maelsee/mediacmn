@@ -466,6 +466,7 @@ class DetailPath extends StatelessWidget {
   /// 若不可用则不渲染该模块。
   Widget build(BuildContext context) {
     String pathInfo = '';
+    String storageName = '';
 
     if (detail.mediaType == 'movie') {
       final versions = detail.versions;
@@ -475,19 +476,34 @@ class DetailPath extends StatelessWidget {
         final assets = versions[vIndex].assets;
         if (assets.isNotEmpty) {
           pathInfo = assets.first.path;
+          // 新逻辑：直接取单个 storageItem
+          final storageItem = assets.first.storageItem;
+          if (storageItem != null) {
+            // 检查对象是否不为空
+            storageName = storageItem.storageName; // 直接获取 storageName
+          }
         }
       }
     } else {
       final seasons = detail.seasons ?? [];
       final sIndex = (selectedSeasonIndex ?? 0).clamp(0, seasons.length - 1);
       if (seasons.isNotEmpty) {
-        final episodes = seasons[sIndex].episodes;
+        final versions = seasons[sIndex].versions ?? [];
+        final vIndex =
+            (selectedVersionIndex ?? 0).clamp(0, versions.length - 1);
+        final episodes = versions[vIndex].episodes;
         final eIndex =
             (selectedEpisodeIndex ?? 0).clamp(0, episodes.length - 1);
         if (episodes.isNotEmpty) {
           final assets = episodes[eIndex].assets;
           if (assets.isNotEmpty) {
             pathInfo = assets.first.path;
+            // 新逻辑：直接取单个 storageItem
+            final storageItem = assets.first.storageItem;
+            if (storageItem != null) {
+              // 检查对象是否不为空
+              storageName = storageItem.storageName; // 直接获取 storageName
+            }
           }
         }
       }
@@ -498,7 +514,7 @@ class DetailPath extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Text(
-        '存储路径: $pathInfo',
+        '$storageName: $pathInfo',
         style:
             Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
       ),
@@ -554,13 +570,17 @@ class DetailPlayButton extends StatelessWidget {
               final seasons = detail.seasons ?? [];
               if (seasons.isNotEmpty) {
                 final season = seasons[sIndex.clamp(0, seasons.length - 1)];
-                final episodes = season.episodes;
-                if (episodes.isNotEmpty) {
-                  final episode =
-                      episodes[eIndex.clamp(0, episodes.length - 1)];
-                  if (episode.assets.isNotEmpty) {
-                    asset = episode.assets.first;
-                    candidates = episode.assets;
+                final versions = season.versions ?? [];
+                if (versions.isNotEmpty) {
+                  final version =
+                      versions[vIndex.clamp(0, versions.length - 1)];
+                  if (version.episodes.isNotEmpty) {
+                    final episode = version
+                        .episodes[eIndex.clamp(0, version.episodes.length - 1)];
+                    if (episode.assets.isNotEmpty) {
+                      asset = episode.assets.first;
+                      candidates = episode.assets;
+                    }
                   }
                 }
               }
@@ -691,16 +711,20 @@ class DetailSeasonsEpisodes extends StatelessWidget {
   final MediaDetail detail;
   final int selectedSeasonIndex;
   final int selectedEpisodeIndex;
+  final int selectedVersionIndex;
   final ValueChanged<int> onSeasonSelected;
   final ValueChanged<int> onEpisodeSelected;
+  final ValueChanged<int> onVersionSelected;
 
   const DetailSeasonsEpisodes({
     super.key,
     required this.detail,
     required this.selectedSeasonIndex,
     required this.selectedEpisodeIndex,
+    required this.selectedVersionIndex,
     required this.onSeasonSelected,
     required this.onEpisodeSelected,
+    required this.onVersionSelected,
   });
 
   @override
@@ -710,50 +734,213 @@ class DetailSeasonsEpisodes extends StatelessWidget {
   /// - 底部横向列表选择具体集，选中项以白色描边强调
   /// 通过回调通知父组件更新选择状态。
   Widget build(BuildContext context) {
-    if (detail.mediaType != 'tv' ||
-        detail.seasons == null ||
-        detail.seasons!.isEmpty) {
+    if (detail.seasons == null || detail.seasons!.isEmpty) {
       return const SizedBox.shrink();
     }
 
     final seasons = detail.seasons!;
     final currentSeason =
         seasons[selectedSeasonIndex.clamp(0, seasons.length - 1)];
+    final versions = currentSeason.versions ?? [];
+    if (versions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final vIndex = selectedVersionIndex.clamp(0, versions.length - 1);
+    final currentVersion = versions[vIndex];
+
+    // 版本选择页作为独立组件
+    // 包含：文件源(storageName)、文件夹(seasonVersionPath)、匹配集数(episodeCount)
+    // 保持与图三一致的白底卡片风格
+    // 使用在季横向选择的“已选季且多版本”点击场景
+    // ignore: unused_element
+    Widget seasonVersionSheet({
+      required int seasonNumber,
+      required List<SeasonVersionItem> versions,
+      required int selectedIndex,
+    }) {
+      return SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.8,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '选择第 $seasonNumber 季的版本',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: versions.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (ctx2, idx) {
+                    final v = versions[idx];
+                    final isSel = idx == selectedIndex;
+                    final src = (v.storageName?.isNotEmpty == true)
+                        ? v.storageName!
+                        : '未知存储';
+                    final folder = (v.seasonVersionPath?.isNotEmpty == true)
+                        ? v.seasonVersionPath!
+                        : '未知路径';
+                    final count = v.episodeCount;
+                    return InkWell(
+                      onTap: () => Navigator.pop(context, idx),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSel ? Colors.blue : Colors.transparent,
+                            width: isSel ? 1.5 : 0,
+                          ),
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    '文件源',
+                                    style: TextStyle(
+                                        color: Colors.black54, fontSize: 12),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(src,
+                                      style:
+                                          const TextStyle(color: Colors.black)),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    '文件夹',
+                                    style: TextStyle(
+                                        color: Colors.black54, fontSize: 12),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(folder,
+                                      style:
+                                          const TextStyle(color: Colors.black)),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    '匹配集数',
+                                    style: TextStyle(
+                                        color: Colors.black54, fontSize: 12),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(count != null ? '$count' : '未知',
+                                      style:
+                                          const TextStyle(color: Colors.black)),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              isSel
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_unchecked,
+                              color: isSel ? Colors.blue : Colors.black38,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Season Selector
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: DropdownButton<int>(
-            value: selectedSeasonIndex,
-            dropdownColor: Colors.grey[900],
-            style: const TextStyle(color: Colors.white),
-            items: List.generate(seasons.length, (index) {
-              return DropdownMenuItem(
-                value: index,
-                child: Text('第 ${seasons[index].seasonNumber} 季'),
-              );
-            }),
-            onChanged: (v) {
-              if (v != null) onSeasonSelected(v);
-            },
-            underline: Container(),
-            icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+          child: SizedBox(
+            height: 50,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: seasons.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (ctx, idx) {
+                final s = seasons[idx];
+                final isSel = idx == selectedSeasonIndex;
+                return GestureDetector(
+                  onTap: () async {
+                    if (!isSel) {
+                      onSeasonSelected(idx);
+                      return;
+                    }
+                    final vlist = s.versions ?? [];
+                    if (vlist.length > 1) {
+                      final picked = await showModalBottomSheet<int>(
+                        context: context,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        backgroundColor: Colors.white,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(12)),
+                        ),
+                        builder: (ctx) => seasonVersionSheet(
+                          seasonNumber: s.seasonNumber,
+                          versions: vlist,
+                          selectedIndex:
+                              selectedVersionIndex.clamp(0, vlist.length - 1),
+                        ),
+                      );
+                      if (picked != null) {
+                        onVersionSelected(picked);
+                      }
+                    }
+                  },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '第 ${s.seasonNumber} 季',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(
+                              color: isSel ? Colors.white : Colors.white70,
+                              fontWeight:
+                                  isSel ? FontWeight.bold : FontWeight.normal,
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      if (isSel)
+                        Container(height: 1, width: 50, color: Colors.white),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
         ),
-
-        // Episodes List
         SizedBox(
           height: 140,
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             scrollDirection: Axis.horizontal,
-            itemCount: currentSeason.episodes.length,
+            itemCount: currentVersion.episodes.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
-              final ep = currentSeason.episodes[index];
+              final ep = currentVersion.episodes[index];
               final stillUrl = ep.stillPath;
               final fullStillUrl =
                   (stillUrl != null && !stillUrl.startsWith('http'))

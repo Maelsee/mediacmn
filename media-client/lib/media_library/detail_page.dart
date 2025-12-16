@@ -58,6 +58,15 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                 d.seasons!.isNotEmpty) {
               _selectedSeasonIndex = 0;
             }
+            if (_selectedVersionIndex == null &&
+                d.seasons != null &&
+                d.seasons!.isNotEmpty) {
+              final s0 = d.seasons![
+                  (_selectedSeasonIndex ?? 0).clamp(0, d.seasons!.length - 1)];
+              if ((s0.versions ?? []).isNotEmpty) {
+                _selectedVersionIndex = 0;
+              }
+            }
             if (_selectedEpisodeIndex == null &&
                 d.seasons != null &&
                 d.seasons!.isNotEmpty) {
@@ -65,7 +74,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
               _selectedEpisodeIndex = 0;
             }
           }
-          
 
           return Stack(
             children: [
@@ -118,15 +126,25 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                         detail: d,
                         selectedSeasonIndex: _selectedSeasonIndex ?? 0,
                         selectedEpisodeIndex: _selectedEpisodeIndex ?? 0,
+                        selectedVersionIndex: _selectedVersionIndex ?? 0,
                         onSeasonSelected: (index) {
                           setState(() {
                             _selectedSeasonIndex = index;
+                            _selectedVersionIndex =
+                                0; // Reset version when season changes
                             _selectedEpisodeIndex = 0; // Reset episode
                           });
                         },
                         onEpisodeSelected: (index) {
                           setState(() {
                             _selectedEpisodeIndex = index;
+                          });
+                        },
+                        onVersionSelected: (index) {
+                          setState(() {
+                            _selectedVersionIndex = index;
+                            _selectedEpisodeIndex =
+                                0; // Reset episode when version changes
                           });
                         },
                       ),
