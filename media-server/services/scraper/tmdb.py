@@ -112,7 +112,7 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return False
 
-    async def search(self, title: str, year: Optional[int], media_type: MediaType = MediaType.MOVIE, language: str = "zh-CN") -> List[ScraperSearchResult]:
+    async def search(self, title: str, year: Optional[int], media_type: MediaType = None, language: str = None) -> List[ScraperSearchResult]:
         try:
             session = await self._ensure_session()
             auth = self._auth()
@@ -135,7 +135,8 @@ class TmdbScraper(ScraperPlugin):
                         results.append(sr)
                 # results.sort(key=lambda x: (x.vote_average or 0, x.year or 0), reverse=True)
                 return results
-        except Exception:
+        except Exception as e:
+            logger.error(f"TMDB search 异常: {e}")
             return []
 
     def _convert_search_result(self, it: Dict, media_type: MediaType, language: str) -> Optional[ScraperSearchResult]:

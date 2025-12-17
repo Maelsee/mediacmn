@@ -5,16 +5,15 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field
-
+# from dataclasses import dataclass, field
 from sqlmodel import select
-
+from guessit import guessit
 from core.db import get_session as get_db_session
-from models.media_models import MediaCore
+# from models.media_models import MediaCore
 from models.media_models import FileAsset
 from services.scraper import scraper_manager, MediaType
 from services.storage.storage_service import StorageService
-from services.utils.filename_parser import FilenameParser, ParserMode, ParseInput
+# from services.utils.filename_parser import FilenameParser, ParserMode, ParseInput
 from dataclasses import asdict
 from services.scraper.base import   ScraperSearchResult
 logger = logging.getLogger(__name__)
@@ -37,13 +36,10 @@ class MetadataEnricher:
         创建存储服务和文件名解析器实例
         """
         self.storage_service = StorageService()
-        self.parser = FilenameParser()
+        # self.parser = FilenameParser()
     
-    def _get_best_match(
-        self,
-        search_results: List[ScraperSearchResult],
-        parsed_data: dict,  # 名称解析器结果：{title: str, year: Optional[int], language: Optional[str], country: Optional[str]}
-    ) -> Optional[ScraperSearchResult]:
+    def _get_best_match(self,search_results: List[ScraperSearchResult],parsed_data: dict,) -> Optional[ScraperSearchResult]:  # parsed_data名称解析器结果：{title: str, year: Optional[int], language: Optional[str], country: Optional[str]}
+    
         """
         从搜索结果中选择最优匹配
         :param search_results: 插件返回的搜索结果列表
@@ -78,7 +74,7 @@ class MetadataEnricher:
 
         # 若过滤后无结果，保留原搜索结果（避免过度过滤导致无匹配）
         if not filtered_results or len(filtered_results) <=2 :
-            logger.warning(f"过滤后候选结果过少，保留原搜索结果（共{len(search_results)}条）")
+            logger.debug(f"过滤后候选结果过少，保留原搜索结果（共{len(search_results)}条）")
             filtered_results = search_results
 
         # -------------------------- 步骤2：给候选结果打分 --------------------------
@@ -132,7 +128,7 @@ class MetadataEnricher:
 
             # 记录结果与分数
             scored_results.append((result, round(score, 1)))
-            logger.info(f"结果打分：title={result.title}, id={result.id}, 总分={round(score,1)}")
+            # logger.info(f"结果打分：title={result.title}, id={result.id}, 总分={round(score,1)}")
 
         # -------------------------- 步骤3：排序并选择最优结果 --------------------------
         # 排序规则：1.总分降序 → 2.投票数降序（同分下优先高投票） → 3.流行度降序（再同分优先高热度）
@@ -142,7 +138,7 @@ class MetadataEnricher:
 
         # 取排序后的第一个结果作为最优匹配
         best_match = scored_results[0][0]
-        logger.info(
+        logger.debug(
             f"最优匹配结果：title={best_match.title}, id={best_match.id}, "
             f"总分={scored_results[0][1]}, 来源={best_match.provider}"
         )
@@ -215,35 +211,52 @@ class MetadataEnricher:
                 #     logger.warning("未提供storage_id，跳过侧车文件写入")
                 #     storage_client = None
                 
-                # 解析文件名（Deep 模式，若快照存在则重用）
-                seed_parent = str(Path(media_file.full_path).parent.name) # 父目录名作为种子
+                # # 解析文件名（Deep 模式，若快照存在则重用）
+                # seed_parent = str(Path(media_file.full_path).parent.name) # 父目录名作为种子
               
-                seed_title = media_file.filename or Path(media_file.full_path).name
-                # seed_year = None
-                # seed_season = None
-                # seed_episode = None
-                # 名称解析器
-                out = self.parser.parse(
-                    ParseInput(
-                        filename_raw=seed_title,
-                        parent_hint=seed_parent,
-                        grandparent_hint=str(Path(media_file.full_path).parent.parent.name) if Path(media_file.full_path).parent.parent else None,
-                        full_path=str(Path(media_file.full_path)),            
-                    ),
-                    ParserMode.DEEP
-                )
-                title = out.title or (media_file.filename or Path(media_file.full_path).name)
-                year = out.year if out.year is not None else None
-                season = out.season_number if out.season_number is not None else None
-                episode = out.episode_number if out.episode_number is not None else None
-                country =  "CN"  # 强制中国
-                language = "zh-CN"  # 强制中文
+                # seed_title = media_file.filename or Path(media_file.full_path).name
+                # # seed_year = None
+                # # seed_season = None
+                # # seed_episode = None
+                # # 名称解析器
+                # out = self.parser.parse(
+                #     ParseInput(
+                #         filename_raw=seed_title,
+                #         parent_hint=seed_parent,
+                #         grandparent_hint=str(Path(media_file.full_path).parent.parent.name) if Path(media_file.full_path).parent.parent else None,
+                #         full_path=str(Path(media_file.full_path)),            
+                #     ),
+                #     ParserMode.DEEP
+                # )
+                # title = out.title or (media_file.filename or Path(media_file.full_path).name)
+                # year = out.year if out.year is not None else None
+                # season = out.season_number if out.season_number is not None else None
+                # episode = out.episode_number if out.episode_number is not None else None
+                # country =  "CN"  # 强制中国
+                # language = "zh-CN"  # 强制中文
+
+                # 解析文件名（guessit）
+                path_info = guessit(media_file.full_path)
+               
+                title = path_info.get("title")      
+                season = path_info.get("season")               
+                episode = path_info.get("episode")
+                episode_title = path_info.get("episode_title")
+                year = path_info.get("year")               
+                language = path_info.get("language","zh-CN")       
+                country = path_info.get("country")
+                corrected_type = MediaType.MOVIE if path_info.get("type") == "movie" else MediaType.TV_EPISODE
+                
+                
+
                 
                 # 确定媒体类型(movie or tv)
-                corrected_type = self._determine_media_type(media_file, season, episode)
+                # corrected_type = self._determine_media_type(media_file, season, episode)
                 
                 # 搜索元数据
-                logger.info(f"🔍 开始搜索元数据: '{title}' ({year or '未知年份'}) - 类型: {corrected_type.value}")
+                # logger.info(f"🔍 开始搜索元数据: '{title}' ({year or '未知年份'}) - 类型: {corrected_type} - 解析信息: {path_info}")
+                # logger.info(f"🔍 解析信息: {path_info}")
+
                 # 统一由管理器在启动期启用插件；此处仅确保默认插件可用
                 try:
                     await scraper_manager.ensure_default_plugins()
@@ -254,13 +267,6 @@ class MetadataEnricher:
                 # 始终使用年份进行搜索（推荐配置）
                 logger.debug(f"🎯 搜索参数: 标题='{title}', 年份={year }, 语言={language}")
                 
-                # 调用的是插件中的search方法，中间加了语言回退策略
-                # search_results, corrected_type = await scraper_manager.search_with_type_correction(
-                #     title=title,
-                #     year=year,
-                #     initial_type=media_type,
-                #     language=language
-                # )
                 search_results = await scraper_manager.search_media_with_policy(
                     title=title, 
                     year=year, 
@@ -345,6 +351,8 @@ class MetadataEnricher:
                     "file_id": media_file.id,  
                     "contract_type": contract_type,
                     "contract_payload": asdict(details_obj) if details_obj else asdict(best_match),
+                    "path_info": path_info,
+
                     # "version_context": {
                     #     "scope": scope,
                     #     "quality": quality,

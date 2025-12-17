@@ -82,7 +82,7 @@ class MediaVersion(SQLModel, table=True):
 
     # 版本标识
     tags: str = Field(description="版本标签（分辨率,编码,来源,Edition），如：1080p,H.264,DTS,Director's Cut,tmdb")
-    quality: Optional[str] = Field(default=None, description="质量等级：high(4K)|medium(1080p)|low(720p及以下)")
+    quality: Optional[str] = Field(default=None, description="质量:4K|1080p|720p")
     source: Optional[str] = Field(default=None, description="版本来源（tmdb|本地|other）")
     edition: Optional[str] = Field(default=None, description="版本类型（Director's Cut|Theatrical|Standard）")
 
@@ -273,6 +273,7 @@ class FileAsset(SQLModel, table=True):
     video_codec: Optional[str] = Field(default=None, description="视频编码格式")
     audio_codec: Optional[str] = Field(default=None, description="音频编码格式")
     resolution: Optional[str] = Field(default=None, description="分辨率")
+    frame_rate: Optional[str] = Field(default=None, description="帧率（fps）")
     duration: Optional[int] = Field(default=None, description="时长（秒）")
     etag: Optional[str] = Field(default=None, description="存储ETag标识")
     asset_role: Optional[str] = Field(default=None, description="资源角色：video|audio|subtitle|nfo|image|other")

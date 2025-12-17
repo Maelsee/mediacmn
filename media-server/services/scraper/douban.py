@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class DoubanScraper(ScraperPlugin):
     """豆瓣刮削器插件"""
-    
+
     def __init__(self):
         self._session: Optional[aiohttp.ClientSession] = None
         self._headers = {

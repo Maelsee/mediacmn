@@ -225,17 +225,18 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
             try:
                 # 4.1 生成幂等键（确保同一文件+同一元数据类型不重复处理）
                 idempotency_key = f"persist:{user_id}:{result.get('file_id')}:{result.get('contract_type')}"
-
+                # logger.info(f"📄 文件 {result.get('file_id')} 的contract_payload={result.get('contract_payload')}")
                 # 4.2 调用生产者创建持久化任务（参数格式对齐 PersistPayload）
                 await create_persist_task(
                     user_id=user_id,
                     file_id=result.get("file_id"),
                     contract_type=result.get("contract_type"),
                     contract_payload=result.get("contract_payload"),
+                    path_info=result.get("path_info"),
                     idempotency_key=idempotency_key  # 幂等性保障
                 )
                 persist_task_count += 1
-                logger.info(f"✅ 为文件 {result.get('file_id')} 创建持久化任务：幂等键={idempotency_key}")
+                logger.debug(f"✅ 为文件 {result.get('file_id')} 创建持久化任务：幂等键={idempotency_key}")
             except Exception as e:
                 logger.error(f"❌ 为文件 {result.get('file_id')} 创建持久化任务失败：{e}", exc_info=True)
 
@@ -332,8 +333,10 @@ async def persist_worker(task_id: str, payload: Dict[str, Any]) -> None:
             # logger.info(f"📄 持久化文件 {file_id} 元数据：类型={contract_type}")
             contract_payload = payload.get("contract_payload", {})
             # logger.info(f"📄 持久化文件 {file_id} 元数据：{contract_payload}")
-
-            svc.apply_metadata(session, media_file, metadata=contract_payload, metadata_type=contract_type)
+            path_info = payload.get("path_info", {})
+            # logger.info(f"📄 持久化文件 {file_id} 元数据：{path_info}")
+            
+            svc.apply_metadata(session, media_file, metadata=contract_payload, metadata_type=contract_type,path_info=path_info)
             session.commit()
             logger.info(f"持久化任务 {task_id}：文件 {file_id} 元数据已保存")
 

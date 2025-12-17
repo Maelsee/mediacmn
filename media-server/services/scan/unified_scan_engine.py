@@ -17,12 +17,12 @@
 
 import asyncio
 import logging
-import mimetypes
+# import mimetypes
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Callable, AsyncGenerator
 from dataclasses import dataclass, field
-from enum import Enum
+# from enum import Enum
 
 from sqlmodel import select
 
@@ -30,7 +30,7 @@ from core.db import get_session as get_db_session
 from models.media_models import MediaCore, FileAsset
 from services.storage.storage_service import StorageService
 from services.storage.storage_client import StorageClient, StorageEntry
-from services.utils.filename_parser import FilenameParser, ParserMode, ParseInput
+# from services.utils.filename_parser import FilenameParser, ParserMode, ParseInput
 from services.scan.file_asset_repository import SqlFileAssetRepository
 
 logger = logging.getLogger(__name__)
@@ -154,12 +154,12 @@ class FileAssetProcessor(ScanProcessor):
         - 创建文件名解析器 `FilenameParser`，用于快速提取标题/年/季/集/分辨率等轻量信息。
         - 维护受支持的媒体扩展名集合，以便快速过滤非媒体文件。
         """
-        self.parser = FilenameParser()
+        # self.parser = FilenameParser()
         self.supported_media_extensions = {
             '.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v',
             # '.mp3', '.flac', '.wav', '.aac', '.ogg', '.wma', '.m4a',
             # '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg',
-            # '.srt', '.ass', '.ssa', '.vtt', '.sub'
+            '.srt', '.ass', '.ssa', '.vtt', '.sub'
         }
     
     def _is_media_file(self, file_path: str) -> bool:
@@ -177,36 +177,7 @@ class FileAssetProcessor(ScanProcessor):
         return ext in self.supported_media_extensions
     
     
-    # def _light_parse(self, entry: StorageEntry) -> Dict:
-    #     """轻量级文件名解析
 
-    #     使用 `FilenameParser` 的轻量模式，优先提取常见元信息（标题/年/季/集/分辨率）。
-    #     当轻量模式无法提取到季集或分辨率等关键点时，回退到更保守的解析策略（例如依据文件名 stem）。
-
-    #     Args:
-    #         entry: 存储条目，至少包含 `name` 与 `path`。
-
-    #     Returns:
-    #         结构化的轻量信息字典：`{"title","year","season","episode","resolution","source"}`。
-    #     """
-    #     out = self.parser.parse(ParseInput(filename_raw=entry.name, parent_hint=str(Path(entry.path).parent.name)), ParserMode.LIGHT)
-    #     title = out.title or Path(entry.name).stem
-    #     year = out.year or None
-    #     season = out.season_number or None
-    #     episode = out.episode_number or None
-    #     resolution = None
-    #     if out.resolution_tags and len(out.resolution_tags) > 0:
-    #         resolution = out.resolution_tags[0]
-    #     if not any([year, season, episode, resolution]):
-    #         return self._parse_filename(entry.name)
-    #     return {
-    #         "title": title,
-    #         "year": year,
-    #         "season": season,
-    #         "episode": episode,
-    #         "resolution": resolution,
-    #         "source": None
-    #     }
     
     async def _calculate_file_hash(self, storage_client: StorageClient, file_path: str) -> Optional[str]:
         """计算文件哈希
@@ -274,7 +245,7 @@ class FileAssetProcessor(ScanProcessor):
         """处理单个文件（非批量路径）
 
         步骤：
-        1) 过滤非媒体文件。
+        1) 过滤非目标媒体文件。
         2) 轻量解析文件名，产出 `file_info`(已删除)。
         3) 通过仓储接口查询是否存在记录；存在则按 `size/etag` 判变更并更新；不存在则创建新记录。
 

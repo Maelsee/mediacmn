@@ -52,7 +52,7 @@ class ScraperManager:
             
             # 检查是否已经注册
             if plugin_name in self._plugin_classes:
-                logger.warning(f"插件 {plugin_name} 已经注册")
+                logger.debug(f"插件 {plugin_name} 已经注册")
                 return False
             
             # 验证插件类
@@ -270,9 +270,9 @@ class ScraperManager:
         except Exception as e:
             logger.warning(f"默认插件启用失败: {e}")
 
-    async def search_media_with_policy(self, title: str, year: Optional[int] = None,
-                                       media_type: MediaType = MediaType.MOVIE,
-                                       language: str = 'zh-CN') -> List[ScraperSearchResult]:
+    async def search_media_with_policy(self, title: str, year: Optional[int],
+                                       media_type: MediaType,
+                                       language: str) -> List[ScraperSearchResult]:
         # 调用插件的search方法，根据语言回退策略返回搜索结果
         try:
             results = await self.search_media(title, year, media_type, language)
@@ -376,9 +376,9 @@ class ScraperManager:
             logger.error(f"自动发现插件失败: {e}")
             return 0
     
-    async def search_media(self, title: str, year: Optional[int] = None,
-                          media_type: MediaType = MediaType.MOVIE,
-                          language: str = "zh-CN") -> List[ScraperSearchResult]:
+    async def search_media(self, title: str, year: Optional[int] ,
+                          media_type: MediaType ,
+                          language: str) -> List[ScraperSearchResult]:
         """
         搜索媒体信息（使用所有启用的插件）
         

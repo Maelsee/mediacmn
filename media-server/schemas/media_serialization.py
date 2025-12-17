@@ -51,6 +51,8 @@ class FileAssert(BaseModel):
     path: str
     size: Optional[int] = None
     size_text: Optional[str] = None
+    resolution: Optional[str] = None
+    frame_rate: Optional[str] = None
     language: Optional[str] = None
     storage: Optional[dict] = None
 

@@ -23,6 +23,7 @@ class StorageEntry:
     etag: Optional[str] = None
 
 
+
 @dataclass
 class StorageInfo:
     """存储系统信息"""

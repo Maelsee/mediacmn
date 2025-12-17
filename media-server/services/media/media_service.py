@@ -711,18 +711,20 @@ class MediaService:
             asset_list = []
             for asset in assets_map.get(version.id, []):
                 asset_list.append({
-                    "file_id": asset.id,
-                    "path": asset.full_path,
+                    "file_id": getattr(asset, "id", None),
+                    "path": getattr(asset, "full_path", None),
+                    "resolution": getattr(asset, "resolution", None),
+                    "frame_rate": getattr(asset, "frame_rate", None),
                     # "type": getattr(asset, "asset_role", None) or self._normalize_asset_type(asset),
-                    "size": asset.size,
-                    "size_text": self._to_human_size(asset.size),
+                    "size": getattr(asset, "size", None),
+                    "size_text": self._to_human_size(getattr(asset, "size", None)),
                     "language": getattr(asset, "language", None),
                     "storage": self._get_storage_info(db, getattr(asset, "storage_id", None)),
                 })
             
             result.append({
-                "id": version.id,
-                "quality": version.quality,
+                "id": getattr(version, "id", None),
+                "quality": getattr(version, "quality", None),
                 "assets": asset_list,
             })
         

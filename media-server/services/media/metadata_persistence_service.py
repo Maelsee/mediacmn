@@ -109,8 +109,9 @@ class MetadataPersistenceService:
 
     def _get_quality_level(self, media_file: FileAsset) -> Optional[str]:
         """根据分辨率映射质量(未实现!!!)"""
-        example = ["4k", "2160p", "1080p", "720p", "480p"]
-        return example[random.randint(0, len(example) - 1)]
+        resolution = media_file.resolution or None
+        example = ["4k", "2160p", "1080p"]
+        return resolution if resolution else example[random.randint(0, len(example) - 1)]
 
     def _get_file_source(self, session, media_file: FileAsset) -> str:
         """
@@ -490,7 +491,7 @@ class MetadataPersistenceService:
                 pass 
     
     def _upsert_credits(self, session, user_id: int, core_id: int, credits, provider: Optional[str]) -> None:
-        logger.info(f"开始处理Credits，共 {len(credits)} 条记录")
+        # logger.info(f"开始处理Credits，共 {len(credits)} 条记录")
         if not credits:
             return
         
@@ -613,7 +614,7 @@ class MetadataPersistenceService:
                 return "Animation"
         if genres :
             for genre in genres:
-                logger.info(f"检查genres决定类型: {genre}")
+                # logger.info(f"检查genres决定类型: {genre}")
                 # genre_name = genre.get("name", "").lower()
                 if genre.lower() in ["动画", "animation"]:
                     return "Animation"
@@ -912,7 +913,7 @@ class MetadataPersistenceService:
             pass
         return season_core
     # 方法入口
-    def apply_metadata(self, session, media_file: FileAsset, metadata,metadata_type: str) -> None:
+    def apply_metadata(self, session, media_file: FileAsset, metadata,metadata_type: str,path_info: Dict) -> None:
         """
         一次性幂等地将刮削结果写入领域模型，并更新相关扩展信息
 
@@ -952,6 +953,8 @@ class MetadataPersistenceService:
         else:
             logger.warning(f"不支持的元数据类型: {metadata_type}")
             return
+        # 更新文件的路径信息字段
+        self._apply_file_path_info(session, media_file, path_info)
         
         # 更新mediacore缓存
         # self._refresh_display_cache_for_core(session, core, media_file.user_id)
@@ -1407,5 +1410,20 @@ class MetadataPersistenceService:
             pass
         return core
 
+    def _apply_file_path_info(self, session, media_file: FileAsset, path_info: Dict) -> None:
+        """
+        应用文件路径信息到领域模型
+
+        事务说明:
+            1. 更新文件的路径信息字段
+        """
+        # 1. 更新文件的路径信息字段
+        media_file.resolution = media_file.resolution or path_info.get("screen_size")
+        media_file.frame_rate = media_file.frame_rate or path_info.get("frame_rate")
+        media_file.mimetype = media_file.mimetype or path_info.get("mimetype")
+        media_file.video_codec = media_file.video_codec or path_info.get("video_codec")
+        media_file.audio_codec = media_file.audio_codec or path_info.get("audio_codec")
+        media_file.container = media_file.container or path_info.get("container")
+        media_file.updated_at = datetime.now()
 
 persistence_service = MetadataPersistenceService()

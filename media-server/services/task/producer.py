@@ -30,6 +30,9 @@ class PersistPayload(BaseModel):
     file_id: int
     contract_type: str
     contract_payload: Dict
+    path_info: Dict
+
+
 
 class DeletePayload(BaseModel):
     user_id: int
@@ -75,7 +78,7 @@ async def _enqueue(
     if idem_key:
         existing_task_id = await store.get_task_id_by_idempotency(idem_key)
         if existing_task_id:
-            logger.info(f"幂等键 {idem_key} 已存在，返回已有任务 ID：{existing_task_id}")
+            logger.debug(f"幂等键 {idem_key} 已存在，返回已有任务 ID：{existing_task_id}")
             return existing_task_id
 
     # -------------------------- 关键修改：手动序列化 payload --------------------------
@@ -192,6 +195,7 @@ async def create_persist_task(
     file_id: int,
     contract_type: str,
     contract_payload: Dict,
+    path_info: Dict,
     *,
     priority: TaskPriority = TaskPriority.NORMAL,
     idempotency_key: Optional[str] = None
@@ -200,7 +204,8 @@ async def create_persist_task(
         user_id=user_id,
         file_id=file_id,
         contract_type=contract_type,
-        contract_payload=contract_payload
+        contract_payload=contract_payload,
+        path_info=path_info
     ).model_dump()
     if idempotency_key:
         payload["idempotency_key"] = idempotency_key

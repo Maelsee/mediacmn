@@ -28,8 +28,6 @@ class WebDAVStorageClient(StorageClient):
         # 获取基础配置
         base_url = config.get('url', '').rstrip('/')
         root_path = config.get('root_path', '').strip('/')
-       
-        
         # 组合完整的 base_url
         if root_path:
             self._base_url = f"{base_url}/{root_path}"
@@ -261,8 +259,12 @@ class WebDAVStorageClient(StorageClient):
                 </D:propfind>"""
                         
             async with self._session.request('PROPFIND', url, headers=headers, data=body) as response:
+                # logger.info(f'webdav协议文件信息响应状态: {response}')
+
                 if response.status == 207:  # Multi-Status
                     xml_content = await response.text()
+                    # logger.info(f'----查看XML内容: {xml_content}')
+
                     entries = self._parse_webdav_response(xml_content)
                     
                     # 转换为统一的StorageEntry格式
@@ -341,6 +343,8 @@ class WebDAVStorageClient(StorageClient):
             </D:propfind>"""
             
             async with self._session.request('PROPFIND', url, headers=headers, data=body) as response:
+                logger.info(f'webdav协议单文件信息响应状态: {response}')
+
                 if response.status == 207:  # Multi-Status
                     xml_content = await response.text()
                     entries = self._parse_webdav_response(xml_content)
