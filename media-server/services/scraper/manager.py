@@ -32,6 +32,7 @@ class ScraperManager:
         self._enabled_plugins: List[str] = []
         self._plugin_configs: Dict[str, dict] = {}
         self._started: bool = False
+        self._op_lock: asyncio.Lock = asyncio.Lock()
     
     def register_plugin(self, plugin_class: Type[ScraperPlugin], 
                          name: Optional[str] = None) -> bool:
@@ -80,45 +81,53 @@ class ScraperManager:
             是否加载成功
         """
         try:
-            if name not in self._plugin_classes:
-                logger.error(f"插件 {name} 未注册")
-                return False
-            
-            plugin_class = self._plugin_classes[name]
-            plugin_instance = plugin_class()
-            
-            # 配置插件
-            if config:
-                '''
-                配置插件实例
-                Args:
-                    config: 插件配置
-                Returns:
-                    是否配置成功
-                '''
-                if not plugin_instance.configure(config):
-                    logger.error(f"插件 {name} 配置失败")
+            async with self._op_lock:
+                if name not in self._plugin_classes:
+                    logger.error(f"插件 {name} 未注册")
                     return False
-                self._plugin_configs[name] = config
-            
-            # 测试连接（在受限网络环境下允许失败但仍注册插件）
-            connection_ok = False
-            try:
-                '''
-                测试插件连接
-                Returns:
-                    是否连接成功
-                '''
-                connection_ok = await plugin_instance.test_connection()
-            except Exception as e:
-                logger.warning(f"插件 {name} 连接测试异常: {e}")
-            if not connection_ok:
-                logger.warning(f"插件 {name} 连接测试失败，仍继续加载（可能为离线环境）")
+                
+                # 已加载则直接复用实例；如提供新配置则应用到现有实例
+                existing = self._plugins.get(name)
+                if existing:
+                    if config:
+                        try:
+                            ok = existing.configure(config)
+                            if not ok:
+                                logger.error(f"插件 {name} 配置失败")
+                                return False
+                            self._plugin_configs[name] = config
+                        except Exception as e:
+                            logger.error(f"插件 {name} 配置异常: {e}")
+                            return False
+                    return True
 
-            self._plugins[name] = plugin_instance
-            logger.info(f"加载插件: {name}")
-            return True
-            
+                plugin_class = self._plugin_classes[name]
+                plugin_instance = plugin_class()
+                
+                # 配置插件（首次加载）
+                if config:
+                    try:
+                        ok = plugin_instance.configure(config)
+                        if not ok:
+                            logger.error(f"插件 {name} 配置失败")
+                            return False
+                        self._plugin_configs[name] = config
+                    except Exception as e:
+                        logger.error(f"插件 {name} 配置异常: {e}")
+                        return False
+                
+                # 测试连接（在受限网络环境下允许失败但仍注册插件）
+                connection_ok = False
+                try:
+                    connection_ok = await plugin_instance.test_connection()
+                except Exception as e:
+                    logger.warning(f"插件 {name} 连接测试异常: {e}")
+                if not connection_ok:
+                    logger.warning(f"插件 {name} 连接测试失败，仍继续加载（可能为离线环境）")
+
+                self._plugins[name] = plugin_instance
+                logger.info(f"加载插件: {name}")
+                return True
         except Exception as e:
             logger.error(f"加载插件失败: {e}")
             return False

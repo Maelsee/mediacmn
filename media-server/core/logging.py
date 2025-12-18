@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any, Dict
+from pathlib import Path
+from logging.handlers import TimedRotatingFileHandler
 
 from .config import Settings
 
@@ -47,15 +49,54 @@ class UvicornCompatibleFormatter(logging.Formatter):
         return f"{levelname_aligned}{record.getMessage()}"
 
 
+class JSONFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+        data: Dict[str, Any] = {
+            "ts": int(record.created * 1000),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            data["exc_info"] = self.formatException(record.exc_info)  # type: ignore[arg-type]
+        if record.stack_info:
+            data["stack_info"] = self.formatStack(record.stack_info)
+        return json.dumps(data, ensure_ascii=False)
+
+
 logger = logging.getLogger("mediacmn")
 
 
 def init_logging(settings: Settings) -> None:
-    """初始化与 Uvicorn 兼容的日志输出。"""
-    handler = logging.StreamHandler()
-    handler.setFormatter(UvicornCompatibleFormatter())
+    log_dir = Path(__file__).resolve().parent.parent / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(UvicornCompatibleFormatter())
+
+    app_file_handler = TimedRotatingFileHandler(
+        filename=str(log_dir / "app.log"),
+        when="midnight",
+        backupCount=7,
+        encoding="utf-8",
+    )
+    app_file_handler.setFormatter(JSONFormatter())
 
     root = logging.getLogger()
     root.handlers.clear()
-    root.addHandler(handler)
-    root.setLevel(logging.INFO )
+    root.addHandler(console_handler)
+    root.addHandler(app_file_handler)
+    root.setLevel(logging.INFO)
+
+    dramatiq_logger = logging.getLogger("dramatiq")
+    dramatiq_file_handler = TimedRotatingFileHandler(
+        filename=str(log_dir / "dramatiq.log"),
+        when="midnight",
+        backupCount=7,
+        encoding="utf-8",
+    )
+    dramatiq_file_handler.setFormatter(JSONFormatter())
+    dramatiq_logger.handlers.clear()
+    dramatiq_logger.addHandler(dramatiq_file_handler)
+    dramatiq_logger.setLevel(logging.INFO)
+    dramatiq_logger.propagate = False

@@ -7,7 +7,8 @@ from datetime import datetime
 from re import L
 from typing import Optional, Dict, Any, List
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select,update
+from sqlalchemy.dialects.postgresql import insert # <-- 关键导入
 
 from models.media_models import (
     MediaCore, ExternalID, FileAsset, Artwork, Genre, MediaCoreGenre,
@@ -341,38 +342,7 @@ class MetadataPersistenceService:
 
     
     # ==================== 持久化元数据方法 ====================
-    # def _upsert_artworks(self, session, user_id: int, core_id: int, provider: Optional[str], artworks) -> None:
-    #     try:
-    #         if artworks:
-    #             for a in artworks:
-    #                 # 支持 dict 和 dataclass：先尝试 dict.get，再用 getattr
-    #                 a_type = self._get_attr(a, "type")
-    #                 # 处理 Enum 类型：如果是 Enum，取其 value；如果已是字符串，直接使用
-    #                 if hasattr(a_type, "value"):
-    #                     _t = a_type.value
-    #                 else:
-    #                     _t = a_type
-    #                 _t = "still" if _t == "thumb" else _t
-    #                 by_type = session.exec(select(Artwork).where(
-    #                     Artwork.user_id == user_id,
-    #                     Artwork.core_id == core_id,
-    #                     Artwork.type == _t
-    #                 )).first()
-    #                 if by_type:
-    #                     try:
-    #                         if not getattr(by_type, "remote_url", None):
-    #                             by_type.remote_url = self._get_attr(a, "url")
-    #                     except Exception:
-    #                         by_type.remote_url = self._get_attr(a, "url")
-    #                     by_type.provider = provider
-    #                     by_type.language = self._get_attr(a, "language") or getattr(by_type, "language", None)
-    #                     by_type.preferred = getattr(by_type, "preferred", False)
-    #                     # by_type.exists_remote = True
-    #                 else:
-    #                     session.add(Artwork(user_id=user_id, core_id=core_id, type=_t, remote_url=self._get_attr(a, "url"), local_path=None, provider=provider, language=self._get_attr(a, "language"), preferred=False, exists_local=False))
-    #     except Exception:
-    #         pass
-
+    #============非原子操作处理=============
     def _upsert_artworks(self, session, user_id: int, core_id: int, provider: Optional[str], artworks) -> None:
         if not artworks:  # 空列表直接返回，避免无效循环
             return
@@ -490,121 +460,429 @@ class MetadataPersistenceService:
                 # 如需回滚局部错误：session.rollback()
                 pass 
     
+    # def _upsert_external_ids(self, session, user_id: int, core_id: int, external_ids) -> None:
+    #     try:
+    #         if not external_ids:
+    #             return
+            
+    #         for eid in external_ids:
+    #             if not eid:
+    #                 continue
+    #             # 3. 用self._get_attr兼容dict和_DictWrapper/对象（代替eid.get()）
+    #             provider = self._get_attr(eid, "provider")  # 无默认值，不存在则返回None
+    #             external_id = self._get_attr(eid, "external_id")  # 原始外部ID（未转str）
+
+    #             # 4. 过滤无效数据（provider为空或external_id为空）
+    #             if not provider or external_id is None:
+    #                 logger.debug(f"跳过无效外部ID（provider={provider}, external_id={external_id}）")
+    #                 continue
+
+    #             external_id = str(external_id)
+
+    #             existing = session.exec(select(ExternalID).where(
+    #                 ExternalID.user_id == user_id,
+    #                 ExternalID.core_id == core_id,
+    #                 ExternalID.source == provider,
+    #                 # ExternalID.key == external_id
+    #             )).first()
+    #             if not existing:
+    #                 session.add(ExternalID(user_id=user_id, core_id=core_id, source=provider, key=external_id))
+    #                 session.flush()
+    #             else:
+    #                 existing.key = external_id
+    #             # 更新核心表的tmdb_id
+    #             if provider == 'tmdb':
+    #                 media_core = session.exec(select(MediaCore).where(MediaCore.user_id == user_id, MediaCore.id == core_id)).first()
+    #                 if media_core :
+    #                     media_core.tmdb_id = external_id 
+                        
+    #     except Exception as e:
+    #         logger.error(f"更新ExternalIDs失败: {e}", exc_info=True)
+    #         pass
+
+    # def _upsert_credits(self, session, user_id: int, core_id: int, credits, provider: Optional[str]) -> None:
+    #     # logger.info(f"开始处理Credits，共 {len(credits)} 条记录")
+    #     if not credits:
+    #         return
+        
+    #     for c in credits:
+    #         try:
+    #             if not c:
+    #                 continue
+
+    #             name = self._get_attr(c, "name")
+    #             original_name = self._get_attr(c, "original_name")
+    #             provider_id = self._get_attr(c, "provider_id")
+    #             purl = self._get_attr(c, "image_url")
+    #             if not name:
+    #                 continue
+    #             person = session.exec(select(Person).where(Person.provider_id == provider_id, Person.name == name,Person.provider == provider)).first()
+    #             if not person:       
+    #                 person = Person(provider=provider, provider_id=provider_id, name=name,original_name=original_name, profile_url=purl)
+    #                 session.add(person)
+    #                 session.flush()
+    #             else:
+    #                 try:
+                        
+    #                     person.original_name = original_name or person.original_name
+    #                     if not getattr(person, "profile_url", None) and purl:
+    #                         person.profile_url = purl
+    #                 except Exception as e:
+    #                     logger.error(f"更新Person profile_url失败: {e}", exc_info=True)
+    #                     pass
+    #             # 处理 Enum 类型：如果是 Enum，取其 value；如果已是字符串，直接使用
+    #             c_type = self._get_attr(c, "type")
+    #             if hasattr(c_type, "value"):
+    #                 role_type = c_type.value
+    #             else:
+    #                 role_type = c_type
+    #             role = "cast" if role_type == "actor" else "crew"
+    #             role = "guest" if self._get_attr(c, "is_flying") else role
+
+
+    #             character = self._get_attr(c, "character") if role == "cast" else None # 演员角色名称,导演就是"Director"
+    #             job = role_type # actor/director/writer
+    #             order = self._get_attr(c, "order")
+    #             existing = session.exec(select(Credit).where(
+    #                 Credit.user_id == user_id,
+    #                 Credit.core_id == core_id,
+    #                 Credit.person_id == person.id,
+    #                 Credit.role == role,
+    #                 Credit.job == job,
+    #                 # Credit.order == order
+    #             )).first()
+    #             if not existing:
+    #                 session.add(Credit(user_id=user_id, core_id=core_id, person_id=person.id, role=role, character=character, job=job, order=order))
+    #                 session.flush()
+    #             else:
+    #                 existing.role = role
+    #                 existing.character = character
+    #                 existing.job = job
+    #                 existing.order = order
+    #         except Exception as e:
+    #             logger.error(f"处理Person/Credit失败（name={name}, provider={provider}）: {str(e)}", exc_info=True)
+    #             # 关键：异常后回滚Session，避免后续操作报错
+    #             session.rollback()
+    #             # 重新开始事务（可选，根据业务需求）
+    #             session.begin()
+    #             continue  # 跳过当前记录，处理下一条
+
+    # def _upsert_genres(self, session, user_id: int, core_id: int, genres) -> None:
+    #     try:
+    #         for genre_name in genres or []:
+    #             if not genre_name or "&" in genre_name:
+    #                 continue
+    #             genre = session.exec(select(Genre).where(Genre.name == genre_name)).first()
+    #             if not genre:
+    #                 genre = Genre(name=genre_name)
+    #                 session.add(genre)
+    #                 session.flush()
+    #             existing_link = session.exec(select(MediaCoreGenre).where(MediaCoreGenre.user_id == user_id, MediaCoreGenre.core_id == core_id, MediaCoreGenre.genre_id == genre.id)).first()
+    #             if not existing_link:
+    #                 session.add(MediaCoreGenre(user_id=user_id, core_id=core_id, genre_id=genre.id))
+    #     except Exception:
+    #         pass
+    
+
+    #============原子操作处理=============
     def _upsert_credits(self, session, user_id: int, core_id: int, credits, provider: Optional[str]) -> None:
-        # logger.info(f"开始处理Credits，共 {len(credits)} 条记录")
+        """
+        使用数据库级别的 UPSERT 操作来原子化地处理 Person 和 Credit 的创建/更新，
+        彻底解决并发环境下的竞态条件问题。
+        """
         if not credits:
             return
-        
+
         for c in credits:
-            if not c:
-                continue
+            # 1. 创建保存点：用于局部回滚
+            savepoint = session.begin_nested()
+            try:
+                if not c:
+                    continue
 
-            name = self._get_attr(c, "name")
-            original_name = self._get_attr(c, "original_name")
-            provider_id = self._get_attr(c, "provider_id")
-            purl = self._get_attr(c, "image_url")
-            if not name:
-                continue
-            person = session.exec(select(Person).where(Person.provider_id == provider_id, Person.name == name,Person.provider == provider)).first()
-            if not person:       
-                person = Person(provider=provider, provider_id=provider_id, name=name,original_name=original_name, profile_url=purl)
-                session.add(person)
-                session.flush()
-            else:
-                try:
+                # --- 1. 处理 Person ---
+                name = self._get_attr(c, "name")
+                original_name = self._get_attr(c, "original_name")
+                provider_id = self._get_attr(c, "provider_id")
+                purl = self._get_attr(c, "image_url")
+                if not name:
+                    continue
+
+                # 使用 UPSERT (INSERT ... ON CONFLICT DO NOTHING) 来原子化地创建 Person
+                # 这会尝试插入，如果 (provider, provider_id, name) 冲突，则什么都不做
+                stmt_person = insert(Person).values(
+                    provider=provider,
+                    provider_id=provider_id,
+                    name=name,
+                    original_name=original_name,
+                    profile_url=purl
+                ).on_conflict_do_nothing(
+                    index_elements=['provider', 'provider_id', 'name']  # 指定唯一约束的列
+                )
+                session.execute(stmt_person)
+
+                # 无论是否插入了新数据，都重新查询一次以确保获取到 person 对象
+                person = session.exec(select(Person).where(
+                    Person.provider_id == provider_id,
+                    Person.name == name,
+                    Person.provider == provider
+                )).first()
+
+                # 如果此时 person 仍然为 None，说明有其他严重问题（如 provider_id 为 None）
+                if not person:
+                    logger.error(f"UPSERT Person 后仍无法获取到记录 (name={name}, provider={provider}, provider_id={provider_id})")
+                    continue
+
+                # 更新可能缺失的字段 (例如，profile_url)
+                # 这部分逻辑在 person 对象获取后执行，确保总是作用于一个有效的实例
+                person.original_name = original_name or person.original_name
+                if not person.profile_url and purl:
+                    person.profile_url = purl
+
+                # --- 2. 处理 Credit ---
+                # 处理 Enum 类型
+                c_type = self._get_attr(c, "type")
+                if hasattr(c_type, "value"):
+                    role_type = c_type.value
+                else:
+                    role_type = c_type
+                role = "cast" if role_type == "actor" else "crew"
+                role = "guest" if self._get_attr(c, "is_flying") else role
+
+                character = self._get_attr(c, "character") if role == "cast" else None
+                job = role_type
+                order = self._get_attr(c, "order")
+
+                # 使用 UPSERT (INSERT ... ON CONFLICT DO UPDATE) 来原子化地创建/更新 Credit
+                # 如果 (user_id, core_id, person_id, role, job) 冲突，则更新 character 和 order
+                stmt_credit = insert(Credit).values(
+                    user_id=user_id,
+                    core_id=core_id,
+                    person_id=person.id,
+                    role=role,
+                    character=character,
+                    job=job,
+                    order=order
+                ).on_conflict_do_update(
+                    index_elements=['user_id', 'core_id', 'person_id', 'role', 'job'], # 假设这是 Credit 表的唯一/候选键
+                    set_={
+                        'character': character,
+                        'order': order
+                    }
+                )
+                session.execute(stmt_credit)
+                 
+                # 2. 无错误则释放保存点（提交局部操作）
+                savepoint.commit()
+
+            except Exception as e:
+                logger.error(f"处理 Person/Credit 失败（name={name if 'name' in locals() else 'N/A'}, provider={provider}）: {str(e)}", exc_info=True)
+                # 关键：发生任何异常时回滚当前事务，避免会话状态污染
+                savepoint.rollback()
+                continue  # 跳过当前记录，处理下一条
+
+    # def _upsert_artworks(self, session, user_id: int, core_id: int, provider: Optional[str], artworks) -> None:
+    #     """
+    #     使用数据库级别的 UPSERT 和原子性 UPDATE 来处理 Artwork，
+    #     确保“唯一首选”逻辑在并发环境下的正确性和一致性。
+    #     """
+    #     if not artworks:
+    #         return
+
+    #     for artwork in artworks:
+    #         try:
+    #             # 1. 提取Artwork的核心属性
+    #             a_type = self._get_attr(artwork, "type")
+    #             a_url = self._get_attr(artwork, "url")
+    #             a_language = self._get_attr(artwork, "language")
+    #             a_preferred = self._get_attr(artwork, "is_primary") is True
+    #             a_width = self._get_attr(artwork, "width")
+    #             a_height = self._get_attr(artwork, "height")
+
+    #             _t = a_type.value if hasattr(a_type, "value") else a_type
+    #             if not _t or not a_url:
+    #                 continue
+
+    #             # 定义通用值
+    #             values = {
+    #                 "provider": provider,
+    #                 "language": a_language,
+    #                 "width": a_width,
+    #                 "height": a_height,
+    #             }
+
+    #             if a_preferred:
+    #                 # --- 首选 Artwork 的原子化处理 ---
+
+    #                 # 步骤1: UPSERT 当前 Artwork，并确保其 preferred=True
+    #                 # 假设 (user_id, core_id, type, remote_url) 是唯一键
+    #                 stmt = insert(Artwork).values(
+    #                     user_id=user_id,
+    #                     core_id=core_id,
+    #                     type=_t,
+    #                     remote_url=a_url,
+    #                     preferred=True,  # 插入或更新时，强制设为首选
+    #                     **values
+    #                 ).on_conflict_do_update(
+    #                     index_elements=['user_id', 'core_id', 'type', 'remote_url'],
+    #                     set_= {
+    #                         "preferred": True,  # 冲突时，也更新为首选
+    #                         **values
+    #                     }
+    #                 ).returning(Artwork.id) # 返回被插入/更新记录的ID
+
+    #                 result = session.execute(stmt)
+    #                 current_artwork_id = result.scalar_one()
+
+    #                 # 步骤2: 原子性地将其他同类型的 Artwork 设为非首选
+    #                 # 这是一个独立的原子操作，确保只有一个首选
+    #                 session.execute(
+    #                     update(Artwork).where(
+    #                         Artwork.user_id == user_id,
+    #                         Artwork.core_id == core_id,
+    #                         Artwork.type == _t,
+    #                         Artwork.id != current_artwork_id # 关键：排除刚刚操作的那条记录
+    #                     ).values(preferred=False)
+    #                 )
+
+    #             else:
+    #                 # --- 非首选 Artwork 的原子化处理 ---
                     
-                    person.original_name = original_name or person.original_name
-                    if not getattr(person, "profile_url", None) and purl:
-                        person.profile_url = purl
-                except Exception as e:
-                    logger.error(f"更新Person profile_url失败: {e}", exc_info=True)
-                    pass
-            # 处理 Enum 类型：如果是 Enum，取其 value；如果已是字符串，直接使用
-            c_type = self._get_attr(c, "type")
-            if hasattr(c_type, "value"):
-                role_type = c_type.value
-            else:
-                role_type = c_type
-            role = "cast" if role_type == "actor" else "crew"
-            role = "guest" if self._get_attr(c, "is_flying") else role
+    #                 # UPSERT 当前 Artwork，但不修改 preferred 状态
+    #                 stmt = insert(Artwork).values(
+    #                     user_id=user_id,
+    #                     core_id=core_id,
+    #                     type=_t,
+    #                     remote_url=a_url,
+    #                     preferred=False, # 插入时设为非首选
+    #                     **values
+    #                 ).on_conflict_do_update(
+    #                     index_elements=['user_id', 'core_id', 'type', 'remote_url'],
+    #                     set_=values # 冲突时，只更新其他元数据，不碰 preferred
+    #                 )
+    #                 session.execute(stmt)
 
-
-            character = self._get_attr(c, "character") if role == "cast" else None # 演员角色名称,导演就是"Director"
-            job = role_type # actor/director/writer
-            order = self._get_attr(c, "order")
-            existing = session.exec(select(Credit).where(
-                Credit.user_id == user_id,
-                Credit.core_id == core_id,
-                Credit.person_id == person.id,
-                Credit.role == role,
-                Credit.job == job,
-                # Credit.order == order
-            )).first()
-            if not existing:
-                session.add(Credit(user_id=user_id, core_id=core_id, person_id=person.id, role=role, character=character, job=job, order=order))
-                session.flush()
-            else:
-                existing.role = role
-                existing.character = character
-                existing.job = job
-                existing.order = order
-             
+    #         except Exception as e:
+    #             # 使用 logger 替代 print，并记录详细信息
+    #             logger.error(f"处理 Artwork 失败（URL: {a_url if 'a_url' in locals() else 'N/A'}）: {str(e)}", exc_info=True)
+    #             # 关键：发生任何异常时回滚当前事务
+    #             session.rollback()
+    #             continue  # 跳过当前 artwork，处理下一个
+   
     def _upsert_genres(self, session, user_id: int, core_id: int, genres) -> None:
-        try:
-            for genre_name in genres or []:
+        """
+        使用数据库级别的 UPSERT 操作来原子化地处理 Genre 和 MediaCoreGenre 的创建，
+        解决并发环境下的竞态条件，并改进了错误处理。
+        """
+        if not genres:
+            return
+
+        for genre_name in genres:
+            # 1. 创建保存点：用于局部回滚
+            savepoint = session.begin_nested()
+            try:
                 if not genre_name or "&" in genre_name:
                     continue
+
+                # --- 1. 处理 Genre 表 ---
+                # 使用 UPSERT (INSERT ... ON CONFLICT DO NOTHING) 来原子化地创建 Genre
+                stmt_genre = insert(Genre).values(name=genre_name).on_conflict_do_nothing(
+                    index_elements=['name']  # 假设 Genre.name 是唯一键
+                )
+                session.execute(stmt_genre)
+
+                # 无论是否插入了新数据，都查询一次以获取 genre 对象
                 genre = session.exec(select(Genre).where(Genre.name == genre_name)).first()
+
                 if not genre:
-                    genre = Genre(name=genre_name)
-                    session.add(genre)
-                    session.flush()
-                existing_link = session.exec(select(MediaCoreGenre).where(MediaCoreGenre.user_id == user_id, MediaCoreGenre.core_id == core_id, MediaCoreGenre.genre_id == genre.id)).first()
-                if not existing_link:
-                    session.add(MediaCoreGenre(user_id=user_id, core_id=core_id, genre_id=genre.id))
-        except Exception:
-            pass
-    
+                    # 如果查询不到，说明有其他问题（比如 genre_name 为空或格式错误）
+                    logger.error(f"UPSERT Genre 后仍无法获取到记录: {genre_name}")
+                    continue
+
+                # --- 2. 处理 MediaCoreGenre 关联表 ---
+                # 使用 UPSERT (INSERT ... ON CONFLICT DO NOTHING) 来原子化地创建关联
+                # 如果 (user_id, core_id, genre_id) 的链接已存在，则什么都不做
+                stmt_link = insert(MediaCoreGenre).values(
+                    user_id=user_id,
+                    core_id=core_id,
+                    genre_id=genre.id
+                ).on_conflict_do_nothing(
+                    index_elements=['user_id', 'core_id', 'genre_id']  # 指定关联表的唯一键
+                )
+                session.execute(stmt_link)
+                
+                # 2. 提交保存点：如果所有操作都成功，提交保存点
+                savepoint.commit()
+                
+            except Exception as e:
+                # 记录详细的错误信息，而不是静默忽略
+                logger.error(f"处理 Genre 失败（name={genre_name if 'genre_name' in locals() else 'N/A'}）: {str(e)}", exc_info=True)
+                # 关键：发生任何异常时回滚当前事务，避免会话状态污染
+                savepoint.rollback()
+                continue  # 跳过当前类型，处理下一个
+
     def _upsert_external_ids(self, session, user_id: int, core_id: int, external_ids) -> None:
-        try:
-            if not external_ids:
-                return
-            
-            for eid in external_ids:
+        """
+        使用数据库级别的 UPSERT 操作来原子化地处理 ExternalID 的创建/更新，
+        解决并发环境下的竞态条件，并改进了错误处理。
+        """
+        if not external_ids:
+            return
+
+        for eid in external_ids:
+            # 1. 创建保存点：用于局部回滚
+            savepoint = session.begin_nested()
+            try:
                 if not eid:
                     continue
-                # 3. 用self._get_attr兼容dict和_DictWrapper/对象（代替eid.get()）
-                provider = self._get_attr(eid, "provider")  # 无默认值，不存在则返回None
-                external_id = self._get_attr(eid, "external_id")  # 原始外部ID（未转str）
 
-                # 4. 过滤无效数据（provider为空或external_id为空）
-                if not provider or external_id is None:
-                    logger.debug(f"跳过无效外部ID（provider={provider}, external_id={external_id}）")
+                # 1. 提取和验证数据
+                provider = self._get_attr(eid, "provider")
+                external_id_raw = self._get_attr(eid, "external_id")
+
+                if not provider or external_id_raw is None:
+                    logger.debug(f"跳过无效外部ID（provider={provider}, external_id={external_id_raw}）")
                     continue
 
-                external_id = str(external_id)
+                external_id_str = str(external_id_raw)
 
-                existing = session.exec(select(ExternalID).where(
-                    ExternalID.user_id == user_id,
-                    ExternalID.core_id == core_id,
-                    ExternalID.source == provider,
-                    # ExternalID.key == external_id
-                )).first()
-                if not existing:
-                    session.add(ExternalID(user_id=user_id, core_id=core_id, source=provider, key=external_id))
-                    session.flush()
-                else:
-                    existing.key = external_id
-                # 更新核心表的tmdb_id
+                # --- 2. 原子化地 Upsert ExternalID ---
+                # 使用 UPSERT (INSERT ... ON CONFLICT DO UPDATE) 来创建或更新记录
+                # 如果 (user_id, core_id, source) 冲突，则更新 key 字段
+                stmt = insert(ExternalID).values(
+                    user_id=user_id,
+                    core_id=core_id,
+                    source=provider,
+                    key=external_id_str
+                ).on_conflict_do_update(
+                    index_elements=['user_id', 'core_id', 'source'],  # 假设这是 ExternalID 表的唯一键
+                    set_={
+                        'key': external_id_str  # 冲突时，更新 key
+                    }
+                )
+                session.execute(stmt)
+
+                # --- 3. 条件性更新 MediaCore ---
+                # 如果 provider 是 'tmdb'，则更新主表的 tmdb_id
                 if provider == 'tmdb':
-                    media_core = session.exec(select(MediaCore).where(MediaCore.user_id == user_id, MediaCore.id == core_id)).first()
-                    if media_core :
-                        media_core.tmdb_id = external_id 
-                        
-        except Exception as e:
-            logger.error(f"更新ExternalIDs失败: {e}", exc_info=True)
-            pass
-    
+                    # 直接执行 UPDATE 语句比先 SELECT 再 UPDATE 更高效
+                    session.execute(
+                        update(MediaCore).where(
+                            MediaCore.user_id == user_id,
+                            MediaCore.id == core_id
+                        ).values(tmdb_id=external_id_str)
+                    )
+                
+                # 2. 提交保存点：如果所有操作都成功，提交保存点
+                savepoint.commit()
+                
+            except Exception as e:
+                logger.error(f"处理 ExternalID 失败（provider={provider if 'provider' in locals() else 'N/A'}）: {str(e)}", exc_info=True)
+                # 关键：发生任何异常时回滚当前事务
+                savepoint.rollback()
+                continue  # 跳过当前ID，处理下一个
+
+
     def _check_series_type(self, type: str, genres: List[str]) -> str:
         """判断系列类型(TV/Animation/Reality)"""
         if type:
@@ -626,20 +904,7 @@ class MetadataPersistenceService:
         name_val = getattr(sd, "name", None) or getattr(sd, "original_name", None) or ""
         genres = getattr(sd, "genres", []) or [] 
         type_val = getattr(sd, "type", None)  # Scripted|Reality(Variety)|Animation|Documentary|News|Talk Show|Other
-        # try:
-        #     has_animation = False
-        #     if genres and type_val != "Animation":
-        #         for genre in genres:
-        #             logger.info(f"检查类型动画: {genre}")
-        #             # genre_name = genre.get("name", "").lower()
-        #             if genre.lower() in ["动画", "animation"]:
-        #                 has_animation = True
-        #                 break
-        #     # 扩展动画类型
-        #     type_val = "Animation" if has_animation else type_val 
-        # except Exception as e:
-        #     logger.error(f"Error checking animation type: {e}")
-        #     pass  
+    
         try:
             type_val = self._check_series_type(type_val, genres)
         except Exception as e:
@@ -992,7 +1257,7 @@ class MetadataPersistenceService:
             session.add(core)
             session.flush()
             media_file.core_id = core.id
-            logger.info(f"电影中更新了media_file.core_id: {core.id} for file: {media_file.id}")
+            # logger.info(f"电影中更新了media_file.core_id: {core.id} for file: {media_file.id}")
 
         else:
             core.kind = "movie"

@@ -12,6 +12,8 @@
 - cd media-server/ && source  venv/bin/activate && uvicorn main:app --reload
 - cd media-server/ && source  venv/bin/activate && python start_task_executor.py
 - cd media-server/ && source  venv/bin/activate && dramatiq services.task.consumers
+- cd media-client && flutter run -d web-server --web-port 5200     # 启动前端
+
 {
   "name": "test",
   "storage_type": "webdav",
@@ -31,6 +33,8 @@
  
   }
 }
+
+/302/133quark302/电影/华语/高分华语电影合集1080P【300部1.7TB】
 
 递归移除目录的 Git 追踪，保留本地文件
 git rm --cached -r services/storage/__pycache__/

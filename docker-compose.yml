@@ -24,15 +24,15 @@ services:
     #   - "6379"
     ports:
       - "9001:6379"
-    volumes:
-      - redis_data:/data
+    # volumes:
+    #   - redis_data:/data
     command: redis-server --requirepass redis123
     networks:
       - media_network
 
 volumes:
   postgres_data:
-  redis_data:
+  # redis_data:
 
 networks:
   media_network:

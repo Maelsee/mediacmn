@@ -295,6 +295,7 @@ class FileAsset(SQLModel, table=True):
 class Artwork(SQLModel, table=True):
     """艺术图资源模型 - 存储媒体相关的图片资源信息"""
     __tablename__ = "artwork"
+    # __table_args__ = (UniqueConstraint('user_id', 'core_id', 'type', 'remote_url', name="uq_artwork_core_type_url"),)
 
     id: Optional[int] = Field(default=None, primary_key=True, description="图片资源唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")

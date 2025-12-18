@@ -196,9 +196,18 @@ class MetadataEnricher:
                 # 获取媒体文件信息
                 media_file = session.exec(select(FileAsset).where(FileAsset.id == file_id)).first()
                 
+                # 1. 修复：媒体文件不存在时，返回包含错误信息的字典
                 if not media_file:
                     logger.error(f"媒体文件不存在: {file_id}")
-                    return False
+                    return {
+                        "user_id": 0,  # 无用户ID
+                        "file_id": file_id,  # 保留请求的file_id
+                        "contract_type": "",  # 空类型
+                        "contract_payload": {},  # 空 payload
+                        "path_info": {},  # 空路径信息
+                        "success": False,  # 新增：标识失败
+                        "error_msg": "媒体文件不存在"  # 新增：错误描述
+                    }
                 
                 # 获取存储客户端 - 优先使用传入的storage_id，否则使用文件关联的存储配置ID
                 # if storage_id:
@@ -257,12 +266,22 @@ class MetadataEnricher:
                 # logger.info(f"🔍 开始搜索元数据: '{title}' ({year or '未知年份'}) - 类型: {corrected_type} - 解析信息: {path_info}")
                 # logger.info(f"🔍 解析信息: {path_info}")
 
-                # 统一由管理器在启动期启用插件；此处仅确保默认插件可用
+                # 统一在启动期初始化插件；此处调用startup具备幂等保障
+                # 2. 修复：插件启动失败时，返回包含错误信息的字典
                 try:
-                    await scraper_manager.ensure_default_plugins()
+                    await scraper_manager.startup()
                 except Exception as e:
-                    logger.warning(f"⚠️ 插件初始化检查失败: {e}")
-                    return False
+                    err_msg = f"插件系统启动失败: {str(e)}"
+                    logger.warning(err_msg)
+                    return {
+                        "user_id": media_file.user_id,
+                        "file_id": file_id,
+                        "contract_type": "",
+                        "contract_payload": {},
+                        "path_info": {},
+                        "success": False,
+                        "error_msg": err_msg
+                    }
                 
                 # 始终使用年份进行搜索（推荐配置）
                 logger.debug(f"🎯 搜索参数: 标题='{title}', 年份={year }, 语言={language}")
@@ -278,8 +297,17 @@ class MetadataEnricher:
                          
                 
                 if not search_results:
-                    logger.warning(f"❌ 未找到匹配的元数据: {title} ({year})")
-                    return False
+                    err_msg = f"未找到匹配的元数据: {title} ({year})"
+                    logger.warning(err_msg)
+                    return {
+                        "user_id": media_file.user_id,
+                        "file_id": file_id,
+                        "contract_type": "",
+                        "contract_payload": {},
+                        "path_info": path_info,  # 保留解析到的路径信息
+                        "success": False,
+                        "error_msg": err_msg
+                    }
                 
                 # 选择最佳匹配
                 # 1. 整理名称解析器数据为parsed_data
@@ -352,6 +380,8 @@ class MetadataEnricher:
                     "contract_type": contract_type,
                     "contract_payload": asdict(details_obj) if details_obj else asdict(best_match),
                     "path_info": path_info,
+                    "success": True,
+                    "error_msg": "",
 
                     # "version_context": {
                     #     "scope": scope,
@@ -465,10 +495,19 @@ class MetadataEnricher:
                 
                 # return True
                 
+        # 4. 修复：捕获全局异常时，返回包含错误信息的字典（原返回空字典，可优化）
         except Exception as e:
             logger.exception(f"丰富媒体文件元数据失败: {e}")
-            return {"file_id": file_id, "user_id": 0, "contract_type": "", "contract_payload": {}}  # 异常时返回空结果
-    
+            return {
+                "user_id": 0,
+                "file_id": file_id,
+                "contract_type": "",
+                "contract_payload": {},
+                "path_info": {},
+                "success": False,
+                "error_msg": str(e)  # 新增：捕获具体异常信息
+            } 
+           
     async def enrich_multiple_files(self, file_ids: List[int], 
                                 language: str = "zh-CN", 
                                 storage_id: Optional[int] = None,
