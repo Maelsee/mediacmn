@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     # 刮削语言回退策略
     SCRAPER_FALLBACK_MOVIE: bool = Field(default=True, description="电影是否启用语言回退")
     SCRAPER_FALLBACK_SERIES: bool = Field(default=False, description="剧集是否启用语言回退")
-    ENABLE_SCRAPERS: Union[str, List[str], None] = Field(default=["tmdb"], description="启用的刮削器插件")
+    ENABLE_SCRAPERS: List[str] = Field(default=["tmdb"], description="启用的刮削器插件")
     # 侧车本地化（NFO/海报）开关与限制
     SIDE_CAR_LOCALIZATION_ENABLED: bool = Field(default=False, description="是否启用侧车异步本地化")
     SIDE_CAR_LOCALIZATION_ARTWORK_LIMIT: int = Field(default=2, description="侧车阶段写入的艺术作品最大数量")
@@ -118,27 +118,27 @@ class Settings(BaseSettings):
             return []
 
 
-    @field_validator("ENABLE_SCRAPERS", mode="before")
-    @classmethod
-    def parse_enable_scrapers(cls, v):  # type: ignore[override]
-        if v is None:
-            return ["tmdb"]
-        if isinstance(v, str):
-            s = v.strip()
-            if not s:
-                return ["tmdb"]
-            if s.startswith("[") and s.endswith("]"):
-                import json
-                try:
-                    data = json.loads(s)
-                    return [str(item).strip().lower() for item in data if str(item).strip()]
-                except Exception:
-                    return [item.strip().lower() for item in s.strip("[]").split(",") if item.strip()]
-            return [item.strip().lower() for item in s.split(",") if item.strip()]
-        try:
-            return [str(item).strip().lower() for item in (v or []) if str(item).strip()]
-        except Exception:
-            return ["tmdb"]
+    # @field_validator("ENABLE_SCRAPERS", mode="before")
+    # @classmethod
+    # def parse_enable_scrapers(cls, v):  # type: ignore[override]
+    #     if v is None:
+    #         return ["tmdb"]
+    #     if isinstance(v, str):
+    #         s = v.strip()
+    #         if not s:
+    #             return ["tmdb"]
+    #         if s.startswith("[") and s.endswith("]"):
+    #             import json
+    #             try:
+    #                 data = json.loads(s)
+    #                 return [str(item).strip().lower() for item in data if str(item).strip()]
+    #             except Exception:
+    #                 return [item.strip().lower() for item in s.strip("[]").split(",") if item.strip()]
+    #         return [item.strip().lower() for item in s.split(",") if item.strip()]
+    #     try:
+    #         return [str(item).strip().lower() for item in (v or []) if str(item).strip()]
+    #     except Exception:
+    #         return ["tmdb"]
 
 
 @lru_cache(maxsize=1)

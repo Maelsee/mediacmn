@@ -36,21 +36,31 @@ from services.scan.file_asset_repository import SqlFileAssetRepository
 logger = logging.getLogger(__name__)
 
 
+# @dataclass
+# class ScanResult:
+#     """扫描结果数据类"""
+#     total_files: int = 0
+#     media_files: int = 0
+#     new_files: int = 0
+#     updated_files: int = 0
+#     errors: int = 0
+#     duration: float = 0.0
+#     scanned_paths: List[str] = field(default_factory=list)
+#     error_details: List[Dict] = field(default_factory=list)
+#     new_file_ids: List[int] = field(default_factory=list)
+#     encountered_media_paths: List[str] = field(default_factory=list)
+#     # new_file_snapshots: Dict[int, Dict] = field(default_factory=dict)
 @dataclass
 class ScanResult:
-    """扫描结果数据类"""
     total_files: int = 0
     media_files: int = 0
     new_files: int = 0
     updated_files: int = 0
     errors: int = 0
     duration: float = 0.0
-    scanned_paths: List[str] = field(default_factory=list)
-    error_details: List[Dict] = field(default_factory=list)
     new_file_ids: List[int] = field(default_factory=list)
-    encountered_media_paths: List[str] = field(default_factory=list)
-    # new_file_snapshots: Dict[int, Dict] = field(default_factory=dict)
-
+    to_delete_ids: List[int] = field(default_factory=list) # 新增：需要删除的ID
+    error_details: List[Dict] = field(default_factory=list)
 """
 示例 ScanResult 实例
 ScanResult(

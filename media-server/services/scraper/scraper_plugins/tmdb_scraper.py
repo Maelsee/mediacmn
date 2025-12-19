@@ -5,7 +5,7 @@ from typing import List, Optional, Dict
 import aiohttp
 
 from core.config import get_settings
-from .base import (
+from ..base import (
     MediaType,
     ScraperPlugin,
     ScraperSearchResult,
@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 
 class TmdbScraper(ScraperPlugin):
+    # 静态类属性：直接通过 TmdbScraper.name 访问，无需实例化
+    name = "tmdb"
+    version = "2.0.0"
+    description = "The Movie Database (TMDB) 刮削器"
+    supported_media_types = [MediaType.MOVIE, MediaType.TV_SERIES,MediaType.TV_EPISODE]
+    
     def __init__(self):
         self._settings = get_settings()
         self._api_key = getattr(self._settings, "TMDB_API_KEY", None)
@@ -33,22 +39,6 @@ class TmdbScraper(ScraperPlugin):
         self._base_url = "https://api.themoviedb.org/3"
         self._image_base = "https://image.tmdb.org/t/p"
         self._session: Optional[aiohttp.ClientSession] = None
-
-    @property
-    def name(self) -> str:
-        return "tmdb"
-
-    @property
-    def version(self) -> str:
-        return "2.0.0"
-
-    @property
-    def description(self) -> str:
-        return "The Movie Database (TMDB) 刮削器"
-
-    @property
-    def supported_media_types(self) -> List[MediaType]:
-        return [MediaType.MOVIE, MediaType.TV_SERIES, MediaType.TV_SEASON, MediaType.TV_EPISODE]
 
     @property
     def default_language(self) -> str:
@@ -68,18 +58,32 @@ class TmdbScraper(ScraperPlugin):
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         if not self._session:
-            timeout = aiohttp.ClientTimeout(total=int(getattr(self._settings, "TMDB_TIMEOUT", 30)))
-            self._session = aiohttp.ClientSession(timeout=timeout, trust_env=True)
+            # timeout = aiohttp.ClientTimeout(total=int(getattr(self._settings, "TMDB_TIMEOUT", 30)))
+            # self._session = aiohttp.ClientSession(timeout=timeout, trust_env=True)
+            # 这里不要传任何 timeout!
+            self._session = aiohttp.ClientSession(trust_env=True)
         return self._session
 
     async def _get(self, url: str, params: Optional[Dict] = None, headers: Optional[Dict] = None) -> aiohttp.ClientResponse:
         session = await self._ensure_session()
+        # 显式创建请求级别的超时对象
+        tm_out = aiohttp.ClientTimeout(total=20)
         merged_headers = {"Accept": "application/json"}
         if headers:
             merged_headers.update(headers)
+        # 使用 proxy 逻辑
+        kwargs = {
+            "params": params or {},
+            "headers": merged_headers,
+            "timeout": tm_out  # 在这里设置超时
+        }
         if self._proxy:
-            return await session.get(url, params=params or {}, headers=merged_headers, proxy=self._proxy)
-        return await session.get(url, params=params or {}, headers=merged_headers)
+            kwargs["proxy"] = self._proxy
+            
+        return await session.get(url, **kwargs)
+        # if self._proxy:
+        #     return await session.get(url, params=params or {}, headers=merged_headers, proxy=self._proxy)
+        # return await session.get(url,timeout=tm_out, params=params or {}, headers=merged_headers)
 
     async def startup(self) -> None:
         await self._ensure_session()

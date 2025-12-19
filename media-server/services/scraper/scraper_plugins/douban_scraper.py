@@ -10,14 +10,15 @@ from typing import Dict, List, Optional
 import aiohttp
 from bs4 import BeautifulSoup
 
-from .base import ArtworkType, CreditType, MediaType, ScraperArtwork, ScraperCredit, ScraperExternalId, ScraperPlugin, ScraperSearchResult, ScraperMovieDetail, ScraperSeriesDetail, ScraperSeasonDetail, ScraperEpisodeDetail
+from ..base import ArtworkType, CreditType, MediaType, ScraperArtwork, ScraperCredit, ScraperExternalId, ScraperPlugin, ScraperSearchResult, ScraperMovieDetail, ScraperSeriesDetail, ScraperSeasonDetail, ScraperEpisodeDetail
 
 logger = logging.getLogger(__name__)
 
 
 class DoubanScraper(ScraperPlugin):
     """豆瓣刮削器插件"""
-
+    name = "douban"  # 必须是类变量
+    version = "1.0.0"
     def __init__(self):
         self._session: Optional[aiohttp.ClientSession] = None
         self._headers = {
@@ -30,21 +31,7 @@ class DoubanScraper(ScraperPlugin):
             'Upgrade-Insecure-Requests': '1',
         }
     
-    @property
-    def name(self) -> str:
-        return "douban"
-    
-    @property
-    def version(self) -> str:
-        return "1.0.0"
-    
-    @property
-    def description(self) -> str:
-        return "豆瓣电影刮削器"
-    
-    @property
-    def supported_media_types(self) -> List[MediaType]:
-        return [MediaType.MOVIE]  # 豆瓣主要支持电影
+   
     
     @property
     def default_language(self) -> str:

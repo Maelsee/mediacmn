@@ -818,7 +818,7 @@ class MetadataPersistenceService:
                         preferred=True,  # 插入或更新时，强制设为首选
                         **values
                     ).on_conflict_do_update(
-                        index_elements=['user_id', 'core_id', 'type', 'remote_url', 'preferred'],
+                        index_elements=['user_id', 'core_id', 'type', 'remote_url'],
                         set_= {
                             "preferred": True,  # 冲突时，也更新为首选
                             **values
@@ -850,7 +850,7 @@ class MetadataPersistenceService:
                         preferred=False, # 插入时设为非首选
                         **values
                     ).on_conflict_do_update(
-                        index_elements=['user_id', 'core_id', 'type', 'remote_url', 'preferred'],
+                        index_elements=['user_id', 'core_id', 'type', 'remote_url'],
                         set_=values # 冲突时，只更新其他元数据，不碰 preferred
                     )
                     session.execute(stmt)
@@ -1516,9 +1516,28 @@ class MetadataPersistenceService:
         返回:
             - bool: 操作是否成功
         """
-        # 如果 metadata 是 dict，包装为可通过 getattr 访问的对象
+        model_map = {
+            "movie": ScraperMovieDetail,
+            "series": ScraperSeriesDetail,
+            "episode": ScraperEpisodeDetail,
+            "search_result": ScraperSearchResult
+        }
+        model_cls = model_map.get(metadata_type)
         if isinstance(metadata, dict):
+            # if model_cls:
+            #     try:
+            #         metadata = model_cls.model_validate(metadata)
+            #     except Exception as ve:
+            #         logger.error(f"元数据校验失败: {ve}")
+            #         # 这里可以选择抛出异常或降级为 dict
+            # else:
             metadata = _DictWrapper(metadata)
+                # 如果没有找到对应的模型类，metadata 依然是 dict
+                # 这可能会导致后续 handler 报错，建议增加警告
+            logger.debug(f"类型 {metadata_type} 没有关联的模型类，将以 dict 形式继续")
+        
+        
+
 
         handler = self._get_handler(metadata_type)
         if not handler:

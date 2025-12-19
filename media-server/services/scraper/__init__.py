@@ -18,8 +18,8 @@ from .base import (
     MediaType,
 )
 from .manager import ScraperManager, scraper_manager
-from .tmdb import TmdbScraper
-from .douban import DoubanScraper
+from .scraper_plugins.tmdb_scraper import TmdbScraper
+from .scraper_plugins.douban_scraper import DoubanScraper
 
 __all__ = [
     'ScraperPlugin',

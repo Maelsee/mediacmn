@@ -32,6 +32,15 @@ class MetadataResult(TypedDict):
     success: bool
     error_msg: str
 
+# class MetadataResult(BaseModel):
+#     user_id: int
+#     file_id: int
+#     contract_type: str
+#     # payload 可以是任何 Scraper 模型，或者是 dict
+#     contract_payload: Dict[str, Any] = {}
+#     path_info: Dict[str, Any] = {}
+#     success: bool
+#     error_msg: str = ""
 
 class MetadataEnricher:
     """元数据丰富器 - 使用插件化刮削器"""
@@ -152,28 +161,6 @@ class MetadataEnricher:
         )
         return best_match
 
-    # def _determine_media_type(self, media_file: FileAsset, season: Optional[int], episode: Optional[int]) -> MediaType:
-    #     """
-    #     确定媒体类型
-        
-    #     根据季集信息初步判断是电影、电视剧还是单集（仅作为搜索初始类型）
-        
-    #     Args:
-    #         media_file: 媒体文件对象
-    #         season: 季号（如果有）
-    #         episode: 集号（如果有）
-            
-    #     Returns:
-    #         MediaType: 媒体类型枚举值"
-    #     """
-    #     if season is not None or episode is not None:
-    #         if episode is not None:
-    #             return MediaType.TV_EPISODE
-    #         else:
-    #             return MediaType.TV_SERIES
-    #     else:
-    #         return MediaType.MOVIE
-
     async def enrich_media_file(self, file_asset: FileAsset, language: str = '') -> MetadataResult:
         """
         丰富单个媒体文件元数据（参数改为FileAsset）
@@ -192,24 +179,9 @@ class MetadataEnricher:
             country = path_info.get("country")  # 默认中国
             corrected_type = MediaType.MOVIE if path_info.get("type") == "movie" else MediaType.TV_EPISODE
 
-            # -------------------------- 2. 插件初始化与元数据搜索 --------------------------
-            try:
-                await scraper_manager.startup()  # 幂等初始化
-            except Exception as e:
-                err_msg = f"插件启动失败: {str(e)}"
-                logger.warning(err_msg)
-                return {
-                    "user_id": file_asset.user_id,
-                    "file_id": file_asset.id,
-                    "contract_type": "",
-                    "contract_payload": {},
-                    "path_info": path_info,
-                    "success": False,
-                    "error_msg": err_msg
-                }
 
             # 异步搜索元数据
-            logger.info(f"搜索参数：title='{title}', 年份={year}, 语言={language}, 类型={corrected_type}")
+            logger.info(f"🔍 搜索参数：title='{title}', 年份={year}, 语言={language}, 类型={corrected_type.value}")
             search_results = await scraper_manager.search_media(
                 title=title,
                 year=year,
@@ -233,7 +205,7 @@ class MetadataEnricher:
             # -------------------------- 3. 选择最优匹配与获取详情 --------------------------
             parsed_data = {"title": title, "year": year, "language": language, "country": country}
             best_match = self._get_best_match(search_results, parsed_data)
-            logger.info(f"最佳匹配：title='{best_match.title}' (年份={best_match.year})，ID={getattr(best_match, 'id', None)}")
+            logger.info(f"🏆 最佳匹配：title='{best_match.title}', 年份={best_match.year}, ID={getattr(best_match, 'id', None)}")
             if not best_match:
                 err_msg = f"无最优匹配结果: title='{title}' (年份={year})"
                 logger.warning(err_msg)
@@ -288,7 +260,9 @@ class MetadataEnricher:
                 "user_id": file_asset.user_id,
                 "file_id": file_asset.id,
                 "contract_type": contract_type,
-                "contract_payload": asdict(details_obj) if details_obj else {},
+                # 【关键修改】：使用 model_dump() 替代 asdict()
+                # 这里的 details_obj 可能是 MovieDetail, EpisodeDetail 或 SearchResult
+                "contract_payload": details_obj.model_dump() if details_obj else {},
                 "path_info": path_info,
                 "success": True,
                 "error_msg": ""
@@ -384,13 +358,14 @@ class MetadataEnricher:
                 # 但作为最后一道防线，以防万一
                 logger.critical(f"未知异常被 gather 捕获: {res}", exc_info=True)
                 # 可以选择添加一个通用的错误结果，或者直接忽略
+                continue
             else:
                 # res 是 MetadataResult 字典
                 results.append(res)
 
         return results
 
-
+    # region
     # async def enrich_media_file(self, file_id: int) -> MetadataResult:
     #     """
     #     丰富单个媒体文件的元数据
@@ -758,7 +733,7 @@ class MetadataEnricher:
     #     except Exception as e:
     #         logger.error(f"丰富文件 {file_id} 异常: {e}")
     #         return {"file_id": file_id, "user_id": 0, "contract_type": "", "contract_payload": {}}
-    
+    # endregion   
 
 
 # 全局元数据丰富器实例

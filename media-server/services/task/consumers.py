@@ -134,6 +134,16 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
         # 导入持久化任务创建函数
         from .producer import create_persist_task, create_localize_task
 
+        from services.scraper.manager import scraper_manager  # 确保导入路径正确
+        # 检查刮削插件系统是否运行
+        if not scraper_manager.is_running:
+            logger.warning("插件系统未在项目启动时初始化，尝试执行补救启动...")
+            # 补救措施：如果确实没启动，这里才调用 startup
+            await scraper_manager.startup()
+            
+
+
+
         # 2. 解析任务参数
         user_id = payload.get("user_id")
         file_ids = payload.get("file_ids", [])
@@ -145,7 +155,6 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
         logger.info(f"📦 开始批量处理元数据：共 {len(file_ids)} 个文件")
         metadata_results = await metadata_enricher.enrich_multiple_files(
             file_ids=file_ids,
-            # storage_id=storage_id,  # 透传给 enrich_media_file 用于存储客户端获取
             user_id=user_id,
             max_concurrency=20   # 控制并发量，避免过载,可作为环境调整 
         )
