@@ -15,6 +15,7 @@ class UserRead(BaseModel):
     is_active: bool
 
 
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

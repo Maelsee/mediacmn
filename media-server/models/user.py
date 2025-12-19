@@ -18,6 +18,7 @@ class User(SQLModel, table=True):
     email: str = Field(index=True, description="用户邮箱地址（用于登录）")
     hashed_password: str = Field(description="加密后的密码哈希值")
     is_active: bool = Field(default=True, description="用户激活状态（True为激活，False为禁用）")
+    language: str = Field(default='zh', description="用户语言选择")
     
     # 关联关系 - 暂时移除以解决循环依赖问题
     # refresh_tokens: List["RefreshToken"] = Relationship(back_populates="user")

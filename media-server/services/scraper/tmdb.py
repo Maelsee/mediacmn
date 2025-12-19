@@ -112,11 +112,13 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return False
 
-    async def search(self, title: str, year: Optional[int], media_type: MediaType = None, language: str = None) -> List[ScraperSearchResult]:
+    async def search(self, title: str, year: Optional[int], media_type: MediaType = None, language: str = '') -> List[ScraperSearchResult]:
         try:
             session = await self._ensure_session()
             auth = self._auth()
-            params = {**auth["params"], "language": language, "query": title}
+            lang = language if language else self.default_language
+            params = {**auth["params"], "language":lang, "query": title}
+
             url = f"{self._base_url}/search/movie" if media_type == MediaType.MOVIE else f"{self._base_url}/search/tv"
             if year is not None:
                 if media_type == MediaType.MOVIE:
@@ -177,12 +179,13 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return None
 
-    async def get_movie_details(self, movie_id: int, language: str = "zh-CN") -> Optional[ScraperMovieDetail]:
+    async def get_movie_details(self, movie_id: int, language: str ) -> Optional[ScraperMovieDetail]:
         """获取 TMDB 电影详情，包含外部ID、图像、演职员"""
         try:
             session = await self._ensure_session()
             auth = self._auth()
-            params = {**auth["params"], "language": language, "append_to_response": "external_ids,images,credits"}
+            lang = language if language else self.default_language
+            params = {**auth["params"], "language": lang, "append_to_response": "external_ids,images,credits"}
             url = f"{self._base_url}/movie/{movie_id}"
             async with session.get(url, params=params, headers=auth["headers"]) as resp:
                 if resp.status != 200:
@@ -199,40 +202,8 @@ class TmdbScraper(ScraperPlugin):
             original_title = data.get("original_title") or None
             release_date = data.get("release_date") or None
             eid = data.get("id") if data.get("id") is not None else None
-            # external_ids: List[ScraperExternalId] = []
-            # if eid:
-            #     external_ids.append(ScraperExternalId(provider="tmdb", external_id=eid, url=f"https://www.themoviedb.org/movie/{eid}"))
-            # imdb_id = data.get("imdb_id")
-            # if imdb_id:
-            #     external_ids.append(ScraperExternalId(provider="imdb", external_id=imdb_id, url=f"https://www.imdb.com/title/{imdb_id}"))
-            
-            # arts: List[ScraperArtwork] = []
-            # # 写入 tmdb 提供的海报和背景图
-            # imgs = data.get("images") or {}
-            # for poster in (imgs.get("posters") or [])[:5]:
-            #     if poster.get("file_path"):
-            #         arts.append(ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{poster['file_path']}", width=poster.get("width"), height=poster.get("height"), language=poster.get("iso_639_1"), rating=poster.get("vote_average"), vote_count=poster.get("vote_count")))
-            # for backdrop in (imgs.get("backdrops") or [])[:3]:
-            #     if backdrop.get("file_path"):
-            #         arts.append(ScraperArtwork(type=ArtworkType.BACKDROP, url=f"{self._image_base}/w1280{backdrop['file_path']}", width=backdrop.get("width"), height=backdrop.get("height"), language=backdrop.get("iso_639_1"), rating=backdrop.get("vote_average"), vote_count=backdrop.get("vote_count")))
-            # credits: List[ScraperCredit] = []
-            # cr = data.get("credits") or {}
-            # for cast in cr.get("cast", [])[:20]:
-            #     profile_path = cast.get("profile_path")
-            #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-            #     provider_id = cast.get("id")
-            #     # provider = self.name
-            #     credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), role=cast.get("character"), order=cast.get("order"), image_url=image_url, provider_id=provider_id))
-            # for crew in cr.get("crew", [])[:15]:
-            #     job = (crew.get("job") or "").lower()
-            #     ctype = CreditType.DIRECTOR if job == "director" else CreditType.WRITER if job == "writer" else CreditType.PRODUCER if job == "producer" else CreditType.ACTOR
-            #     profile_path = crew.get("profile_path")
-            #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-            #     provider_id = crew.get("id")
-            #     # provider = self.name
-            #     credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url, provider_id=provider_id))
             external_ids=self._get_external_ids(data)
-            arts=self._get_artworks(data)
+            arts=self._get_artworks(data,language)
             credits=self._get_credits(data.get("credits") or {})
             genres=self._get_genres(data)
             md = ScraperMovieDetail(
@@ -265,45 +236,20 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return None
 
-    async def get_series_details(self, series_id: int, language: str = "zh-CN") -> Optional[ScraperSeriesDetail]:
+    async def get_series_details(self, series_id: int, language: str = "") -> Optional[ScraperSeriesDetail]:
         try:
             session = await self._ensure_session()
             auth = self._auth()
-            params = {**auth["params"], "language": language, "append_to_response": "external_ids,images,credits"}
+            lang = language if language else self.default_language
+            params = {**auth["params"], "language": lang, "append_to_response": "external_ids,images,credits"}
             url = f"{self._base_url}/tv/{series_id}"
             async with session.get(url, params=params, headers=auth["headers"]) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
                 eid = data.get("id") if data.get("id") is not None else None
-                # external_ids: List[ScraperExternalId] = []
-                # if eid:
-                #     external_ids.append(ScraperExternalId(provider="tmdb", external_id=eid, url=f"https://www.themoviedb.org/tv/{eid}"))
-                # tvdb_id = (data.get("external_ids") or {}).get("tvdb_id") if isinstance(data.get("external_ids"), dict) else None
-                # if tvdb_id:
-                #     external_ids.append(ScraperExternalId(provider="tvdb", external_id=str(tvdb_id), url=f"https://thetvdb.com/?tab=series&id={tvdb_id}"))
-                # arts: List[ScraperArtwork] = []
-                # imgs = data.get("images") or {}
-                # for poster in (imgs.get("posters") or [])[:5]:
-                #     if poster.get("file_path"):
-                #         arts.append(ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{poster['file_path']}", width=poster.get("width"), height=poster.get("height"), language=poster.get("iso_639_1"), rating=poster.get("vote_average"), vote_count=poster.get("vote_count")))
-                # for backdrop in (imgs.get("backdrops") or [])[:3]:
-                #     if backdrop.get("file_path"):
-                #         arts.append(ScraperArtwork(type=ArtworkType.BACKDROP, url=f"{self._image_base}/w1280{backdrop['file_path']}", width=backdrop.get("width"), height=backdrop.get("height"), language=backdrop.get("iso_639_1"), rating=backdrop.get("vote_average"), vote_count=backdrop.get("vote_count")))
-                # credits: List[ScraperCredit] = []
-                # cr = data.get("credits") or {}
-                # for cast in cr.get("cast", [])[:20]:
-                #     profile_path = cast.get("profile_path")
-                #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-                #     credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), role=cast.get("character"), order=cast.get("order"), image_url=image_url))
-                # for crew in cr.get("crew", [])[:15]:
-                #     job = (crew.get("job") or "").lower()
-                #     ctype = CreditType.DIRECTOR if job == "director" else CreditType.WRITER if job == "writer" else CreditType.PRODUCER if job == "producer" else CreditType.ACTOR
-                #     profile_path = crew.get("profile_path")
-                #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-                #     credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url))
                 external_ids=self._get_external_ids(data)
-                arts=self._get_artworks(data)
+                arts=self._get_artworks(data,lang)
                 credits=self._get_credits(data.get("credits") or {})
                 genres=self._get_genres(data)
                 sd = ScraperSeriesDetail(
@@ -337,11 +283,12 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return None
 
-    async def get_season_details(self, series_id: int, season_number: int, language: str = "zh-CN") -> Optional[ScraperSeasonDetail]:
+    async def get_season_details(self, series_id: int, season_number: int, language: str = "") -> Optional[ScraperSeasonDetail]:
         try:
             session = await self._ensure_session()
             auth = self._auth()
-            params = {**auth["params"], "language": language, "append_to_response": "external_ids,images,credits"}
+            lang = language if language else self.default_language
+            params = {**auth["params"], "language": lang, "append_to_response": "external_ids,images,credits"}
             url = f"{self._base_url}/tv/{series_id}/season/{season_number}"
             async with session.get(url, params=params, headers=auth["headers"]) as resp:
                 if resp.status != 200:
@@ -349,35 +296,8 @@ class TmdbScraper(ScraperPlugin):
                 data = await resp.json()
 
                 eid = data.get("id") if data.get("id") is not None else None
-                # external_ids: List[ScraperExternalId] = []
-                # if eid:
-                #     external_ids.append(ScraperExternalId(provider="tmdb", external_id=eid, url=f"https://www.themoviedb.org/tv/{series_id}/season/{season_number}"))
-                # tvdb_id = (data.get("external_ids") or {}).get("tvdb_id") if isinstance(data.get("external_ids"), dict) else None
-                # if tvdb_id:
-                #     external_ids.append(ScraperExternalId(provider="tvdb", external_id=str(tvdb_id), url=f"https://thetvdb.com/?tab=season&id={tvdb_id}"))
-                
-                # arts: List[ScraperArtwork] = []
-                # imgs = data.get("images") or {}
-                # for poster in (imgs.get("posters") or [])[:5]:
-                #     if poster.get("file_path"):
-                #         arts.append(ScraperArtwork(type=ArtworkType.POSTER, url=f"{self._image_base}/w500{poster['file_path']}", width=poster.get("width"), height=poster.get("height"), language=poster.get("iso_639_1"), rating=poster.get("vote_average"), vote_count=poster.get("vote_count")))
-                # for backdrop in (imgs.get("backdrops") or [])[:3]:
-                #     if backdrop.get("file_path"):
-                #         arts.append(ScraperArtwork(type=ArtworkType.BACKDROP, url=f"{self._image_base}/w1280{backdrop['file_path']}", width=backdrop.get("width"), height=backdrop.get("height"), language=backdrop.get("iso_639_1"), rating=backdrop.get("vote_average"), vote_count=backdrop.get("vote_count")))
-                # credits: List[ScraperCredit] = []
-                # cr = data.get("credits") or {}
-                # for cast in cr.get("cast", [])[:20]:
-                #     profile_path = cast.get("profile_path")
-                #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-                #     credits.append(ScraperCredit(type=CreditType.ACTOR, name=cast.get("name"), role=cast.get("character"), order=cast.get("order"), image_url=image_url))
-                # for crew in cr.get("crew", [])[:15]:
-                #     job = (crew.get("job") or "").lower()
-                #     ctype = CreditType.DIRECTOR if job == "director" else CreditType.WRITER if job == "writer" else CreditType.PRODUCER if job == "producer" else CreditType.ACTOR
-                #     profile_path = crew.get("profile_path")
-                #     image_url = f"{self._image_base}/w185{profile_path}" if profile_path else None
-                #     credits.append(ScraperCredit(type=ctype, name=crew.get("name"), role=None, order=None, image_url=image_url))
                 external_ids=self._get_external_ids(data)
-                arts=self._get_artworks(data)
+                arts=self._get_artworks(data,lang)
                 credits=self._get_credits(data.get("credits") or {})
                 genres=self._get_genres(data)
 
@@ -418,11 +338,12 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return None
 
-    async def get_episode_details(self, series_id: int, season_number: int, episode_number: int, language: str = "zh-CN") -> Optional[ScraperEpisodeDetail]:
+    async def get_episode_details(self, series_id: int, season_number: int, episode_number: int, language: str = "") -> Optional[ScraperEpisodeDetail]:
         try:
             session = await self._ensure_session()
             auth = self._auth()
-            params = {**auth["params"], "language": language, "append_to_response": "external_ids,images"}
+            lang = language if language else self.default_language
+            params = {**auth["params"], "language": lang, "append_to_response": "external_ids,images"}
             url = f"{self._base_url}/tv/{series_id}/season/{season_number}/episode/{episode_number}"
             async with session.get(url, params=params, headers=auth["headers"]) as resp:
                 if resp.status != 200:
@@ -430,9 +351,9 @@ class TmdbScraper(ScraperPlugin):
                 data = await resp.json()
                 air_date = data.get("air_date")
                 title = data.get("name") or ""
-                arts=self._get_artworks(data)
+                arts=self._get_artworks(data,lang)
                 external_ids=self._get_external_ids(data)
-                # credits=self._get_credits(data.get("credits") or {})
+                
                 ed = ScraperEpisodeDetail(
                     episode_id=data.get("id") if data.get("id") else None,
                     episode_number=episode_number,
@@ -456,7 +377,8 @@ class TmdbScraper(ScraperPlugin):
         except Exception:
             return None
 
-    def _get_artworks(self, data: dict, language: str = "zh-CN") -> List[ScraperArtwork]:
+    def _get_artworks(self, data: dict, language: str = "") -> List[ScraperArtwork]:
+        language = language if language else self.default_language
         artworks = []
         # 主海报/背景
         if data.get("poster_path"):

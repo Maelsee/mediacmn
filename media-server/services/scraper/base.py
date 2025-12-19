@@ -77,9 +77,9 @@ class ScraperSearchResult:
     vote_average: Optional[float] = None
     vote_count: Optional[int] = None
     origin_country: List[str] = field(default_factory=list)
-    original_languages: List[str] = field(default_factory=list)
+    # original_languages: List[str] = field(default_factory=list)
     popularity: Optional[float] = None
-    provider: Optional[str] = None
+    provider: str = None
     media_type: Optional[str] = None
     poster_path: Optional[str] = None
     backdrop_path: Optional[str] = None
@@ -108,7 +108,7 @@ class ScraperMovieDetail:
     status: Optional[str] = None
     belongs_to_collection: Optional[Dict] = None
     popularity: Optional[float] = None
-    provider: Optional[str] = None
+    provider: str = None
     provider_url: Optional[str] = None
     artworks: List[ScraperArtwork] = field(default_factory=list)
     credits: List[ScraperCredit] = field(default_factory=list)
@@ -137,7 +137,7 @@ class ScraperSeriesDetail:
     vote_average: Optional[float] = None
     vote_count: Optional[int] = None
     popularity: Optional[float] = None
-    provider: Optional[str] = None
+    provider: str = None
     provider_url: Optional[str] = None
     artworks: List[ScraperArtwork] = field(default_factory=list)
     credits: List[ScraperCredit] = field(default_factory=list)
@@ -178,7 +178,7 @@ class ScraperSeasonDetail:
     air_date: Optional[str] = None
     episodes: List[ScraperEpisodeItem] = field(default_factory=list)
     vote_average: Optional[float] = None
-    provider: Optional[str] = None
+    provider: str = None
     provider_url: Optional[str] = None
     artworks: List[ScraperArtwork] = field(default_factory=list)
     credits: List[ScraperCredit] = field(default_factory=list)
@@ -206,7 +206,7 @@ class ScraperEpisodeDetail:
     still_path: Optional[str] = None
     vote_average: Optional[float] = None
     vote_count: Optional[int] = None
-    provider: Optional[str] = None
+    provider: str = None
     provider_url: Optional[str] = None
     artworks: List[ScraperArtwork] = field(default_factory=list)
     credits: List[ScraperCredit] = field(default_factory=list)
@@ -256,23 +256,23 @@ class ScraperPlugin(ABC):
     @abstractmethod
     async def search(self, title: str, year: Optional[int] = None,
                     media_type: MediaType = MediaType.MOVIE,
-                    language: str = "zh-CN") -> List[ScraperSearchResult]:
+                    language: str = "") -> List[ScraperSearchResult]:
         pass
     
     @abstractmethod
-    async def get_movie_details(self, movie_id: int, language: str = "zh-CN") -> Optional[ScraperMovieDetail]:
+    async def get_movie_details(self, movie_id: int, language: str = "") -> Optional[ScraperMovieDetail]:
         pass
     
     @abstractmethod
-    async def get_series_details(self, series_id: int, language: str = "zh-CN") -> Optional[ScraperSeriesDetail]:
+    async def get_series_details(self, series_id: int, language: str = "") -> Optional[ScraperSeriesDetail]:
         pass
     
     @abstractmethod
-    async def get_season_details(self, series_id: int, season_number: int, language: str = "zh-CN") -> Optional[ScraperSeasonDetail]:
+    async def get_season_details(self, series_id: int, season_number: int, language: str = "") -> Optional[ScraperSeasonDetail]:
         pass
     
     @abstractmethod
-    async def get_episode_details(self, series_id: int, season_number: int, episode_number: int, language: str = "zh-CN") -> Optional[ScraperEpisodeDetail]:
+    async def get_episode_details(self, series_id: int, season_number: int, episode_number: int, language: str = "") -> Optional[ScraperEpisodeDetail]:
         pass
     
     @property
@@ -285,14 +285,14 @@ class ScraperPlugin(ABC):
             "rate_limit_exposed": True,
         }
 
-    async def get_series_details_many(self, series_ids: List[int], language: str = "zh-CN") -> Dict[int, ScraperSeriesDetail]:
+    async def get_series_details_many(self, series_ids: List[int], language: str = "") -> Dict[int, ScraperSeriesDetail]:
         return {}
     
-    async def get_season_details_many(self, season_ids: List[int], language: str = "zh-CN") -> Dict[int, ScraperSeasonDetail]:
+    async def get_season_details_many(self, season_ids: List[int], language: str = "") -> Dict[int, ScraperSeasonDetail]:
         return {}
     
     async def get_artworks(self, provider_id: int, media_type: MediaType,
-                          language: str = "zh-CN") -> List[ScraperArtwork]:
+                          language: str = "") -> List[ScraperArtwork]:
         if media_type == MediaType.MOVIE:
             d = await self.get_movie_details(provider_id, language)
             return d.artworks if d else []
@@ -303,7 +303,7 @@ class ScraperPlugin(ABC):
             return []
     
     async def get_credits(self, provider_id: int, media_type: MediaType,
-                        language: str = "zh-CN") -> List[ScraperCredit]:
+                        language: str = "") -> List[ScraperCredit]:
         if media_type == MediaType.MOVIE:
             d = await self.get_movie_details(provider_id, language)
             return d.credits if d else []

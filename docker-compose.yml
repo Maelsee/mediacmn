@@ -11,8 +11,8 @@ services:
       POSTGRES_DB: mediacmn
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql
+    # volumes:
+    #   - postgres_data:/var/lib/postgresql
     networks:
       - media_network
 
@@ -30,8 +30,8 @@ services:
     networks:
       - media_network
 
-volumes:
-  postgres_data:
+# volumes:
+  # postgres_data:
   # redis_data:
 
 networks:

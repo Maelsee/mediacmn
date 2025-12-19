@@ -146,6 +146,7 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
         metadata_results = await metadata_enricher.enrich_multiple_files(
             file_ids=file_ids,
             # storage_id=storage_id,  # 透传给 enrich_media_file 用于存储客户端获取
+            user_id=user_id,
             max_concurrency=20   # 控制并发量，避免过载,可作为环境调整 
         )
         logger.debug(f"📦 批量元数据处理完成：{len(metadata_results)} 个结果")
@@ -274,7 +275,7 @@ async def persist_worker(task_id: str, payload: Dict[str, Any]) -> None:
             path_info = payload.get("path_info", {})
             # logger.info(f"📄 持久化文件 {file_id} 元数据：{path_info}")
             
-            svc.apply_metadata(session, media_file, metadata=contract_payload, metadata_type=contract_type,path_info=path_info)
+            success = svc.apply_metadata(session, media_file, metadata=contract_payload, metadata_type=contract_type,path_info=path_info)
             session.commit()
             logger.info(f"持久化任务 {task_id}：文件 {file_id} 元数据已保存")
 

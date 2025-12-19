@@ -14,7 +14,7 @@ async def search_raw(title: str, year: Optional[int], media_type: str):
     try:
         mt = MediaType(media_type)
         auth = s._auth()  # 使用插件的认证
-        params = {**auth["params"], "language": s.default_language, "query": title}
+        params = {**auth["params"], "language":'en-us', "query": title}
         if year is not None:
             if mt == MediaType.MOVIE:
                 params["year"] = year
