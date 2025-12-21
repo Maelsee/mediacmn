@@ -254,7 +254,7 @@ class EpisodeExt(SQLModel, table=True):
 class FileAsset(SQLModel, table=True):
     """文件资源模型 - 统一管理所有媒体相关的物理文件"""
     __tablename__ = "file_asset"
-    __table_args__ = (UniqueConstraint("user_id", "full_path", name="uq_file_asset_path"),)
+    __table_args__ = (UniqueConstraint("user_id", "full_path", "storage_id", name="uq_file_asset_path"),)
 
     id: Optional[int] = Field(default=None, primary_key=True, description="文件资源唯一标识")
     user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")

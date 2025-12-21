@@ -13,7 +13,10 @@
 - cd media-server/ && source  venv/bin/activate && python start_task_executor.py
 - cd media-server/ && source  venv/bin/activate && dramatiq services.task.consumers
 - cd media-client && flutter run -d web-server --web-port 5200     # 启动前端
-
+{
+  "email": "user@example.com",
+  "password": "string"
+}
 {
   "name": "test",
   "storage_type": "webdav",

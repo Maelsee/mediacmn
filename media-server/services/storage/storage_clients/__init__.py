@@ -2,6 +2,7 @@
 存储客户端实现包
 
 提供各种存储后端的统一客户端实现
+media-server/services/storage/storage_clients/__init__.py
 """
 
 # 延迟导入以避免循环依赖

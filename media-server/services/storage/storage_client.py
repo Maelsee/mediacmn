@@ -4,12 +4,13 @@
 提供所有存储后端（WebDAV、SMB、Local、Cloud）的统一抽象接口，
 支持连接测试、文件列表、上传下载等核心操作。
 """
-
+import asyncio
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any, Iterator, Tuple
 from dataclasses import dataclass
 from datetime import datetime
-
+import logging
+logger = logging.getLogger(__name__)
 
 @dataclass
 class StorageEntry:
@@ -74,6 +75,7 @@ class StorageClient(ABC):
     - 文件和目录的基本操作
     - 流式上传下载
     - 权限和空间信息管理
+    子类实现应自行负责其后端特有的并发安全和频率限制
     """
     
     def __init__(self, name: str, config: Dict[str, Any]):
@@ -87,6 +89,22 @@ class StorageClient(ABC):
         self.name = name
         self.config = config
         self._connected = False
+
+    # def __init__(self, name: str, config: Dict[str, Any]):
+    #     self.name = name
+    #     self.config = config
+    #     self._connected = False
+    #     # 限制针对存储实例的并发请求数（默认3-5比较安全）在各自的存储客户端中实现
+    #     # self.semaphore = asyncio.Semaphore(config.get("max_concurrency", 5))
+    @abstractmethod
+    def get_max_concurrency(self) -> int:
+        """获取最大并发数"""
+        pass
+
+    @abstractmethod
+    def is_alive(self) -> bool:
+        """检查连接是否仍然有效（非阻塞）"""
+        pass
     
     @abstractmethod
     async def connect(self) -> bool:
@@ -283,10 +301,22 @@ class StorageClient(ABC):
         await self.disconnect()
 
 
+"""media-server/services/storage/storage_client.py"""
 class StorageClientFactory:
     """存储客户端工厂类"""
     
+    # _clients: Dict[str, type] = {}
     _clients: Dict[str, type] = {}
+    _initialized = False  # 增加一个初始化标记
+
+    @classmethod
+    def _ensure_initialized(cls):
+        """确保所有客户端已注册"""
+        if not cls._initialized:
+            # 动态导入存储客户端包，触发其 __init__.py 执行
+            from . import storage_clients
+            cls._initialized = True
+            logger.info("StorageClientFactory 已初始化，所有客户端已注册。")
     
     @classmethod
     def register(cls, storage_type: str, client_class: type):
@@ -298,6 +328,7 @@ class StorageClientFactory:
     @classmethod
     def create(cls, storage_type: str, name: str, config: Dict[str, Any]) -> StorageClient:
         """创建存储客户端实例"""
+        cls._ensure_initialized()  # 创建前先检查初始化
         if storage_type not in cls._clients:
             raise ValueError(f"Unsupported storage type: {storage_type}")
         

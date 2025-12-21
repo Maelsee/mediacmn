@@ -6,16 +6,20 @@
 
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
-from sqlmodel import Session,select
+from sqlmodel import select
+# 关键：导入 AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession  # ✅ 导入SQLModel的AsyncSession
 from pydantic import BaseModel, Field
 from datetime import datetime
-from core.logging import  logger
-from core.db import get_session
-# 多租户架构：移除RBAC权限检查，仅保留用户认证
+# 关键：使用异步 Session 获取函数
+from core.db import get_async_session
 from core.security import get_current_subject
-from services.storage.storage_service import storage_service, StorageEntry, StorageInfo
+from services.storage.storage_service import storage_service
 from models.storage_models import StorageConfig
 
+import logging
+
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["storage-unified"])
 
 
@@ -62,7 +66,7 @@ class StorageInfoResponse(BaseModel):
 async def test_storage_connection(
     storage_id: int = Path(..., description="存储配置ID"),
     current_user: str = Depends(get_current_subject),
-    db: Session = Depends(get_session)
+    db: AsyncSession = Depends(get_async_session) # 改为异步Session
 ):
     """
     测试存储连接
@@ -72,13 +76,14 @@ async def test_storage_connection(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.exec(
+    storage_config = await db.exec(
         select(StorageConfig).where(
             (StorageConfig.id == storage_id) &
             (StorageConfig.user_id == user_id) &
             (StorageConfig.is_active == True)
         )
     ).first()
+
     
     
     if not storage_config:
@@ -116,7 +121,7 @@ async def list_storage_directory(
     path: str = Query("/", description="目录路径"),
     depth: int = Query(1, description="递归深度, 默认1"),  
     current_user: str = Depends(get_current_subject),
-    db: Session = Depends(get_session)
+    db: AsyncSession = Depends(get_async_session) # 改为异步Session
 ):
     """
     列出存储目录内容
@@ -126,7 +131,7 @@ async def list_storage_directory(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.exec(
+    storage_config =  await db.exec(
         select(StorageConfig).where(
             (StorageConfig.id == storage_id) &
             (StorageConfig.user_id == user_id) &
@@ -174,7 +179,7 @@ async def get_storage_info(
     storage_id: int = Path(..., description="存储配置ID"),
     path: str = Query("/", description="路径"),
     current_user: str = Depends(get_current_subject),
-    db: Session = Depends(get_session)
+    db: AsyncSession = Depends(get_async_session) # 改为异步Session
 ):
     """
     获取存储系统信息
@@ -184,7 +189,7 @@ async def get_storage_info(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.exec(
+    storage_config =  await db.exec(
         select(StorageConfig).where(
             (StorageConfig.id == storage_id) &
             (StorageConfig.user_id == user_id) &
@@ -219,7 +224,7 @@ async def get_file_info(
     storage_id: int = Path(..., description="存储配置ID"),
     path: str = Query(..., description="文件或目录路径"),
     current_user: str = Depends(get_current_subject),
-    db: Session = Depends(get_session)
+    db: AsyncSession = Depends(get_async_session)
 ):
     """
     获取文件/目录详细信息
@@ -229,7 +234,7 @@ async def get_file_info(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.exec(
+    storage_config =  await db.exec(
         select(StorageConfig).where(
             (StorageConfig.id == storage_id) &
             (StorageConfig.user_id == user_id) &
@@ -265,7 +270,7 @@ async def create_directory(
     storage_id: int = Path(..., description="存储配置ID"),
     path: str = Query(..., description="目录路径"),
     current_user: str = Depends(get_current_subject),
-    db: Session = Depends(get_session)
+    db: AsyncSession = Depends(get_async_session) # 改为异步Session
 ):
     """
     创建目录
@@ -275,7 +280,7 @@ async def create_directory(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.exec(
+    storage_config =  await db.exec(
         select(StorageConfig).where(id=storage_id, user_id=user_id, is_active=True)
     ).first()
     
@@ -302,7 +307,7 @@ async def delete_path(
     storage_id: int = Path(..., description="存储配置ID"),
     path: str = Query(..., description="要删除的路径"),
     current_user: str = Depends(get_current_subject),
-    db: Session = Depends(get_session)
+    db: AsyncSession = Depends(get_async_session) # 改为异步Session
 ):
     """
     删除文件或目录
@@ -312,7 +317,7 @@ async def delete_path(
     user_id = int(current_user)
     
     # 获取存储配置
-    storage_config = db.exec(
+    storage_config =  await db.exec(
         select(StorageConfig).where(
             (StorageConfig.id == storage_id) &
             (StorageConfig.user_id == user_id) &
@@ -337,9 +342,4 @@ async def delete_path(
         logger.error(f"删除失败: {e}")
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
 
-# 需要导入的依赖（在文件顶部添加）
-from core.security import get_current_subject
-from core.db import get_session as get_session
-import logging
 
-logger = logging.getLogger(__name__)

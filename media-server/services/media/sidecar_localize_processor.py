@@ -6,7 +6,7 @@ from sqlmodel import select
 
 from core.db import get_session as get_db_session
 from models.media_models import FileAsset, MediaCore, ExternalID, EpisodeExt, SeasonExt
-from services.storage.storage_service import StorageService
+from services.storage.storage_service import storage_service
 from services.scraper import scraper_manager, MediaType
 from services.media.metadata_enricher import metadata_enricher
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class SidecarLocalizeProcessor:
     def __init__(self):
-        self.storage_service = StorageService()
+        self.storage_service = storage_service
 
     async def process(self, file_id: int, storage_id: int, language: str = "zh-CN") -> bool:
         """

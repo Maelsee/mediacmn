@@ -55,7 +55,7 @@ async def scan_worker(task_id: str, payload: Dict[str, Any]) -> None:  # 函数�
             progress_cb=_progress
         )
         # logger.info(f"扫描结果：{res}")
-        logger.info(f"扫描任务 {task_id} 完成：新文件 {len(res.new_file_ids)} 个，已扫描文件 {res.total_files} 个")
+        logger.info(f"扫描任务 {task_id} 完成：新文件 {len(res.new_file_ids)} 个，已扫描文件 {res.total_files} 个，需要删除文件 {len(res.to_delete_ids)} 个")
 
         # 更新任务成功状态（带结果摘要）
         await store.update_status(
@@ -78,7 +78,7 @@ async def scan_worker(task_id: str, payload: Dict[str, Any]) -> None:  # 函数�
         # 1. 创建删除对齐任务（幂等性保障）
         try:
             file_key = ":".join(res.encountered_media_paths if len(res.encountered_media_paths) <=2 else res.encountered_media_paths[:2])
-            idempotency_key = f"delete:{payload['user_id']}:{storage_id}:{scan_path}:{file_key}"
+            idempotency_key = f"delete:{user_id}:{storage_id}:{scan_path}:{file_key}"
             await create_delete_task(
                 user_id=user_id,
                 storage_id=storage_id,
@@ -92,11 +92,12 @@ async def scan_worker(task_id: str, payload: Dict[str, Any]) -> None:  # 函数�
             logger.error(f"扫描任务 {task_id} 创建删除任务失败：{e}", exc_info=True)
 
         # 2. 创建元数据提取任务（有新文件才创建）
+        logger.info(f"扫描任务 {task_id} 准备创建元数据任务：新文件数 {len(res.new_file_ids)}")
         if res.new_file_ids:
             try:
                 # 幂等键：取前10个文件ID拼接（避免过长）
                 file_key = ":".join(map(str, res.new_file_ids[:] if len(res.new_file_ids) <=10 else res.new_file_ids[:10]))
-                idempotency_key = f"metadata:{user_id}:{file_key}"
+                idempotency_key = f"metadata:{user_id}:{storage_id}:{scan_path}:{file_key}"
                 await create_metadata_task(
                     user_id=user_id,
                     file_ids=res.new_file_ids,

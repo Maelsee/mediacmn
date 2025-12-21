@@ -13,9 +13,9 @@ from core.db import AsyncSessionLocal
 from models.media_models import FileAsset
 from models.user import User
 from services.scraper import scraper_manager, MediaType
-from services.storage.storage_service import StorageService
+from services.storage.storage_service import storage_service
 # from services.utils.filename_parser import FilenameParser, ParserMode, ParseInput
-from dataclasses import asdict
+# from dataclasses import asdict
 from services.scraper.base import   ScraperSearchResult
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class MetadataEnricher:
         
         创建存储服务和文件名解析器实例
         """
-        self.storage_service = StorageService()
+        self.storage_service = storage_service
         # self.parser = FilenameParser()
     
     def _get_best_match(self,search_results: List[ScraperSearchResult],parsed_data: dict,) -> Optional[ScraperSearchResult]:  # parsed_data名称解析器结果：{title: str, year: Optional[int], language: Optional[str], country: Optional[str]}
@@ -166,7 +166,7 @@ class MetadataEnricher:
         丰富单个媒体文件元数据（参数改为FileAsset）
         不再查询数据库，直接使用传入的file_asset处理
         """
-        logger.info(f'用户语言{language}')
+        logger.debug(f'用户语言{language}')
         try:
             # -------------------------- 1. 解析文件名（直接用file_asset的full_path） --------------------------
             # path_info = guessit(file_asset.full_path)
@@ -302,6 +302,7 @@ class MetadataEnricher:
             user_stmt = select(User).where(User.id == user_id)
             user_result = await session.exec(user_stmt)
             language = user_result.first().language
+        
            
 
         # 构建file_id到FileAsset的映射，方便快速匹配

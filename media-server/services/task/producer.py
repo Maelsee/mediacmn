@@ -78,7 +78,7 @@ async def _enqueue(
     if idem_key:
         existing_task_id = await store.get_task_id_by_idempotency(idem_key)
         if existing_task_id:
-            logger.debug(f"幂等键 {idem_key} 已存在，返回已有任务 ID：{existing_task_id}")
+            logger.info(f"幂等键 {idem_key} 已存在，返回已有任务 ID：{existing_task_id}")
             return existing_task_id
 
     # -------------------------- 关键修改：手动序列化 payload --------------------------
