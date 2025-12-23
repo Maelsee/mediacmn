@@ -2,33 +2,9 @@ import asyncio
 from dramatiq import set_broker, Middleware  # 新增：全局注册 Broker
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import TimeLimit, Retries,AsyncIO
-
 from core.config import get_settings
-# from services.scraper.manager import scraper_manager  # 确保导入路径正确
 import logging
 logger = logging.getLogger(__name__)
-
-# # --- 新增：插件系统初始化中间件 ---
-# class ScraperInitializerMiddleware(Middleware):
-#     """
-#     专门用于在 Worker 进程启动时初始化插件系统的中间件
-#     """
-#     def before_worker_boot(self, broker, worker):
-#         logger.info("⚙️ [Worker Boot] 正在为当前进程初始化 ScraperManager...")
-#         try:
-#             # 获取或创建事件循环来执行异步的 startup
-#             try:
-#                 loop = asyncio.get_event_loop()
-#             except RuntimeError:
-#                 loop = asyncio.new_event_loop()
-#                 asyncio.set_event_loop(loop)
-            
-#             # 运行插件系统启动逻辑
-#             loop.run_until_complete(scraper_manager.startup())
-#             logger.info("✅ [Worker Boot] ScraperManager 进程初始化成功")
-#         except Exception as e:
-#             logger.error(f"❌ [Worker Boot] ScraperManager 初始化失败: {e}", exc_info=True)
-
 
 
 
@@ -44,11 +20,7 @@ _broker_instance = None
 def get_broker() -> RedisBroker:
     global _broker_instance
     if _broker_instance is None:
-        s = get_settings()
-        
-        # 实例化我们的自定义中间件
-        # scraper_middleware = ScraperInitializerMiddleware()
-        
+        s = get_settings()       
         # 1. 初始化 Broker（保持你的配置）
         _broker_instance = RedisBroker(
             url=f"{s.REDIS_URL}/{s.REDIS_DB}",
@@ -63,8 +35,6 @@ def get_broker() -> RedisBroker:
                     retry_when=lambda e: isinstance(e, (ConnectionError, TimeoutError))
                 ), 
                 AsyncIO(),
-                # 3. 将自定义中间件添加到列表末尾
-                # scraper_middleware
                 ]
         )
 

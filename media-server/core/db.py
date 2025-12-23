@@ -28,8 +28,8 @@ settings: Settings = get_settings()
 def get_database_url() -> str:
     """始终返回 PostgreSQL 数据库URL。"""
     env = settings.ENVIRONMENT
-    logger.info(f"数据库环境: {env}")
-    logger.info("使用 PostgreSQL 数据库")
+    # logger.info(f"数据库环境: {env}")
+    # logger.info("使用 PostgreSQL 数据库")
     return settings.DATABASE_URL
 
 def get_async_database_url() -> str:

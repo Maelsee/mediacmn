@@ -44,171 +44,7 @@ class CreditType(Enum):
     CINEMATOGRAPHER = "cinematographer"
     EDITOR = "editor"
 
-
-# # 1. 基础数据类（补充综艺独有字段）
-# @dataclass
-# class ScraperExternalId:
-#     provider: str
-#     external_id: str
-#     url: Optional[str] = None
-
-# @dataclass
-# class ScraperArtwork:
-#     type: ArtworkType
-#     url: str
-#     width: Optional[int] = None
-#     height: Optional[int] = None
-#     language: Optional[str] = None
-#     rating: Optional[float] = None
-#     vote_count: Optional[int] = None
-#     is_primary: Optional[bool] = None  #是否为主要海报/背景
-
-# @dataclass
-# class ScraperCredit:
-#     type: CreditType
-#     name: str
-#     original_name: Optional[str] = None
-#     character: Optional[str] = None
-#     order: Optional[int] = None
-#     image_url: Optional[str] = None
-#     provider_id: Optional[int] = None
-#     is_flying: Optional[bool] = None  # 综艺独有：是否为飞行嘉宾
-    
-# # 2. 搜索详情（无独有字段，保持原有结构）
-# @dataclass
-# class ScraperSearchResult:
-#     id: int
-#     title: str
-#     original_name: Optional[str] = None
-#     original_language: Optional[str] = None
-#     release_date: Optional[str] = None
-#     vote_average: Optional[float] = None
-#     vote_count: Optional[int] = None
-#     origin_country: List[str] = field(default_factory=list)
-#     popularity: Optional[float] = None
-#     provider: str = None
-#     media_type: Optional[str] = None
-#     poster_path: Optional[str] = None
-#     backdrop_path: Optional[str] = None
-#     year: Optional[int] = None
-#     provider_url: Optional[str] = None
-
-# # 3. 电影详情（无关联，保持原有结构）
-# @dataclass
-# class ScraperMovieDetail:
-#     movie_id: int
-#     title: str
-#     original_title: Optional[str] = None
-#     original_language: Optional[str] = None
-#     origin_country: List[str] = field(default_factory=list)
-#     overview: Optional[str] = None
-#     release_date: Optional[str] = None
-#     runtime: Optional[int] = None
-#     tagline: Optional[str] = None
-#     genres: List[str] = field(default_factory=list)
-#     poster_path: Optional[str] = None
-#     backdrop_path: Optional[str] = None
-#     vote_average: Optional[float] = None
-#     vote_count: Optional[int] = None
-#     imdb_id: Optional[str] = None
-#     status: Optional[str] = None
-#     belongs_to_collection: Optional[Dict] = None
-#     popularity: Optional[float] = None
-#     provider: str = None
-#     provider_url: Optional[str] = None
-#     artworks: List[ScraperArtwork] = field(default_factory=list)
-#     credits: List[ScraperCredit] = field(default_factory=list)
-#     external_ids: List[ScraperExternalId] = field(default_factory=list)
-#     raw_data: Optional[Dict] = None
-
-# @dataclass
-# class ScraperSeriesDetail:
-#     series_id: int
-#     name: str
-#     original_name: Optional[str] = None
-#     origin_country: List[str] = field(default_factory=list)
-#     overview: Optional[str] = None
-#     tagline: Optional[str] = None
-#     status: Optional[str] = None
-#     first_air_date: Optional[str] = None
-#     last_air_date: Optional[str] = None
-#     episode_run_time: List[int] = field(default_factory=list)
-#     number_of_episodes: Optional[int] = None
-#     number_of_seasons: Optional[int] = None
-#     genres: List[str] = field(default_factory=list)
-#     poster_path: Optional[str] = None
-#     backdrop_path: Optional[str] = None
-#     vote_average: Optional[float] = None
-#     vote_count: Optional[int] = None
-#     popularity: Optional[float] = None
-#     provider: str = None
-#     provider_url: Optional[str] = None
-#     artworks: List[ScraperArtwork] = field(default_factory=list)
-#     credits: List[ScraperCredit] = field(default_factory=list)
-#     external_ids: List[ScraperExternalId] = field(default_factory=list)
-#     raw_data: Optional[Dict] = None
-#     # 新增独有字段
-#     type: Optional[str] = None  # 综艺：Reality；剧集/动画：Scripted
-
-# # 5. 季详情（新增综艺/动画独有字段）
-# @dataclass
-# class ScraperEpisodeItem:
-#     """季详情中的集概要（含综艺期数部分、动画篇章名）"""
-#     episode_id: Optional[int]
-#     episode_number: int
-#     season_number: int
-#     name: str
-#     overview: Optional[str] = None
-#     air_date: Optional[str] = None
-#     runtime: Optional[int] = None
-#     still_path: Optional[str] = None
-#     vote_average: Optional[float] = None
-#     vote_count: Optional[int] = None
-
-# ataclass
-# class ScraperSeasonDetail:
-#     season_id: Optional[int]
-#     season_number: int
-#     name: Optional[str] = None
-#     poster_path: Optional[str] = None
-#     overview: Optional[str] = None
-#     episode_count: Optional[int] = None
-#     air_date: Optional[str] = None
-#     episodes: List[ScraperEpisodeItem] = field(default_factory=list)
-#     vote_average: Optional[float] = None
-#     provider: str = None
-#     provider_url: Optional[str] = None
-#     artworks: List[ScraperArtwork] = field(default_factory=list)
-#     credits: List[ScraperCredit] = field(default_factory=list)
-#     genres: List[str] = field(default_factory=list)
-#     external_ids: List[ScraperExternalId] = field(default_factory=list)
-#     raw_data: Optional[Dict] = None
-
-# # 6. 集详情（新增综艺/动画独有字段）
-# @dataclass
-# class ScraperEpisodeDetail:
-#     episode_id: Optional[int]
-#     episode_number: int
-#     season_number: int
-#     name: str
-#     overview: Optional[str] = None
-#     air_date: Optional[str] = None
-#     runtime: Optional[int] = None
-#     still_path: Optional[str] = None
-#     vote_average: Optional[float] = None
-#     vote_count: Optional[int] = None
-#     provider: str = None
-#     provider_url: Optional[str] = None
-#     artworks: List[ScraperArtwork] = field(default_factory=list)
-#     credits: List[ScraperCredit] = field(default_factory=list)
-#     external_ids: List[ScraperExternalId] = field(default_factory=list)
-#     raw_data: Optional[Dict] = None
-#     series: Optional["ScraperSeriesDetail"] = None
-#     season: Optional["ScraperSeasonDetail"] = None
-#     episode_type: Optional[str] = None  # TMDB集类型（standard/finale）
-
 # --- 基础数据类 ---
-
 class ScraperExternalId(ScraperBaseModel):
     provider: str
     external_id: str
@@ -423,19 +259,32 @@ class ScraperPlugin(ABC):
         pass
     
 
-    # 增加一个通用入口，方便通过 ID 获取
-    async def get_details(self, provider_id: str, media_type: MediaType, 
-                          language: str = "") -> Optional[Any]:
-        """
-        统一详情分发入口。
-        子类通常不需要重写，除非需要处理特殊的 ID 类型。
-        """
+    async def get_details(self, provider_id: str, media_type: MediaType, language: str = "") -> Optional[Any]:
         lang = language or self.default_language
-        if media_type == MediaType.MOVIE:
-            return await self.get_movie_details(int(provider_id), lang)
-        if media_type == MediaType.TV:
-            return await self.get_series_details(int(provider_id), lang)
-        return None
+        try:
+            if media_type == MediaType.MOVIE:
+                return await self.get_movie_details(int(provider_id), lang)
+            if media_type == MediaType.TV_SERIES:
+                return await self.get_series_details(int(provider_id), lang)
+            if media_type == MediaType.TV_SEASON:
+                parts = str(provider_id).split(":")
+                if len(parts) != 2:
+                    return None
+                series_id = int(parts[0])
+                season_number = int(parts[1])
+                return await self.get_season_details(series_id, season_number, lang)
+            if media_type == MediaType.TV_EPISODE:
+                parts = str(provider_id).split(":")
+                if len(parts) != 3:
+                    return None
+                series_id = int(parts[0])
+                season_number = int(parts[1])
+                episode_number = int(parts[2])
+                return await self.get_episode_details(series_id, season_number, episode_number, lang)
+            return None
+        except Exception:
+            return None
+    
     async def get_by_external_id(self, external_id: str, external_source: str, 
                                  media_type: MediaType, language: str = "") -> Optional[any]:
         """
@@ -468,4 +317,3 @@ class ScraperPlugin(ABC):
     
     async def shutdown(self) -> None:
         return None
-

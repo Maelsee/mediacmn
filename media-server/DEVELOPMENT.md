@@ -4456,3 +4456,113 @@ ScraperEpisodeItem（季内集条目）
 - 渐进改造：先补齐基类签名，再将扫描入口改为依赖注入，最后抽仓储适配层并完善测试。
 
 详见 `media-server/docs/ADR-001-storage-scan-decoupling.md`。
+
+
+在你这个架构里（FastAPI 异步服务 + Dramatiq worker + Redis + aiohttp 刮削 + 多租户），理解“异步/并发/进程/线程/协程”和“冲突/锁/缓存命中”可以用一套很实用的分层模型来抓住重点。
+
+---
+
+## 1) 先把概念对齐：你系统里分别对应什么
+- **协程（coroutine）**：`async def` 返回的可挂起任务单位；例如 `enrich_one_file()`、`plugin.get_series_details()` 这些都是协程。
+- **事件循环（event loop）**：驱动协程调度的执行器；通常“一个线程里跑一个事件循环”。
+- **异步（async）**：单线程里通过 `await` 把 I/O 等待时间让出来，让别的协程继续跑；对网络 I/O（TMDB）、数据库 I/O（async DB）、Redis I/O（redis.asyncio）收益最大。
+- **并发（concurrency）**：同时“推进”多个任务。你现在的并发主要来自两层：
+  - Dramatiq worker 并发（多进程/多线程）
+  - 单个任务内部 `asyncio.create_task/gather` 的并发（同一事件循环）
+- **线程（thread）**：同一进程里多个 OS 线程；如果每个线程各自跑一个事件循环，则需要特别小心“对象跨线程/跨 loop”。
+- **进程（process）**：每个进程独立内存空间；你在 `--processes 5` 时就是 5 份 Python 解释器 + 5 份 `scraper_manager` + 5 份本地缓存。
+
+结论：你现在的**性能主要靠 asyncio 并发**，而 Dramatiq 的 `--threads 5` 更多是“把多个事件循环塞进同一进程”，风险和复杂度会显著上升。
+
+---
+
+## 2) 你会遇到哪些“冲突/不安全点”
+按危险级别从高到低：
+
+### A. `aiohttp.ClientSession`、连接池等对象跨线程/跨事件循环（高风险）
+- `aiohttp` 的 session/connector 绑定 event loop；如果你同进程多线程（threads>1）并且每个线程都有 loop，那么**共享一个全局单例 manager/plugin/session**很容易出事（loop mismatch、连接复用异常）。
+- 这也是为什么我一直建议：**Dramatiq 用多进程扩容，用单线程跑 asyncio**。
+
+### B. 全局单例 `scraper_manager` 在多线程下的并发访问（高风险）
+- 单线程 event loop 里，`asyncio.Lock` 足够保证一致性。
+- 多线程下，即便你加 `threading.Lock`，仍然可能遇到“对象属于另一个 loop”的问题（锁解决不了 loop 绑定错误）。
+
+### C. DB Session / Transaction 共享（中风险）
+- async DB session（SQLModel/SQLAlchemy async）不应该跨协程共享、也不应该跨线程共享。
+- 正确姿势是：**每个协程自己创建/使用 session（或通过依赖注入/上下文获取）**，不要把 session 放到全局。
+
+### D. 缓存一致性/缓存雪崩（中风险）
+- 多协程同时 miss 同一个 key，会导致并发打 TMDB（缓存击穿/雪崩）。
+- 你需要 singleflight（进程内）或分布式锁（跨进程）来控制“同一个 key 的同时只打一次”。
+
+---
+
+## 3) 锁应该上在哪里？上什么锁？
+用“作用域”决定锁的类型：
+
+### 3.1 同一个事件循环内（单线程）
+- **用 `asyncio.Lock`**。
+- 典型位置：
+  - 管理器里的 `inflight` 表（singleflight 去重）
+  - 本地 LRU/TTL cache 的读写（如果缓存结构不是天然原子安全）
+- 你现在在 `ScraperManager` 里用 `asyncio.Lock` 管 `inflight`/cache 是合理的：这能解决“一个任务里并发 enrich 多个文件”的冲突。
+
+### 3.2 同进程多线程（threads>1）——建议避免
+- 理论上需要 **`threading.Lock`** 来保护共享内存结构；
+- 但你真正会爆的是“对象跨 loop”，不是简单竞态条件，所以我建议不要把共享对象（scraper_manager / aiohttp session）暴露给多个线程。
+
+### 3.3 跨进程（processes>1）
+- Python 锁没用（内存不共享）。
+- 需要 **Redis**：要么用 Redis 缓存提高命中，要么用 Redis 做分布式 singleflight（`SET key value NX EX`）控制击穿。
+- 是否一定要分布式锁？取决于 TMDB 限流/你的 QPS。如果你的系统同时跑 5 进程 * 每进程几十并发，**分布式 singleflight 会很值**；否则 Redis 缓存 + 允许少量重复请求也通常能接受。
+
+---
+
+## 4) 多进程间缓存命中重要吗？
+**很重要**，尤其当你用 `--processes 5` 时：
+
+- 本地缓存是“每进程一份”，进程之间完全不共享。
+- 同一个 series/season/movie 的详情会被不同进程重复请求、重复解析、重复存入本地缓存。
+- 对“多租户、每租户上万文件”的扫描/丰富化来说，跨进程共享的命中率提升会非常明显（减少外部请求、降低限流风险、降低整体耗时）。
+
+所以成熟实践通常是：
+- **进程内：小而快的 LRU+TTL**（兜底、降低 Redis 往返）
+- **进程间：Redis TTL 缓存**（核心命中来源）
+- **防击穿：进程内 singleflight +（可选）Redis 分布式锁**
+
+---
+
+## 5) 给你一个“推荐运行模型”（最少踩坑）
+你现在的命令：`dramatiq services.task.consumers --processes 5 --threads 5`
+
+对 asyncio + aiohttp 的组合，我建议改成：
+- `--processes 5 --threads 1`（最稳）
+- 并发主要交给：`enrich_multiple_files` 内的 `asyncio.gather` + `Semaphore` 控制外部请求并发
+- 线程数保留 1，避免跨线程共享 async 对象带来的隐患
+
+如果你坚持 `threads>1`，那就必须确保：
+- 每个线程有自己独立的 `ScraperManager`（不要全局单例共享）
+- 每个线程的 plugin/session 也要独立
+这会把复杂度拉满，不建议。
+
+---
+
+## 6) 多租户下缓存 key 要注意什么
+刮削数据（TMDB）通常与 user 无关，所以：
+- **缓存 key 不需要带 `user_id`**（否则命中率会被多租户打碎）
+- key 至少包含：`provider + kind(movie/series/season) + provider_id + language (+ season_number)`
+- TTL 可以按数据类型区分：movie/series 可以更长；season 适中；episode 不缓存或短 TTL（你已明确不缓存 episode）
+
+---
+
+## 7) 你应该在哪里“处理冲突”
+按职责分层最清晰：
+- `metadata_enricher.py`：只负责业务编排（批量、并发上限、错误处理、落库）
+- `scraper_manager.py`：负责外部依赖访问治理（超时、重试策略、缓存、singleflight、provider fallback）
+- `plugin`：只负责“怎么打第三方 API”
+
+把锁、缓存、singleflight 放在 manager 层，是最稳定、最可复用的地方（你的方向是对的）。
+
+---
+
+如果你希望我再把“跨进程击穿”也处理掉（Redis 分布式 singleflight：同一个 series/season/movie 在所有 worker 进程间同一时间只会打一次 TMDB），我可以在当前 Redis 缓存基础上加一个轻量实现（`SET NX EX` + 短等待轮询读取缓存），并补齐对应测试用例。

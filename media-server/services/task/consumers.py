@@ -320,7 +320,8 @@ async def delete_worker(task_id: str, payload: Dict[str, Any]) -> None:
         await store.update_status(task_id, TaskStatus.RUNNING)
 
         # 导入删除服务
-        from services.scan.file_asset_repository import get_file_asset_repo as repo
+        from services.scan.file_asset_repository import get_file_asset_repo
+        repo = await get_file_asset_repo()
         
         to_delete_ids = payload.get("to_delete_ids", [])
         user_id = payload.get("user_id")

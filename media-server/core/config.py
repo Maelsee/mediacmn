@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     REDIS_URL: str = Field(default="redis://:redis123@localhost:9001", description="Redis 连接字符串")
     REDIS_DB: int = Field(default=0, description="Redis 数据库编号")
 
+    # 刮削详情缓存 Redis 配置（建议与任务队列 Redis 分离）
+    SCRAPER_CACHE_REDIS_URL: str = Field(default="redis://:redis123@localhost:9002", description="刮削缓存 Redis 连接字符串")
+    SCRAPER_CACHE_REDIS_DB: int = Field(default=0, description="刮削缓存 Redis 数据库编号")
+
     # 元数据服务 API Key（全局 .env 管理）
     TMDB_API_KEY: Optional[str] = Field(default=None, description="TMDB API Key（全局）")
     TMDB_V4_TOKEN: Optional[str] = Field(default=None, description="TMDB v4 Access Token（Bearer）")
@@ -73,18 +77,26 @@ class Settings(BaseSettings):
 
     # 扫描默认策略（根据确认：Depth 默认 1，启用递归与增量）
     SCAN_DEFAULT_DEPTH: str = Field(default="1", description="默认 PROPFIND Depth")
-    SCAN_ENABLE_RECURSIVE: bool = Field(default=True, description="是否递归扫描目录")
-    SCAN_ENABLE_INCREMENTAL: bool = Field(default=True, description="是否启用增量扫描")
-    SEARCH_SIMPLE_ENABLED: bool = Field(default=True, description="是否启用简单文本搜索")
+    # SCAN_ENABLE_RECURSIVE: bool = Field(default=True, description="是否递归扫描目录")
+    # SCAN_ENABLE_INCREMENTAL: bool = Field(default=True, description="是否启用增量扫描")
+    # SEARCH_SIMPLE_ENABLED: bool = Field(default=True, description="是否启用简单文本搜索")
     
     # 刮削语言回退策略
-    SCRAPER_FALLBACK_MOVIE: bool = Field(default=True, description="电影是否启用语言回退")
-    SCRAPER_FALLBACK_SERIES: bool = Field(default=False, description="剧集是否启用语言回退")
+    # SCRAPER_FALLBACK_MOVIE: bool = Field(default=True, description="电影是否启用语言回退")
+    # SCRAPER_FALLBACK_SERIES: bool = Field(default=False, description="剧集是否启用语言回退")
     ENABLE_SCRAPERS: List[str] = Field(default=["tmdb"], description="启用的刮削器插件")
     # 侧车本地化（NFO/海报）开关与限制
     SIDE_CAR_LOCALIZATION_ENABLED: bool = Field(default=False, description="是否启用侧车异步本地化")
     SIDE_CAR_LOCALIZATION_ARTWORK_LIMIT: int = Field(default=2, description="侧车阶段写入的艺术作品最大数量")
     TASK_EXECUTOR_COUNT: int = Field(default=1, description="统一任务执行器（侧车文件上传）并发数")
+
+    # 刮削详情缓存（电影/系列/季）
+    SCRAPER_DETAIL_CACHE_USE_REDIS: bool = Field(default=True, description="是否使用 Redis 缓存刮削详情")
+    SCRAPER_DETAIL_CACHE_TTL_SECONDS: int = Field(default=86400, description="刮削详情缓存 TTL（秒）")
+    SCRAPER_DETAIL_CACHE_LOCAL_MAXSIZE: int = Field(default=2048, description="进程内刮削详情缓存最大条目数")
+    SCRAPER_DETAIL_CACHE_LOCK_TTL_SECONDS: int = Field(default=30, description="刮削详情分布式锁 TTL（秒）")
+    SCRAPER_DETAIL_CACHE_LOCK_WAIT_MS: int = Field(default=1500, description="等待其他进程填充缓存最大时长（毫秒）")
+    SCRAPER_DETAIL_CACHE_LOCK_POLL_MS: int = Field(default=50, description="等待缓存轮询间隔（毫秒）")
 
     # 持久化批量聚合配置
     PERSIST_BATCH_MAX_SIZE: int = Field(default=100, description="持久化批量最大聚合任务数")
@@ -117,28 +129,6 @@ class Settings(BaseSettings):
         except Exception:
             return []
 
-
-    # @field_validator("ENABLE_SCRAPERS", mode="before")
-    # @classmethod
-    # def parse_enable_scrapers(cls, v):  # type: ignore[override]
-    #     if v is None:
-    #         return ["tmdb"]
-    #     if isinstance(v, str):
-    #         s = v.strip()
-    #         if not s:
-    #             return ["tmdb"]
-    #         if s.startswith("[") and s.endswith("]"):
-    #             import json
-    #             try:
-    #                 data = json.loads(s)
-    #                 return [str(item).strip().lower() for item in data if str(item).strip()]
-    #             except Exception:
-    #                 return [item.strip().lower() for item in s.strip("[]").split(",") if item.strip()]
-    #         return [item.strip().lower() for item in s.split(",") if item.strip()]
-    #     try:
-    #         return [str(item).strip().lower() for item in (v or []) if str(item).strip()]
-    #     except Exception:
-    #         return ["tmdb"]
 
 
 @lru_cache(maxsize=1)

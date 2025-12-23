@@ -176,7 +176,7 @@ class MetadataEnricher:
             season = path_info.get("season")
             episode = path_info.get("episode")
             year = path_info.get("year")
-            country = path_info.get("country")  # 默认中国
+            country = path_info.get("country")  
             corrected_type = MediaType.MOVIE if path_info.get("type") == "movie" else MediaType.TV_EPISODE
 
 
@@ -220,40 +220,13 @@ class MetadataEnricher:
                 }
 
             # 获取元数据详情
-            contract_type = ""
-            details_obj = None
-            try:
-                plugin = scraper_manager.get_plugin(best_match.provider)
-                if not plugin or not getattr(best_match, "id", None):
-                    raise ValueError(f"插件不存在或无ID: provider={best_match.provider}")
-
-                if corrected_type == MediaType.MOVIE:
-                    contract_type = "movie"
-                    details_obj = await plugin.get_movie_details(best_match.id, language)
-                else:
-                    if season is not None and episode is not None:
-                        contract_type = "episode"
-                        details_obj = await plugin.get_episode_details(best_match.id, season, episode, language)
-                        # 补充季/系列信息
-                        if details_obj:
-                            try:
-                                details_obj.series = await plugin.get_series_details(best_match.id, language)
-                            except Exception as e:
-                                logger.warning(f"补全系列信息失败: {str(e)}")
-                            try:
-                                details_obj.season = await plugin.get_season_details(best_match.id, season, language)
-                            except Exception as e:
-                                logger.warning(f"补全季信息失败: {str(e)}")
-                    if details_obj is None:
-                        contract_type = "series"
-                        details_obj = await plugin.get_series_details(best_match.id, language)
-                logger.debug(f"详情获取成功: contract_type={contract_type}")
-
-            except Exception as e:
-                err_msg = f"详情获取失败: {str(e)}"
-                logger.error(err_msg)
-                details_obj = best_match  # 降级使用搜索结果
-                contract_type = "search_result"
+            contract_type, details_obj = await scraper_manager.get_detail(
+                best_match=best_match,
+                media_type=corrected_type,
+                language=language,
+                season=season,
+                episode=episode,
+            )
 
             # -------------------------- 4. 返回结果 --------------------------
             return {
@@ -739,6 +712,5 @@ class MetadataEnricher:
 
 # 全局元数据丰富器实例
 metadata_enricher = MetadataEnricher()
-
 
 

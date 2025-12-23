@@ -54,6 +54,7 @@ async def create_scan(
 
 class MetadataBody(BaseModel):
     file_ids: List[int]
+    storage_id: Optional[int] = None
 
 
 @router.post("/metadata")
@@ -62,7 +63,7 @@ async def create_metadata(
     current_user: str = Depends(get_current_subject),
 ):
     try:
-        task_id = await create_metadata_task(int(current_user), body.file_ids)
+        task_id = await create_metadata_task(int(current_user), body.file_ids, storage_id=body.storage_id)
         return TaskCreateResponse(success=True, message="元数据任务已创建", task_id=task_id, task_type="metadata")
     except Exception as e:
         logger.error(f"创建元数据任务失败: {e}")
@@ -73,6 +74,7 @@ class PersistBody(BaseModel):
     file_id: int
     contract_type: str
     contract_payload: Dict[str, Any]
+    path_info: Dict[str, Any] = Field(default_factory=dict)
 
 
 @router.post("/persist")
@@ -81,7 +83,13 @@ async def create_persist(
     current_user: str = Depends(get_current_subject),
 ):
     try:
-        task_id = await create_persist_task(int(current_user), body.file_id, body.contract_type, body.contract_payload)
+        task_id = await create_persist_task(
+            int(current_user), 
+            body.file_id, 
+            body.contract_type, 
+            body.contract_payload,
+            body.path_info
+        )
         return TaskCreateResponse(success=True, message="持久化任务已创建", task_id=task_id, task_type="persist")
     except Exception as e:
         logger.error(f"创建持久化任务失败: {e}")
@@ -89,9 +97,7 @@ async def create_persist(
 
 
 class DeleteBody(BaseModel):
-    storage_id: int
-    scan_path: str
-    encountered_media_paths: List[str]
+    to_delete_ids: List[int]
 
 
 @router.post("/delete")
@@ -100,10 +106,10 @@ async def create_delete(
     current_user: str = Depends(get_current_subject),
 ):
     try:
-        task_id = await create_delete_task(int(current_user), body.storage_id, body.scan_path, body.encountered_media_paths)
-        return TaskCreateResponse(success=True, message="删除对齐任务已创建", task_id=task_id, task_type="delete")
+        task_id = await create_delete_task(int(current_user), body.to_delete_ids)
+        return TaskCreateResponse(success=True, message="删除同步任务已创建", task_id=task_id, task_type="delete")
     except Exception as e:
-        logger.error(f"创建删除对齐任务失败: {e}")
+        logger.error(f"创建删除同步任务失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

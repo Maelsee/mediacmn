@@ -1,525 +1,3 @@
-# """
-# 刮削器插件管理器
-# """
-# import asyncio
-# import importlib
-# import logging
-# import pkgutil
-# from pathlib import Path
-# from typing import Dict, List, Optional, Type, Tuple
-
-# from .base import MediaType, ScraperPlugin, ScraperSearchResult, ScraperMovieDetail, ScraperSeriesDetail
-
-# logger = logging.getLogger(__name__)
-
-
-# class ScraperManager:
-#     """
-#     刮削器插件管理器
-    
-#     实现插件的注册、加载、配置、测试连接和刮削功能
-       
-#     """
-  
-#     def __init__(self):
-#         """
-#         初始化刮削器插件管理器
-        
-#         初始化插件字典、插件类字典、已启用插件列表和插件配置字典
-#         """
-#         self._plugins: Dict[str, ScraperPlugin] = {}
-#         self._plugin_classes: Dict[str, Type[ScraperPlugin]] = {}
-#         self._enabled_plugins: List[str] = []
-#         self._plugin_configs: Dict[str, dict] = {}
-#         self._started: bool = False
-#         self._op_lock: asyncio.Lock = asyncio.Lock()
-    
-#     def register_plugin(self, plugin_class: Type[ScraperPlugin], 
-#                          name: Optional[str] = None) -> bool:
-#         """
-#         注册插件类
-        
-#         Args:
-#             plugin_class: 插件类
-#             name: 插件名称，如果为None则使用plugin_class的name属性
-            
-#         Returns:
-#             是否注册成功
-#         """
-#         try:
-#             # 创建临时实例来获取插件名称
-#             temp_instance = plugin_class()
-#             plugin_name = name or temp_instance.name
-            
-#             # 检查是否已经注册
-#             if plugin_name in self._plugin_classes:
-#                 logger.debug(f"插件 {plugin_name} 已经注册")
-#                 return False
-            
-#             # 验证插件类
-#             if not issubclass(plugin_class, ScraperPlugin):
-#                 logger.error(f"插件类 {plugin_class.__name__} 必须继承 ScraperPlugin")
-#                 return False
-            
-#             self._plugin_classes[plugin_name] = plugin_class
-#             logger.info(f"注册插件类: {plugin_name}")
-#             return True
-            
-#         except Exception as e:
-#             logger.error(f"注册插件失败: {e}")
-#             return False
-    
-#     async def load_plugin(self, name: str, config: Optional[dict] = None) -> bool:
-#         """
-#         加载插件实例
-        
-#         Args:
-#             name: 插件名称
-#             config: 插件配置
-            
-#         Returns:
-#             是否加载成功
-#         """
-#         try:
-#             async with self._op_lock:
-#                 if name not in self._plugin_classes:
-#                     logger.error(f"插件 {name} 未注册")
-#                     return False
-                
-#                 # 已加载则直接复用实例；如提供新配置则应用到现有实例
-#                 existing = self._plugins.get(name)
-#                 if existing:
-#                     if config:
-#                         try:
-#                             ok = existing.configure(config)
-#                             if not ok:
-#                                 logger.error(f"插件 {name} 配置失败")
-#                                 return False
-#                             self._plugin_configs[name] = config
-#                         except Exception as e:
-#                             logger.error(f"插件 {name} 配置异常: {e}")
-#                             return False
-#                     return True
-
-#                 plugin_class = self._plugin_classes[name]
-#                 plugin_instance = plugin_class()
-                
-#                 # 配置插件（首次加载）
-#                 if config:
-#                     try:
-#                         ok = plugin_instance.configure(config)
-#                         if not ok:
-#                             logger.error(f"插件 {name} 配置失败")
-#                             return False
-#                         self._plugin_configs[name] = config
-#                     except Exception as e:
-#                         logger.error(f"插件 {name} 配置异常: {e}")
-#                         return False
-                
-#                 # 测试连接（在受限网络环境下允许失败但仍注册插件）
-#                 connection_ok = False
-#                 try:
-#                     connection_ok = await plugin_instance.test_connection()
-#                 except Exception as e:
-#                     logger.warning(f"插件 {name} 连接测试异常: {e}")
-#                 if not connection_ok:
-#                     logger.warning(f"插件 {name} 连接测试失败，仍继续加载（可能为离线环境）")
-
-#                 self._plugins[name] = plugin_instance
-#                 logger.info(f"加载插件: {name}")
-#                 return True
-#         except Exception as e:
-#             logger.error(f"加载插件失败: {e}")
-#             return False
-    
-#     def unload_plugin(self, name: str) -> bool:
-#         """
-#         卸载插件
-        
-#         Args:
-#             name: 插件名称
-            
-#         Returns:
-#             是否卸载成功
-#         """
-#         try:
-#             if name in self._plugins:
-#                 del self._plugins[name]
-#                 logger.info(f"卸载插件: {name}")
-#             return True
-#         except Exception as e:
-#             logger.error(f"卸载插件失败: {e}")
-#             return False
-    
-#     def enable_plugin(self, name: str) -> bool:
-#         """
-#         启用插件
-        
-#         Args:
-#             name: 插件名称
-            
-#         Returns:
-#             是否启用成功
-#         """
-#         if name not in self._plugins:
-#             logger.error(f"插件 {name} 未加载")
-#             return False
-        
-#         if name not in self._enabled_plugins:
-#             self._enabled_plugins.append(name)
-#             logger.info(f"启用插件: {name}")
-#         return True
-    
-#     def disable_plugin(self, name: str) -> bool:
-#         """
-#         禁用插件
-        
-#         Args:
-#             name: 插件名称
-            
-#         Returns:
-#             是否禁用成功
-#         """
-#         if name in self._enabled_plugins:
-#             self._enabled_plugins.remove(name)
-#             logger.info(f"禁用插件: {name}")
-#         return True
-    
-#     def get_plugin(self, name: str) -> Optional[ScraperPlugin]:
-#         """
-#         获取插件实例
-        
-#         Args:
-#             name: 插件名称
-            
-#         Returns:
-#             插件实例或None
-#         """
-#         return self._plugins.get(name)
-    
-#     def get_loaded_plugins(self) -> List[str]:
-#         """
-#         获取已加载的插件列表
-        
-#         Returns:
-#             插件名称列表
-#         """
-#         return list(self._plugins.keys())
-    
-#     def get_enabled_plugins(self) -> List[str]:
-#         """
-#         获取已启用的插件列表
-        
-#         Returns:
-#             插件名称列表
-#         """
-#         return self._enabled_plugins.copy()
-    
-#     def get_available_plugins(self) -> List[Dict[str, any]]:
-#         """
-#         获取可用插件信息
-        
-#         Returns:
-#             插件信息列表
-#         """
-#         plugins_info = []
-#         for name, plugin_class in self._plugin_classes.items():
-#             # 创建临时实例获取信息
-#             temp_instance = plugin_class()
-#             plugins_info.append({
-#                 "name": name,
-#                 "version": temp_instance.version,
-#                 "description": temp_instance.description,
-#                 "supported_media_types": [t.value for t in temp_instance.supported_media_types],
-#                 "default_language": temp_instance.default_language,
-#                 "priority": temp_instance.priority,
-#                 "enabled": name in self._enabled_plugins,
-#                 "loaded": name in self._plugins,
-#                 "config_schema": temp_instance.get_config_schema()
-#             })
-#         return plugins_info
-    
-#     async def ensure_default_plugins(self) -> None:
-#         try:
-#             from core.config import get_settings
-#             settings = get_settings()
-#             enabled = set(getattr(settings, 'ENABLE_SCRAPERS', ['tmdb']) or ['tmdb'])
-#             enabled = {str(x).lower() for x in enabled}
-#         except Exception:
-#             enabled = {"tmdb"}
-
-#         try:
-#             from .tmdb import TmdbScraper
-#         except Exception:
-#             TmdbScraper = None
-#         try:
-#             from .douban import DoubanScraper
-#         except Exception:
-#             DoubanScraper = None
-
-#         try:
-#             if TmdbScraper:
-#                 try:
-#                     self.register_plugin(TmdbScraper)
-#                 except Exception:
-#                     pass
-#                 if 'tmdb' not in self._plugins:
-#                     await self.load_plugin('tmdb')
-#                 if 'tmdb' in enabled:
-#                     self.enable_plugin('tmdb')
-#             if DoubanScraper:
-#                 try:
-#                     self.register_plugin(DoubanScraper)
-#                 except Exception:
-#                     pass
-#                 if 'douban' not in self._plugins:
-#                     await self.load_plugin('douban')
-#                 if 'douban' in enabled:
-#                     self.enable_plugin('douban')
-#         except Exception as e:
-#             logger.warning(f"默认插件启用失败: {e}")
-#     # region
-#     # async def search_media_with_policy(self, title: str, year: Optional[int],
-#     #                                    media_type: MediaType,
-#     #                                    language: str) -> List[ScraperSearchResult]:
-#     #     # 调用插件的search方法，根据语言回退策略返回搜索结果
-#     #     try:
-#     #         results = await self.search_media(title, year, media_type, language)
-#     #         if results:
-#     #             return results
-#     #         try:
-#     #             from core.config import get_settings
-#     #             settings = get_settings()
-#     #             fallback_movie = bool(getattr(settings, 'SCRAPER_FALLBACK_MOVIE', True))
-#     #             fallback_series = bool(getattr(settings, 'SCRAPER_FALLBACK_SERIES', False))
-#     #             allow_fallback = (media_type == MediaType.MOVIE and fallback_movie) or (media_type in (MediaType.TV_SERIES, MediaType.TV_EPISODE) and fallback_series)
-#     #         except Exception:
-#     #             allow_fallback = True if media_type == MediaType.MOVIE else False
-#     #         if allow_fallback and language.lower() != 'en-us':
-#     #             return await self.search_media(title, year, media_type, 'en-US')
-#     #         return []
-#     #     except Exception as e:
-#     #         logger.error(f"策略搜索失败: {e}")
-#     #         return []
-
-#     # async def search_with_type_correction(self, title: str, year: Optional[int], initial_type: MediaType, language: str) -> Tuple[List[ScraperSearchResult], MediaType]:
-#     #     try:
-#     #         init_results = await self.search_media_with_policy(title, year, initial_type, language)
-#     #         alt_type = MediaType.MOVIE if initial_type != MediaType.MOVIE else MediaType.TV_SERIES
-#     #         alt_results = await self.search_media_with_policy(title, year, alt_type, language)
-#     #         def score(r: ScraperSearchResult) -> float:
-#     #             s = float(r.vote_average or 0)
-#     #             if year and r.year:
-#     #                 if r.year == year:
-#     #                     s += 0.5
-#     #                 else:
-#     #                     diff = abs(r.year - year)
-#     #                     if diff <= 2:
-#     #                         s += 0.2
-#     #             return s
-#     #         if init_results and not alt_results:
-#     #             return init_results, initial_type
-#     #         if alt_results and not init_results:
-#     #             return alt_results, alt_type
-#     #         if init_results and alt_results:
-#     #             init_best = max(init_results, key=score)
-#     #             alt_best = max(alt_results, key=score)
-#     #             if score(alt_best) > score(init_best):
-#     #                 return alt_results, alt_type
-#     #             else:
-#     #                 return init_results, initial_type
-#     #         return [], initial_type
-#     #     except Exception:
-#     #         return [], initial_type
-#     # endregion
-#     def auto_discover_plugins(self, package_path: Optional[str] = None) -> int:
-#         """
-#         自动发现插件
-        
-#         Args:
-#             package_path: 插件包路径，如果为None则使用默认路径
-            
-#         Returns:
-#             发现的插件数量
-#         """
-#         try:
-#             if package_path is None:
-#                 # 使用当前包路径
-#                 package_path = str(Path(__file__).parent)
-            
-#             discovered = 0
-            
-#             # 扫描插件目录
-#             plugin_dir = Path(package_path)
-#             if not plugin_dir.exists():
-#                 logger.warning(f"插件目录不存在: {plugin_dir}")
-#                 return 0
-            
-#             # 查找所有Python文件
-#             for py_file in plugin_dir.glob("*_scraper.py"):
-#                 try:
-#                     module_name = py_file.stem
-#                     # 动态导入模块
-#                     spec = importlib.util.spec_from_file_location(module_name, py_file)
-#                     if spec and spec.loader:
-#                         module = importlib.util.module_from_spec(spec)
-#                         spec.loader.exec_module(module)
-                        
-#                         # 查找插件类
-#                         for attr_name in dir(module):
-#                             attr = getattr(module, attr_name)
-#                             if (isinstance(attr, type) and 
-#                                 issubclass(attr, ScraperPlugin) and 
-#                                 attr != ScraperPlugin):
-                                
-#                                 if self.register_plugin(attr):
-#                                     discovered += 1
-                                    
-#                 except Exception as e:
-#                     logger.error(f"发现插件失败 {py_file}: {e}")
-            
-#             logger.info(f"自动发现插件完成，共发现 {discovered} 个插件")
-#             return discovered
-            
-#         except Exception as e:
-#             logger.error(f"自动发现插件失败: {e}")
-#             return 0
-    
-#     async def search_media(self, title: str, year: Optional[int] ,
-#                           media_type: MediaType ,
-#                           language: str) -> List[ScraperSearchResult]:
-#         """
-#         搜索媒体信息（使用所有启用的插件）
-        
-#         Args:
-#             title: 标题
-#             year: 年份
-#             media_type: 媒体类型
-#             language: 语言
-            
-#         Returns:
-#             合并的搜索结果列表
-#         """
-#         all_results = []
-        
-#         # 按优先级排序的插件
-#         sorted_plugins = sorted(
-#             [(name, self._plugins[name]) for name in self._enabled_plugins if name in self._plugins],
-#             key=lambda x: x[1].priority,
-#             reverse=True
-#         )
-        
-#         # 并行搜索
-#         tasks = []
-#         for name, plugin in sorted_plugins:
-#             task = asyncio.create_task(
-#                 self._safe_search(plugin, title, year, media_type, language, name)
-#             )
-#             tasks.append(task)
-        
-#         # 等待所有搜索完成
-#         results_list = await asyncio.gather(*tasks, return_exceptions=True)
-        
-#         # 合并结果
-#         for results in results_list:
-#             if isinstance(results, list):
-#                 all_results.extend(results)
-        
-#         # 按评分和年份排序
-#         # all_results.sort(key=lambda x: (x.rating or 0, x.year or 0), reverse=True)
-        
-#         return all_results
-    
-#     async def _safe_search(self, plugin: ScraperPlugin, title: str, year: Optional[int],
-#                           media_type: MediaType, language: str, plugin_name: str) -> List[ScraperSearchResult]:
-#         """安全搜索（带异常处理）"""
-#         try:
-#             return await plugin.search(title, year, media_type, language)
-#         except Exception as e:
-#             logger.error(f"插件 {plugin_name} 搜索失败: {e}")
-#             return []
-    
-#     async def enrich_with_best_match(self, title: str, year: Optional[int] = None,
-#                                     media_type: MediaType = MediaType.MOVIE,
-#                                     language: str = '') -> Optional[object]:
-#         """
-#         使用最佳匹配结果丰富信息
-        
-#         Args:
-#             title: 标题
-#             year: 年份
-#             media_type: 媒体类型
-#             language: 语言
-            
-#         Returns:
-#             最佳匹配结果或None
-#         """
-#         results = await self.search_media(title, year, media_type, language)
-        
-#         if not results:
-#             return None
-        
-#         # 选择第一个结果（已按评分排序）
-#         best_match = results[0]
-        
-#         # 获取详细信息
-#         if getattr(best_match, 'id', None):
-#             try:
-#                 plugin = self._plugins.get(best_match.provider)
-#                 if plugin:
-#                     if media_type == MediaType.MOVIE:
-#                         details = await plugin.get_movie_details(best_match.id, language)
-#                         if details:
-#                             return details
-#                     else:
-#                         details = await plugin.get_series_details(best_match.id, language)
-#                         if details:
-#                             return details
-#             except Exception as e:
-#                 logger.error(f"获取详细信息失败: {e}")
-        
-#         return best_match
-    
-#     def clear(self):
-#         """清空所有插件"""
-#         self._plugins.clear()
-#         self._plugin_classes.clear()
-#         self._enabled_plugins.clear()
-#         self._plugin_configs.clear()
-#         logger.info("清空所有插件")
-
-#     async def startup(self) -> None:
-#         try:
-#             if self._started:
-#                 return
-#             await self.ensure_default_plugins()
-#             for name in self._enabled_plugins:
-#                 try:
-#                     p = self._plugins.get(name)
-#                     if p:
-#                         await p.startup()
-#                 except Exception as e:
-#                     logger.warning(f"插件 {name} 启动钩子失败: {e}")
-#             self._started = True
-#             logger.info("插件系统启动完成")
-#         except Exception as e:
-#             logger.error(f"插件系统启动失败: {e}")
-
-#     async def shutdown(self) -> None:
-#         try:
-#             for name, plugin in list(self._plugins.items()):
-#                 try:
-#                     await plugin.shutdown()
-#                 except Exception as e:
-#                     logger.warning(f"插件 {name} 关闭钩子失败: {e}")
-#             self._started = False
-#             logger.info("插件系统已关闭")
-#         except Exception as e:
-#             logger.error(f"插件系统关闭失败: {e}")
-
-
-# # 全局插件管理器实例
-# scraper_manager = ScraperManager()
 
 """
 刮削器插件管理器 - Optimized
@@ -528,13 +6,54 @@ import asyncio
 import importlib
 import logging
 import sys
+import time
+import secrets
+from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List, Optional, Type,  Any
+from typing import Dict, List, Optional, Type, Any, Callable, Awaitable, Tuple
 
-# 假设这些基类存在于 .base 中
-from .base import MediaType, ScraperPlugin, ScraperSearchResult, ScraperMovieDetail, ScraperSeriesDetail
-from .scraper_plugins.tmdb_scraper import TmdbScraper # 直接导入核心插件
+import orjson
+import redis.asyncio as redis
+
+from core.config import get_settings
+from .base import (
+    MediaType,
+    ScraperPlugin,
+    ScraperSearchResult,
+    ScraperMovieDetail,
+    ScraperSeriesDetail,
+    ScraperSeasonDetail,
+)
 logger = logging.getLogger(__name__)
+
+class _LocalDetailCache:
+    def __init__(self, maxsize: int, ttl_seconds: int):
+        self._maxsize = max(1, int(maxsize))
+        self._ttl_seconds = max(1, int(ttl_seconds))
+        self._data: OrderedDict[Tuple[Any, ...], Tuple[float, Any]] = OrderedDict()
+
+    def clear(self) -> None:
+        self._data.clear()
+
+    def get(self, key: Tuple[Any, ...]) -> Optional[Any]:
+        item = self._data.get(key)
+        if not item:
+            return None
+        expires_at, value = item
+        now = time.time()
+        if expires_at <= now:
+            self._data.pop(key, None)
+            return None
+        self._data.move_to_end(key, last=True)
+        return value
+
+    def set(self, key: Tuple[Any, ...], value: Any) -> None:
+        now = time.time()
+        expires_at = now + self._ttl_seconds
+        self._data[key] = (expires_at, value)
+        self._data.move_to_end(key, last=True)
+        while len(self._data) > self._maxsize:
+            self._data.popitem(last=False)
 
 class ScraperManager:
     """
@@ -560,6 +79,21 @@ class ScraperManager:
         self._plugin_configs: Dict[str, dict] = {}
         self._started: bool = False
         self._op_lock: asyncio.Lock = asyncio.Lock()
+        self._inflight: Dict[Tuple[Any, ...], asyncio.Task] = {}
+        self._inflight_lock: asyncio.Lock = asyncio.Lock()
+        self._timeout_seconds: float = 10.0
+
+        settings = get_settings()
+        self._detail_cache = _LocalDetailCache(
+            maxsize=getattr(settings, "SCRAPER_DETAIL_CACHE_LOCAL_MAXSIZE", 2048),
+            ttl_seconds=getattr(settings, "SCRAPER_DETAIL_CACHE_TTL_SECONDS", 86400),
+        )
+        self._use_redis_cache: bool = bool(getattr(settings, "SCRAPER_DETAIL_CACHE_USE_REDIS", False))
+        self._cache_ttl_seconds: int = int(getattr(settings, "SCRAPER_DETAIL_CACHE_TTL_SECONDS", 86400))
+        self._lock_ttl_seconds: int = int(getattr(settings, "SCRAPER_DETAIL_CACHE_LOCK_TTL_SECONDS", 30))
+        self._lock_wait_ms: int = int(getattr(settings, "SCRAPER_DETAIL_CACHE_LOCK_WAIT_MS", 1500))
+        self._lock_poll_ms: int = int(getattr(settings, "SCRAPER_DETAIL_CACHE_LOCK_POLL_MS", 50))
+        self._redis: Optional[redis.Redis] = None
         
         ScraperManager._init_done = True
     
@@ -703,6 +237,149 @@ class ScraperManager:
         self._started = True
         logger.info(f"插件系统启动完成，当前启用: {self.get_enabled_plugins()}")
 
+    def _cache_key(self, kind: str, provider: str, language: str, *parts: Any) -> Tuple[Any, ...]:
+        return ("scraper_detail", kind, provider, language, *parts)
+
+    def _redis_key(self, kind: str, provider: str, language: str, *parts: Any) -> str:
+        suffix = ":".join(str(p) for p in parts)
+        return f"scraper:detail:{kind}:{provider}:{language}:{suffix}"
+
+    def _redis_lock_key(self, redis_key: str) -> str:
+        return f"{redis_key}:lock"
+
+    def _ensure_redis(self) -> Optional[redis.Redis]:
+        if not self._use_redis_cache:
+            return None
+        if self._redis is not None:
+            return self._redis
+        s = get_settings()
+        self._redis = redis.from_url(s.SCRAPER_CACHE_REDIS_URL, db=s.SCRAPER_CACHE_REDIS_DB, decode_responses=False)
+        return self._redis
+
+    async def _singleflight(self, key: Tuple[Any, ...], coro_factory: Callable[[], Awaitable[Any]]) -> Any:
+        async with self._inflight_lock:
+            task = self._inflight.get(key)
+            if task is None:
+                task = asyncio.create_task(coro_factory())
+                self._inflight[key] = task
+        try:
+            return await task
+        finally:
+            async with self._inflight_lock:
+                if self._inflight.get(key) is task:
+                    self._inflight.pop(key, None)
+
+    async def _get_cached_model(self, key: Tuple[Any, ...], redis_key: str, model_cls: Any) -> Optional[Any]:
+        local = self._detail_cache.get(key)
+        if local is not None:
+            return local
+
+        r = self._ensure_redis()
+        if not r:
+            return None
+        try:
+            raw = await r.get(redis_key)
+            if not raw:
+                return None
+            data = orjson.loads(raw)
+            model = model_cls.model_validate(data)
+            self._detail_cache.set(key, model)
+            return model
+        except Exception:
+            return None
+
+    async def _set_cached_model(self, key: Tuple[Any, ...], redis_key: str, model: Any) -> None:
+        if model is None:
+            return
+        self._detail_cache.set(key, model)
+
+        r = self._ensure_redis()
+        if not r:
+            return
+        try:
+            payload = orjson.dumps(model.model_dump(mode="json"))
+            await r.set(redis_key, payload, ex=self._cache_ttl_seconds)
+        except Exception:
+            return
+
+    async def _get_or_compute_cached_model(
+        self,
+        cache_key: Tuple[Any, ...],
+        redis_key: str,
+        model_cls: Any,
+        compute: Callable[[], Awaitable[Any]],
+    ) -> Optional[Any]:
+        cached = self._detail_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        r = self._ensure_redis()
+        if r:
+            from_redis = await self._get_cached_model(cache_key, redis_key, model_cls)
+            if from_redis is not None:
+                return from_redis
+
+        async def _run_once() -> Optional[Any]:
+            cached2 = self._detail_cache.get(cache_key)
+            if cached2 is not None:
+                return cached2
+            if r:
+                from_redis2 = await self._get_cached_model(cache_key, redis_key, model_cls)
+                if from_redis2 is not None:
+                    return from_redis2
+
+            if not r:
+                try:
+                    model = await compute()
+                except Exception:
+                    return None
+                if model is not None:
+                    self._detail_cache.set(cache_key, model)
+                return model
+
+            lock_key = self._redis_lock_key(redis_key)
+            token = secrets.token_hex(16).encode("utf-8")
+            try:
+                acquired = bool(await r.set(lock_key, token, ex=self._lock_ttl_seconds, nx=True))
+            except Exception:
+                acquired = False
+
+            if acquired:
+                try:
+                    model = await compute()
+                    if model is not None:
+                        await self._set_cached_model(cache_key, redis_key, model)
+                    return model
+                finally:
+                    try:
+                        current = await r.get(lock_key)
+                        if current == token:
+                            await r.delete(lock_key)
+                    except Exception:
+                        pass
+
+            wait_s = max(0.0, self._lock_wait_ms / 1000.0)
+            poll_s = max(0.001, self._lock_poll_ms / 1000.0)
+            deadline = time.monotonic() + wait_s
+            while time.monotonic() < deadline:
+                from_redis3 = await self._get_cached_model(cache_key, redis_key, model_cls)
+                if from_redis3 is not None:
+                    return from_redis3
+                await asyncio.sleep(poll_s)
+
+            try:
+                model = await compute()
+            except Exception:
+                return None
+            if model is not None:
+                await self._set_cached_model(cache_key, redis_key, model)
+            return model
+
+        try:
+            return await self._singleflight(cache_key, _run_once)
+        except Exception:
+            return None
+
     async def shutdown(self) -> None:
         """系统关闭钩子"""
         for name, plugin in list(self._plugins.items()):
@@ -765,20 +442,7 @@ class ScraperManager:
 
     def get_enabled_plugins(self) -> List[str]:
         return self._enabled_plugins.copy()
-
-
-    async def get_or_load_plugin(self, name: str) -> Optional[ScraperPlugin]:
-        """
-        获取插件，确保其已加载。
-        业务代码调用此方法可确保插件对象存在。
-        """
-        if name in self._plugins:
-            return self._plugins[name]
-        
-        # 尝试加载 (load_plugin 内部会处理配置、连接测试和 startup)
-        success = await self.load_plugin(name)
-        return self._plugins.get(name) if success else None
-    
+  
     def unload_plugin(self, name: str) -> bool:
         """卸载插件"""
         try:
@@ -877,15 +541,103 @@ class ScraperManager:
             all_results.extend(res)
             
         return all_results
-    
-    async def get_details(self, provider: str, provider_id: str, 
-                          media_type: Any, language: str = "") -> Optional[Any]:
-        # 核心防御
+
+    async def _call_with_timeout(self, provider: str, op: str, coro: Awaitable[Any]) -> Any:
+        try:
+            return await asyncio.wait_for(coro, timeout=self._timeout_seconds)
+        except asyncio.TimeoutError:
+            logger.error(f"插件 {provider} {op} 超时")
+            raise
+
+    async def get_detail(
+        self,
+        best_match: ScraperSearchResult,
+        media_type: MediaType,
+        language: str = "",
+        season: Optional[int] = None,
+        episode: Optional[int] = None,
+    ) -> Tuple[str, Optional[Any]]:
         self._ensure_started()
-        
+
+        provider = getattr(best_match, "provider", None)
+        provider_id = getattr(best_match, "id", None)
+        if not provider or provider_id is None:
+            return "search_result", best_match
+
         plugin = self._plugins.get(provider)
-        if not plugin: return None
-        return await plugin.get_details(provider_id, media_type, language)
+        if not plugin:
+            return "search_result", best_match
+
+        lang = language or getattr(plugin, "default_language", "")
+
+        async def get_series_details() -> Optional[ScraperSeriesDetail]:
+            cache_key = self._cache_key("series", provider, lang, int(provider_id))
+            redis_key = self._redis_key("series", provider, lang, int(provider_id))
+            return await self._get_or_compute_cached_model(
+                cache_key,
+                redis_key,
+                ScraperSeriesDetail,
+                lambda: self._call_with_timeout(provider, "get_series_details", plugin.get_series_details(int(provider_id), lang)),
+            )
+
+        async def get_season_details() -> Any:
+            if season is None:
+                return None
+            cache_key = self._cache_key("season", provider, lang, int(provider_id), int(season))
+            redis_key = self._redis_key("season", provider, lang, int(provider_id), int(season))
+            return await self._get_or_compute_cached_model(
+                cache_key,
+                redis_key,
+                ScraperSeasonDetail,
+                lambda: self._call_with_timeout(provider, "get_season_details", plugin.get_season_details(int(provider_id), int(season), lang)),
+            )
+
+        try:
+            if media_type == MediaType.MOVIE:
+                cache_key = self._cache_key("movie", provider, lang, int(provider_id))
+                redis_key = self._redis_key("movie", provider, lang, int(provider_id))
+                details_obj = await self._get_or_compute_cached_model(
+                    cache_key,
+                    redis_key,
+                    ScraperMovieDetail,
+                    lambda: self._call_with_timeout(provider, "get_movie_details", plugin.get_movie_details(int(provider_id), lang)),
+                )
+                if details_obj:
+                    return "movie", details_obj
+                return "search_result", best_match
+
+            if media_type == MediaType.TV_EPISODE and season is not None and episode is not None:
+                inflight_key = ("episode", provider, int(provider_id), int(season), int(episode), lang)
+                details_obj = await self._singleflight(
+                    inflight_key,
+                    lambda: self._call_with_timeout(
+                        provider,
+                        "get_episode_details",
+                        plugin.get_episode_details(int(provider_id), int(season), int(episode), lang),
+                    ),
+                )
+                if details_obj:
+                    series_task = asyncio.create_task(get_series_details())
+                    season_task = asyncio.create_task(get_season_details())
+                    series_res, season_res = await asyncio.gather(series_task, season_task, return_exceptions=True)
+                    if not isinstance(series_res, Exception):
+                        try:
+                            details_obj.series = series_res
+                        except Exception:
+                            pass
+                    if not isinstance(season_res, Exception):
+                        try:
+                            details_obj.season = season_res
+                        except Exception:
+                            pass
+                    return "episode", details_obj
+
+            details_obj = await get_series_details()
+            if details_obj:
+                return "series", details_obj
+            return "search_result", best_match
+        except Exception:
+            return "search_result", best_match
 
     async def clear(self):
         """完全重置管理器状态"""
@@ -906,6 +658,9 @@ class ScraperManager:
             self._enabled_plugins.clear()
             self._plugin_configs.clear()
             self._started = False
+            async with self._inflight_lock:
+                self._inflight.clear()
+            self._detail_cache.clear()
             logger.info("插件管理器状态已完全清空")
     
 # 全局单例

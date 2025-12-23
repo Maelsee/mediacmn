@@ -17,7 +17,7 @@ from .base import (
     ScraperExternalId,
     MediaType,
 )
-from .manager import ScraperManager, scraper_manager
+from .manager import scraper_manager
 from .scraper_plugins.tmdb_scraper import TmdbScraper
 from .scraper_plugins.douban_scraper import DoubanScraper
 
