@@ -64,6 +64,14 @@ def get_current_subject(credentials: Annotated[HTTPAuthorizationCredentials | No
     return str(subject)
 
 
+def get_user_id(subject: str) -> int:
+    """统一解析并验证用户 ID"""
+    try:
+        return int(subject)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid identity subject")
+
+
 def get_current_subject_or_query(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],

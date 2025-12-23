@@ -90,12 +90,6 @@ class StorageClient(ABC):
         self.config = config
         self._connected = False
 
-    # def __init__(self, name: str, config: Dict[str, Any]):
-    #     self.name = name
-    #     self.config = config
-    #     self._connected = False
-    #     # 限制针对存储实例的并发请求数（默认3-5比较安全）在各自的存储客户端中实现
-    #     # self.semaphore = asyncio.Semaphore(config.get("max_concurrency", 5))
     @abstractmethod
     def get_max_concurrency(self) -> int:
         """获取最大并发数"""

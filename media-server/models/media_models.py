@@ -58,13 +58,8 @@ class MediaCore(SQLModel, table=True):
     display_poster_path: Optional[str] = Field(default=None, description="用于列表展示的海报路径缓存")
     display_date: Optional[datetime] = Field(default=None, description="用于列表展示的日期缓存（上映/首播）")
     
-    # 分组与规范化
-    # group_key: Optional[str] = Field(default=None, index=True, description="分组键，用于媒体分组")
     tmdb_id: Optional[str] = Field(default=None, index=True, description="TMDB ID")
-    # canonical_source: Optional[str] = Field(default=None, index=True, description="规范化主来源，如tmdb|douban|tvdb|imdb")
-    # canonical_external_key: Optional[str] = Field(default=None, index=True, description="规范化主来源ID值")
-    
-    
+    parent_id: Optional[int] = Field(default=None, index=True,foreign_key="media_core.id", description="父媒体ID（用于剧集关联季,季关联系列）")
     # 时间戳
     created_at: datetime = Field(default_factory=get_utc_now_factory(), description="创建时间")
     updated_at: datetime = Field(default_factory=get_utc_now_factory(), description="更新时间")
@@ -269,7 +264,7 @@ class FileAsset(SQLModel, table=True):
     core_id: Optional[int] = Field(default=None, index=True, foreign_key="media_core.id", description="关联的媒体核心记录ID")
     version_id: Optional[int] = Field(default=None, index=True, foreign_key="media_version.id", description="关联的媒体版本记录ID(电影版本,集版本)")
     season_version_id: Optional[int] = Field(default=None, index=True, foreign_key="media_version.id", description="关联的季度版本记录ID")
-    episode_core_id: Optional[int] = Field(default=None, index=True, foreign_key="media_core.id", description="关联的剧集核心记录ID")
+    # episode_core_id: Optional[int] = Field(default=None, index=True, foreign_key="media_core.id", description="关联的剧集核心记录ID")
     
     # 文件元信息
     size: int = Field(sa_column=Column(BigInteger), description="文件大小（字节）")

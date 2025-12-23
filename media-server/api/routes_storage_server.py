@@ -12,15 +12,15 @@ from sqlmodel.ext.asyncio.session import AsyncSession  # ✅ 导入SQLModel的As
 from pydantic import BaseModel, Field
 from datetime import datetime
 # 关键：使用异步 Session 获取函数
-from core.db import get_async_session
-from core.security import get_current_subject
+# from core.db import get_async_session
+# from core.security import get_current_subject, get_user_id
 from services.storage.storage_service import storage_service
 from models.storage_models import StorageConfig
-
+from services.storage.storage_client import  StorageEntry
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["storage-unified"])
+router = APIRouter()
 
 
 # 请求/响应模型
@@ -30,11 +30,10 @@ class StorageListRequest(BaseModel):
 
 
 class StorageListResponse(BaseModel):
-    entries: List[dict] = Field(description="存储条目列表")
+    entries: List[StorageEntry] = Field(description="存储条目列表")
     path: str = Field(description="当前路径")
     total_count: int = Field(description="条目总数")
-    storage_name: str = Field(description="存储配置名称")
-    storage_type: str = Field(description="存储类型")
+    
 
 
 class StorageTestResponse(BaseModel):
@@ -65,39 +64,19 @@ class StorageInfoResponse(BaseModel):
 @router.get("/{storage_id}/test", response_model=StorageTestResponse)
 async def test_storage_connection(
     storage_id: int = Path(..., description="存储配置ID"),
-    current_user: str = Depends(get_current_subject),
-    db: AsyncSession = Depends(get_async_session) # 改为异步Session
+    # current_user: str = Depends(get_current_subject)
 ):
     """
     测试存储连接
     
     需要权限: storage:read
     """
-    user_id = int(current_user)
-    
-    # 获取存储配置
-    storage_config = await db.exec(
-        select(StorageConfig).where(
-            (StorageConfig.id == storage_id) &
-            (StorageConfig.user_id == user_id) &
-            (StorageConfig.is_active == True)
-        )
-    ).first()
-
-    
-    
-    if not storage_config:
-        raise HTTPException(status_code=404, detail="存储配置不存在")
+    # user_id = get_user_id(current_user)
     
     import time
     start_time = time.time()
-    
     try:
-        
-        success, error_message = await storage_service.test_connection(
-            db, user_id, storage_config.name
-        )
-        
+        success, error_message = await storage_service.test_connection(storage_id)
         response_time_ms = (time.time() - start_time) * 1000
         
         return StorageTestResponse(
@@ -120,53 +99,21 @@ async def list_storage_directory(
     storage_id: int = Path(..., description="存储配置ID"),
     path: str = Query("/", description="目录路径"),
     depth: int = Query(1, description="递归深度, 默认1"),  
-    current_user: str = Depends(get_current_subject),
-    db: AsyncSession = Depends(get_async_session) # 改为异步Session
+    # current_user: str = Depends(get_current_subject),
 ):
     """
     列出存储目录内容
     
     需要权限: storage:read
     """
-    user_id = int(current_user)
-    
-    # 获取存储配置
-    storage_config =  await db.exec(
-        select(StorageConfig).where(
-            (StorageConfig.id == storage_id) &
-            (StorageConfig.user_id == user_id) &
-            (StorageConfig.is_active == True)
-        )
-    ).first()
-    
-    if not storage_config:
-        raise HTTPException(status_code=404, detail="存储配置不存在")
-    
+
     try:
-        entries = await storage_service.list_directory(
-            db, user_id, storage_config.name, path, depth
-        )
-        
-        # 转换条目格式
-        entries_data = []
-        for entry in entries:
-            entry_data = {
-                "name": entry.name,
-                "path": entry.path,
-                "is_dir": entry.is_dir,
-                "size": entry.size,
-                "modified": entry.modified.isoformat() if entry.modified else None,
-                "content_type": entry.content_type,
-                "etag": entry.etag
-            }
-            entries_data.append(entry_data)
-        
+        entries = await storage_service.list_directory(storage_id, path, depth)
+   
         return StorageListResponse(
-            entries=entries_data,
+            entries=entries,
             path=path,
-            total_count=len(entries),
-            storage_name=storage_config.name,
-            storage_type=storage_config.storage_type
+            total_count=len(entries), 
         )
         
     except Exception as e:
@@ -178,32 +125,15 @@ async def list_storage_directory(
 async def get_storage_info(
     storage_id: int = Path(..., description="存储配置ID"),
     path: str = Query("/", description="路径"),
-    current_user: str = Depends(get_current_subject),
-    db: AsyncSession = Depends(get_async_session) # 改为异步Session
+    # current_user: str = Depends(get_current_subject),
 ):
     """
     获取存储系统信息
     
     需要权限: storage:read
     """
-    user_id = int(current_user)
-    
-    # 获取存储配置
-    storage_config =  await db.exec(
-        select(StorageConfig).where(
-            (StorageConfig.id == storage_id) &
-            (StorageConfig.user_id == user_id) &
-            (StorageConfig.is_active == True)
-        )
-    ).first()
-    
-    if not storage_config:
-        raise HTTPException(status_code=404, detail="存储配置不存在")
-    
     try:
-        storage_info = await storage_service.get_storage_info(
-            db, user_id, storage_config.name, path
-        )
+        storage_info = await storage_service.get_storage_info(storage_id, path)
         
         return StorageInfoResponse(
             total_space=storage_info.total_space,
@@ -213,7 +143,6 @@ async def get_storage_info(
             supports_resume=storage_info.supports_resume,
             max_file_size=storage_info.max_file_size
         )
-        
     except Exception as e:
         logger.error(f"获取存储信息失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取存储信息失败: {str(e)}")
@@ -223,32 +152,16 @@ async def get_storage_info(
 async def get_file_info(
     storage_id: int = Path(..., description="存储配置ID"),
     path: str = Query(..., description="文件或目录路径"),
-    current_user: str = Depends(get_current_subject),
-    db: AsyncSession = Depends(get_async_session)
+    # current_user: str = Depends(get_current_subject),
+
 ):
     """
     获取文件/目录详细信息
     
     需要权限: storage:read
     """
-    user_id = int(current_user)
-    
-    # 获取存储配置
-    storage_config =  await db.exec(
-        select(StorageConfig).where(
-            (StorageConfig.id == storage_id) &
-            (StorageConfig.user_id == user_id) &
-            (StorageConfig.is_active == True)
-        )
-    ).first()
-    
-    if not storage_config:
-        raise HTTPException(status_code=404, detail="存储配置不存在")
-    
     try:
-        file_info = await storage_service.get_file_info(
-            db, user_id, storage_config.name, path
-        )
+        file_info = await storage_service.get_file_info(storage_id, path)
         
         return StorageFileInfoResponse(
             name=file_info.name,
@@ -269,28 +182,15 @@ async def get_file_info(
 async def create_directory(
     storage_id: int = Path(..., description="存储配置ID"),
     path: str = Query(..., description="目录路径"),
-    current_user: str = Depends(get_current_subject),
-    db: AsyncSession = Depends(get_async_session) # 改为异步Session
 ):
     """
     创建目录
     
     需要权限: storage:write
     """
-    user_id = int(current_user)
-    
-    # 获取存储配置
-    storage_config =  await db.exec(
-        select(StorageConfig).where(id=storage_id, user_id=user_id, is_active=True)
-    ).first()
-    
-    if not storage_config:
-        raise HTTPException(status_code=404, detail="存储配置不存在")
-    
+  
     try:
-        success = await storage_service.create_directory(
-            db, user_id, storage_config.name, path
-        )
+        success = await storage_service.create_directory(storage_id, path)
         
         if success:
             return {"message": "目录创建成功", "path": path}
@@ -306,33 +206,16 @@ async def create_directory(
 async def delete_path(
     storage_id: int = Path(..., description="存储配置ID"),
     path: str = Query(..., description="要删除的路径"),
-    current_user: str = Depends(get_current_subject),
-    db: AsyncSession = Depends(get_async_session) # 改为异步Session
+ 
 ):
     """
     删除文件或目录
     
     需要权限: storage:delete
     """
-    user_id = int(current_user)
-    
-    # 获取存储配置
-    storage_config =  await db.exec(
-        select(StorageConfig).where(
-            (StorageConfig.id == storage_id) &
-            (StorageConfig.user_id == user_id) &
-            (StorageConfig.is_active == True)
-        )
-    ).first()
-    
-    if not storage_config:
-        raise HTTPException(status_code=404, detail="存储配置不存在")
-    
     try:
-        success = await storage_service.delete_path(
-            db, user_id, storage_config.name, path
-        )
-        
+        success = await storage_service.delete_path(storage_id, path)
+
         if success:
             return {"message": "删除成功", "path": path}
         else:

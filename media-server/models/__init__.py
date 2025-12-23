@@ -10,6 +10,7 @@
 # 基础模型
 # ============================================
 from .user import User  # noqa: F401
+from .refresh_token import RefreshToken  # noqa: F401
 
 # ============================================
 # 媒体相关模型（新的统一组织）
@@ -35,7 +36,9 @@ from .media_models import (  # noqa: F401
     MediaCoreGenre,
     # 人员信用模型
     Person,
-    Credit
+    Credit,
+    # 播放历史模型
+    PlaybackHistory
 )
 
 # ============================================

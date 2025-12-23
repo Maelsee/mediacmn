@@ -33,7 +33,6 @@
     "retries_total": 3,
     "retries_backoff_factor": 0.5,
     "retries_status_forcelist": "[429,500,502,503,504]"
- 
   }
 }
 

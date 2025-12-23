@@ -667,7 +667,8 @@ class WebDAVStorageClient(StorageClient):
         # 2. 用保存的最大并发数初始化信号量
         self._semaphore = asyncio.Semaphore(self._max_concurrency)
         self._connected = False
-        
+        # 新增：内部异步锁，保护 Session 初始化和关闭
+        self._lock = asyncio.Lock()
         # 命名空间映射 (WebDAV 标准)
         self._ns = {'d': 'DAV:'}
     
@@ -680,61 +681,83 @@ class WebDAVStorageClient(StorageClient):
         检查 WebDAV 客户端是否依然可用。
         这是一个同步方法，仅检查本地状态，不发起网络请求。
         """
-        # # 1. 检查逻辑连接标志
-        # if not self._connected:
-        #     return False
-            
-        # # 2. 检查 aiohttp Session 状态
-        # if self._session is None:
-        #     return False
-            
-        # # 3. 检查 Session 是否已被关闭
-        # if self._session.closed:
-        #     return False
-            
-        # # 4. 检查底层连接池（Connector）是否还存活
-        # if self._session.connector is None or self._session.connector.closed:
-        #     return False
-            
-        # return True
-        return self._connected and self._session and not self._session.closed
+        return bool(self._connected and self._session and not self._session.closed)
     
-    async def _ensure_session(self):
-        """延迟初始化并确保 Session 有效"""
-        if self._session is None or self._session.closed:
-            connector = aiohttp.TCPConnector(
-                ssl=None if self._verify_ssl else False,
-                limit=100,
-                limit_per_host=20,
-                keepalive_timeout=30, # 保持连接活跃
-                force_close=False
-            )
-            self._session = aiohttp.ClientSession(
-                connector=connector,
-                auth=aiohttp.BasicAuth(self._username, self._password) if self._username else None,
-                timeout=aiohttp.ClientTimeout(total=self._timeout_val)
-            )
+    # async def _ensure_session(self):
+    #     """延迟初始化并确保 Session 有效"""
+    #     """线程安全的 Session 初始化"""
+    #     if self._session is not None and not self._session.closed:
+    #         return
 
+    #     async with self._lock:
+    #         # 双重检查锁
+    #         if self._session is None or self._session.closed:
+    #             connector = aiohttp.TCPConnector(
+    #                 ssl=None if self._verify_ssl else False,
+    #                 limit=100,
+    #                 keepalive_timeout=30
+    #             )
+    #             self._session = aiohttp.ClientSession(
+    #                 connector=connector,
+    #                 auth=aiohttp.BasicAuth(self._username, self._password) if self._username else None,
+    #                 timeout=aiohttp.ClientTimeout(total=self._timeout_val)
+    #             )
+    
     async def connect(self) -> bool:
         """建立 WebDAV 连接"""
         try:
             await self._ensure_session()
             success, error = await self.check_connection()
             if not success:
+                if self._session:
+                    if not self._session.closed:
+                        await self._session.close()
+                    self._session = None
                 raise StorageConnectionError(error or "连接测试失败")
             self._connected = True
             return True
         except Exception as e:
             await self.disconnect()
             raise StorageConnectionError(f"WebDAV 连接失败: {str(e)}")
+    
+    async def _ensure_session(self):
+        """线程安全的 Session 初始化，优化了连接回收"""
+        if self._session is not None and not self._session.closed:
+            return
+
+        async with self._lock:
+            if self._session is None or self._session.closed:
+                # 优化：限制底层连接池，防止单个 Client 占用过多系统句柄
+                connector = aiohttp.TCPConnector(
+                    ssl=None if self._verify_ssl else False,
+                    limit=self._max_concurrency,  # 限制这个 Client 自己的连接池大小
+                    keepalive_timeout=15,         # 缩短保持时间，加速任务后的资源回收
+                    force_close=False             # 扫描期间允许复用，但关闭时会由 session.close 处理
+                )
+                
+                self._session = aiohttp.ClientSession(
+                    connector=connector,
+                    auth=aiohttp.BasicAuth(self._username, self._password) if self._username else None,
+                    # 显式设置超时，防止挂死
+                    timeout=aiohttp.ClientTimeout(total=self._timeout_val, connect=10)
+                )
 
     async def disconnect(self) -> None:
-        """安全断开"""
-        if self._session:
-            await self._session.close()
-            self._session = None
-        self._connected = False
-
+        """安全断开并确保清理"""
+        # 如果有正在进行的 IO，这里需要配合信号量或 cancel
+        async with self._lock:
+            if self._session:
+                # aiohttp 官方推荐：在某些情况下给底层连接一点点‘喘息’时间
+                # 但在你的任务模式下，直接 close 是最安全的
+                if not self._session.closed:
+                    await self._session.close()
+                
+                # 彻底释放
+                self._session = None
+                
+            self._connected = False
+            # logger.debug(f"WebDAV 客户端 {self.name} 资源已彻底释放")
+    
     # 优化点 3 & 4: 统一请求入口与异常重试
     async def _request(self, method: str, url: str, retries: int = 3, **kwargs) -> aiohttp.ClientResponse:
         """
@@ -768,7 +791,7 @@ class WebDAVStorageClient(StorageClient):
         raise StorageError(f"请求在 {retries} 次重试后仍然失败")
 
     # 优化点 2: 使用 lxml 提升解析性能
-    def _parse_webdav_response(self, xml_bytes: bytes, current_request_path: str) -> List[Dict[str, Any]]:
+    def _parse_webdav_response(self, xml_bytes: bytes, current_request_path: str, skip_self: bool = True) -> List[Dict[str, Any]]:
         """使用 lxml 高效解析 XML"""
         entries = []
         # 统一规范化对比路径：去除末尾斜杠
@@ -793,7 +816,7 @@ class WebDAVStorageClient(StorageClient):
                 normalized_entry_path = full_path.rstrip('/')
                 
                 # 2. 核心过滤：如果解析出的路径与请求路径一致，直接跳过，不放入 entries
-                if normalized_entry_path == target_path:
+                if skip_self and normalized_entry_path == target_path:
                     logger.debug(f'----匹配结果中跳过当前请求路径: {normalized_entry_path}=={target_path}')
                     continue
                 entry['path'] = urlparse(decoded_path).path
@@ -828,13 +851,13 @@ class WebDAVStorageClient(StorageClient):
         """统一路径构建，处理斜杠和转义"""
         clean_path = path.strip('/')
         # 保持 root_path 逻辑
-        url = f"{self._base_url}{quote(clean_path)}"
+        url = f"{self._base_url}{quote(clean_path)}/"
         return url
 
     async def list_dir(self, path: str = "/", depth: int = 1) -> List[StorageEntry]:
         """列出目录"""
         url = self._build_url(path)
-        if not url.endswith('/'): url += '/'
+        # if not url.endswith('/'): url += '/'
         logger.info(f'---扫描目录: {path}')
         logger.debug(f'----查看url: {url}')
         headers = {
@@ -937,7 +960,7 @@ class WebDAVStorageClient(StorageClient):
         async with await self._request('PROPFIND', url, headers=headers) as resp:
             if resp.status == 207:
                 content = await resp.read()
-                parsed_entries = self._parse_webdav_response(content)
+                parsed_entries = self._parse_webdav_response(content, urlparse(url).path, skip_self=False)
                 if parsed_entries:
                     # 即使返回多个，Depth 0 保证第一个就是请求的路径本身
                     return StorageEntry(**parsed_entries[0])

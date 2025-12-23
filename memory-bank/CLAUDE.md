@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to developers when working with code in this repository.
 
 ## Project Overview
 
@@ -46,14 +46,14 @@ PYTHONPATH=. uvicorn api.main:app --reload
 
 **Background Task Workers:**
 ```bash
-# Start workers in development mode
-./start_consumers.sh dev
+# # Start workers in development mode
+# ./start_consumers.sh dev
 
-# Start workers in production mode
-./start_consumers.sh prod
+# # Start workers in production mode
+# ./start_consumers.sh prod
 
 # Start workers manually (from media-server directory)
-dramatiq services.task.consumers 
+dramatiq services.task.consumers --processes 2 --threads 2
 ```
 
 **Testing:**
@@ -82,6 +82,7 @@ flutter pub get
 flutter run
 
 # Run on specific platform
+flutter run -d web-server --web-port 5200  #目前只是用这个启动命令
 flutter run -d chrome
 flutter run -d windows
 flutter run -d android
@@ -117,12 +118,12 @@ The server follows a **layered service architecture**:
 - **`api/`** - FastAPI route definitions organized by feature
 - **`core/`** - Infrastructure components (database, config, auth, logging)
 - **`services/`** - Business logic layer with domain-specific services
-- **`models/`** - SQLModel database schemas (unified in `media_models.py`)
+- **`models/`** - SQLModel database schemas (e.g `media_models.py`)
 - **`schemas/`** - Pydantic request/response models
 
 ### Key Service Patterns
 
-**Async/Await Throughout**: All services use async patterns for performance:
+**Async/Await Throughout**: All services use async patterns for performance(include postgresql session):
 ```python
 async def scan_media_library(user_id: str, path: str):
     async with database.transaction():

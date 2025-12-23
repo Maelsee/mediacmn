@@ -55,7 +55,7 @@ class FileAssetProcessor():
         self.repo = file_asset_repo
         self.supported_media_extensions = {
             '.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v',
-            '.srt', '.ass', '.ssa', '.vtt', '.sub'
+            # '.srt', '.ass', '.ssa', '.vtt', '.sub'
         }
     
     def _is_media_file(self, file_path: str) -> bool:
@@ -246,47 +246,54 @@ class UnifiedScanEngine:
         db_files_snapshot: Dict[str, int] = await self.repo.get_all_paths_in_directory(user_id, storage_id, scan_path)
         
         storage_client = None
+        # 2. 获取客户端实例 (此时只是创建了 Python 对象，还没发起网络连接)
+        raw_client = await self.storage_service.get_client(storage_id)
         try:
-            storage_client = await self.storage_service.get_client(storage_id)
-            if not storage_client or not await storage_client.connect():
-                raise ConnectionError(f"存储客户端连接失败：{storage_id}")
+            # 3. 使用异步上下文管理器
+            # 这会自动触发 raw_client.connect()
+            async with raw_client as storage_client:
+                if not storage_client or not storage_client.is_alive():
+                    raise ConnectionError(f"存储客户端连接失败：{storage_id}")
+                
+                # --- 核心扫描逻辑开始 ---
+                # 2. 初始化队列
+                # dir_queue 存放待扫描的目录路径和当前深度: (path, current_depth)
+                dir_queue = asyncio.Queue()
+                # file_buffer 存放扫描到的文件实体，供处理器消费
+                file_buffer = asyncio.Queue(maxsize=batch_size * 2)
+                
+                # 初始路径入队
+                await dir_queue.put((scan_path, 0))
 
-            # 2. 初始化队列
-            # dir_queue 存放待扫描的目录路径和当前深度: (path, current_depth)
-            dir_queue = asyncio.Queue()
-            # file_buffer 存放扫描到的文件实体，供处理器消费
-            file_buffer = asyncio.Queue(maxsize=batch_size * 2)
-            
-            # 初始路径入队
-            await dir_queue.put((scan_path, 0))
+                # 3. 启动小分队 (Scanner Workers)
+                # 动态调整 worker 数量，确保不浪费 client 的并发能力
+                client_concurrency = storage_client.get_max_concurrency() 
+                worker_count = client_concurrency if client_concurrency else self.max_workers
+                logger.info(f"启动 {worker_count} 个扫描协程，存储客户端最大并发数: {client_concurrency}")
+                
+                scanner_tasks = [
+                    asyncio.create_task(self._scanner_worker(storage_client, dir_queue, file_buffer, recursive, max_depth))
+                    for _ in range(worker_count)
+                ]
 
-            # 3. 启动小分队 (Scanner Workers)
-            # 动态调整 worker 数量，确保不浪费 client 的并发能力
-            client_concurrency = storage_client.get_max_concurrency() 
-            worker_count = client_concurrency if client_concurrency else self.max_workers
-            logger.info(f"启动 {worker_count} 个扫描协程，存储客户端最大并发数: {client_concurrency}")
-            
-            scanner_tasks = [
-                asyncio.create_task(self._scanner_worker(storage_client, dir_queue, file_buffer, recursive, max_depth))
-                for _ in range(worker_count)
-            ]
+                # 4. 启动处理器 (Processor Worker)
+                processor_task = asyncio.create_task(
+                    self._processor_worker(file_buffer, result, seen_paths, media_paths, 
+                                        storage_id, user_id, batch_size, progress_cb)
+                )
 
-            # 4. 启动处理器 (Processor Worker)
-            processor_task = asyncio.create_task(
-                self._processor_worker(file_buffer, result, seen_paths, media_paths, 
-                                       storage_id, user_id, batch_size, progress_cb)
-            )
-
-            # 5. 等待扫描完成 (生产者全部结束)
-            await dir_queue.join()
-            
-            # 停止 Scanner 协程
-            for t in scanner_tasks:
-                t.cancel()
-            
-            # 给处理器发送结束信号
-            await file_buffer.put(None)
-            await processor_task
+                # 5. 等待扫描完成 (生产者全部结束)
+                await dir_queue.join()
+                
+                # 停止 Scanner 协程
+                for t in scanner_tasks:
+                    t.cancel()
+                
+                # 给处理器发送结束信号
+                await file_buffer.put(None)
+                await processor_task
+                # --- 核心扫描逻辑结束 ---
+            # 当代码运行到这里（离开 async with），会自动触发 storage_client.disconnect()
 
             # 6. 计算待删除记录
             for path, file_id in db_files_snapshot.items():
@@ -296,11 +303,19 @@ class UnifiedScanEngine:
             result.scanned_paths = list(seen_paths)
             result.encountered_media_paths = list(media_paths)
 
+            # # 7. 执行智能清理
+            # if result.to_delete_ids:
+            #     cleanup_stats = await self.repo.delete_files_by_ids(result.to_delete_ids, user_id)
+            #     logger.info(f"清理完成，删除文件数: {cleanup_stats.get('deleted_assets', 0)}，清理孤立核心数: {cleanup_stats.get('cleaned_cores', 0)}")
+            #     # result.deleted_files = cleanup_stats.get("deleted_assets", 0)
+            #     # result.cleaned_cores = cleanup_stats.get("cleaned_cores", 0)
+
         except Exception as e:
             logger.error(f"Scan interrupted: {e}\n{traceback.format_exc()}")
             result.error_details.append({"path": scan_path, "error": str(e)})
             result.errors += 1
         finally:
+            
             result.duration = (datetime.now() - start_time).total_seconds()
 
         logger.info(f"并发扫描完成，总计 {result.total_files} 文件，耗时 {result.duration}s")

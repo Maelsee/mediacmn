@@ -1291,6 +1291,7 @@ class MetadataPersistenceService:
                 display_poster_path=getattr(se, "poster_path", None),
                 display_rating=getattr(se, "vote_average", None),         
                 tmdb_id=tmdb_id,
+                parent_id=series_core.id ,
                 created_at=datetime.now(),
                 updated_at=datetime.now()
             ).on_conflict_do_update(
@@ -1398,6 +1399,7 @@ class MetadataPersistenceService:
                 display_date=air_date,
                 year=year_val,
                 tmdb_id=tmdb_id,
+                parent_id=season_core.id,
                 created_at=datetime.now(),
                 updated_at=datetime.now()
             ).on_conflict_do_update(

@@ -36,10 +36,7 @@ class PersistPayload(BaseModel):
 
 class DeletePayload(BaseModel):
     user_id: int
-    storage_id: int
-    scan_path: str
-    encountered_media_paths: List[str]
-
+    to_delete_ids: List[int]
 class LocalizePayload(BaseModel):
     user_id: int
     file_id: int
@@ -213,18 +210,13 @@ async def create_persist_task(
 
 async def create_delete_task(
     user_id: int,
-    storage_id: int,
-    scan_path: str,
-    encountered_media_paths: List[str],
-    *,
+    to_delete_ids: List[int],
     priority: TaskPriority = TaskPriority.NORMAL,
     idempotency_key: Optional[str] = None
 ) -> str:
     payload = DeletePayload(
         user_id=user_id,
-        storage_id=storage_id,
-        scan_path=scan_path,
-        encountered_media_paths=encountered_media_paths
+        to_delete_ids=to_delete_ids
     ).model_dump()
     if idempotency_key:
         payload["idempotency_key"] = idempotency_key

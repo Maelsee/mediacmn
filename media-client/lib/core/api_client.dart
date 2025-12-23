@@ -210,7 +210,7 @@ class ApiClient {
 
   Future<bool> testStorageConnection(String storageId) async {
     final sid = int.tryParse(storageId) ?? storageId;
-    final res = await _client.get(_u('/api/storage-unified/$sid/test'),
+    final res = await _client.get(_u('/api/storage-server/$sid/test'),
         headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;

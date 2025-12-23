@@ -56,8 +56,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan  # <--- 关键修改点
     )
 
-    # app = FastAPI(title=settings.APP_NAME, version="0.1.0")
-
     # 配置 CORS 中间件
     app.add_middleware(
         CORSMiddleware,
@@ -78,7 +76,7 @@ def create_app() -> FastAPI:
     from api.routes_auth import router as auth_router
     from api.routes_media import router as media_router
     from api.routes_storage_config import router as storage_config_router
-    from api.routes_storage_unified import router as storage_unified_router
+    from api.routes_storage_server import router as storage_server_router
     # from api.routes_scan_new import router as scan_new_router  # 新的统一扫描路由
     from api.routes_tasks import router as tasks_router
     # from api.routes_scraper import router as scraper_router
@@ -93,8 +91,8 @@ def create_app() -> FastAPI:
     api_router.include_router(media_router, prefix="/media", tags=["media"])
     api_router.include_router(collections_router, prefix="/collections", tags=["collections"])
     api_router.include_router(playback_router, prefix="/playback", tags=["playback"])
-    api_router.include_router(storage_config_router, prefix="/storage", tags=["storage"])
-    api_router.include_router(storage_unified_router, prefix="/storage-unified", tags=["storage-unified"])
+    api_router.include_router(storage_config_router, prefix="/storage-config", tags=["storage-config"])
+    api_router.include_router(storage_server_router, prefix="/storage-server", tags=["storage-server"])
     # api_router.include_router(scan_new_router, prefix="/scan", tags=["scan"])  # 新的统一扫描路由
     api_router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])  # 任务生产者API
     # api_router.include_router(scraper_router, prefix="/scraper", tags=["scraper"])
@@ -106,29 +104,6 @@ def create_app() -> FastAPI:
         logger.info("database_initialized")
     except Exception as e:
         logger.error(f"database_init_failed: {e}")
-
-    # @asynccontextmanager
-    # async def lifespan(app: FastAPI):
-    #     try:
-    #         # 1. 自动发现插件文件
-    #         scraper_manager.auto_discover_plugins()
-            
-    #         # 2. 启动管理器 (加载默认插件、读取配置、建立连接)
-    #         await scraper_manager.startup()
-
-    #         logger.info("scraper_manager_started")
-    #     except Exception as e:
-    #         logger.error(f"scraper_manager_start_failed: {e}")
-    #     try:
-    #         yield
-    #     finally:
-    #         try:
-    #             await scraper_manager.shutdown()
-    #             logger.info("scraper_manager_stopped")
-    #         except Exception as e:
-    #             logger.error(f"scraper_manager_stop_failed: {e}")
-
-    # app.router.lifespan_context = lifespan
 
     @app.get("/", tags=["root"])
     def root() -> dict[str, str]:

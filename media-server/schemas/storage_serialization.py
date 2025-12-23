@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from typing import Optional, Dict, Any, Union, List
-from pydantic import BaseModel, Field, validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, validator, ConfigDict
 
 
 # ============================================
@@ -175,26 +175,16 @@ class CloudConfigUpdate(BaseModel):
 # ============================================
 
 class CreateStorageRequest(BaseModel):
-    """创建存储配置的统一请求模型"""
-    name: str = Field(..., description="存储配置名称")
-    storage_type: str = Field(..., description="存储类型 (webdav/smb/local/cloud)")
-    
-    # 特定类型的配置参数
-    config: Union[WebdavConfig, SmbConfig, LocalConfig, CloudConfig] = Field(
-        ..., 
-        description="存储类型特定的配置参数"
-    )
-    
-    @validator('storage_type')
-    def validate_storage_type(cls, v):
-        allowed_types = ['webdav', 'smb', 'local', 'cloud']
-        if v not in allowed_types:
-            raise ValueError(f'存储类型必须是以下之一: {", ".join(allowed_types)}')
+    name: str = Field(..., min_length=1, max_length=50)
+    storage_type: str 
+    # 使用 Discriminated Unions 提高校验效率
+    config: Union[WebdavConfig, SmbConfig, LocalConfig, CloudConfig]
+
+    @field_validator('storage_type')
+    def validate_type(cls, v):
+        if v not in ['webdav', 'smb', 'local', 'cloud']:
+            raise ValueError("Invalid storage type")
         return v
-    
-    class Config:
-        # 允许使用 discriminated union
-        extra = "forbid"
 
 
 # ============================================
@@ -222,8 +212,8 @@ class UpdateStorageRequest(BaseModel):
     priority: Optional[int] = Field(None, description="优先级")
     config: Optional[Union[WebdavConfigUpdate, SmbConfigUpdate, LocalConfigUpdate, CloudConfigUpdate]] = Field(
         None, description="存储类型特定的配置参数")
-    class Config:
-        extra = "forbid"
+    
+    model_config = ConfigDict(extra="forbid")
 
 # 列出用户存储配置响应模型
 class ListUserStoragesResponse(BaseModel):
