@@ -3,20 +3,23 @@
 """
 import asyncio
 import logging
-# from pathlib import Path
+import os
+from collections import Counter
 from typing import Dict, List, Optional, Any, TypedDict
-# from dataclasses import dataclass, field
 from sqlmodel import select
 from guessit import guessit
 from core.db import AsyncSessionLocal
-# from models.media_models import MediaCore
 from models.media_models import FileAsset
 from models.user import User
 from services.scraper import scraper_manager, MediaType
 from services.storage.storage_service import storage_service
-# from services.utils.filename_parser import FilenameParser, ParserMode, ParseInput
-# from dataclasses import asdict
-from services.scraper.base import   ScraperSearchResult
+from services.scraper.base import (
+    ScraperSearchResult,
+    ScraperEpisodeDetail,
+    ScraperSeasonDetail,
+    ScraperSeriesDetail,
+    ScraperEpisodeItem,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +35,6 @@ class MetadataResult(TypedDict):
     success: bool
     error_msg: str
 
-# class MetadataResult(BaseModel):
-#     user_id: int
-#     file_id: int
-#     contract_type: str
-#     # payload 可以是任何 Scraper 模型，或者是 dict
-#     contract_payload: Dict[str, Any] = {}
-#     path_info: Dict[str, Any] = {}
-#     success: bool
-#     error_msg: str = ""
 
 class MetadataEnricher:
     """元数据丰富器 - 使用插件化刮削器"""
@@ -53,7 +47,6 @@ class MetadataEnricher:
         创建存储服务和文件名解析器实例
         """
         self.storage_service = storage_service
-        # self.parser = FilenameParser()
     
     def _get_best_match(self,search_results: List[ScraperSearchResult],parsed_data: dict,) -> Optional[ScraperSearchResult]:  # parsed_data名称解析器结果：{title: str, year: Optional[int], language: Optional[str], country: Optional[str]}
     
@@ -161,6 +154,27 @@ class MetadataEnricher:
         )
         return best_match
 
+    def _get_parent_dir_key(self, file_asset: FileAsset) -> str:
+        """
+        计算父目录分组键，统一路径格式，保证同一季或同一电影多版本归为一组
+        """
+        try:
+            full_path = os.path.abspath(file_asset.full_path)
+            parent_dir = os.path.dirname(full_path)
+            return parent_dir.replace("\\", "/")
+        except Exception:
+            return f"default_group_{file_asset.user_id}"
+
+    def _most_common_non_empty(self, values: List[Any]) -> Optional[Any]:
+        """
+        从列表中选出出现次数最多且非空的值
+        """
+        filtered = [v for v in values if v not in (None, "", [])]
+        if not filtered:
+            return None
+        counter = Counter(filtered)
+        return counter.most_common(1)[0][0]
+
     async def enrich_media_file(self, file_asset: FileAsset, language: str = '') -> MetadataResult:
         """
         丰富单个媒体文件元数据（参数改为FileAsset）
@@ -168,9 +182,6 @@ class MetadataEnricher:
         """
         logger.debug(f'用户语言{language}')
         try:
-            # -------------------------- 1. 解析文件名（直接用file_asset的full_path） --------------------------
-            # path_info = guessit(file_asset.full_path)
-            # 将 CPU 密集型的 guessit 调用放到线程池中执行
             path_info = await asyncio.to_thread(guessit, file_asset.full_path)
             title = path_info.get("title")
             season = path_info.get("season")
@@ -179,8 +190,6 @@ class MetadataEnricher:
             country = path_info.get("country")  
             corrected_type = MediaType.MOVIE if path_info.get("type") == "movie" else MediaType.TV_EPISODE
 
-
-            # 异步搜索元数据
             logger.info(f"🔍 搜索参数：title='{title}', 年份={year}, 语言={language}, 类型={corrected_type.value}")
             search_results = await scraper_manager.search_media(
                 title=title,
@@ -255,89 +264,360 @@ class MetadataEnricher:
                 "error_msg": err_msg
             }
 
-    async def enrich_multiple_files(self, file_ids: List[int],user_id: int,max_concurrency: int = 20) -> List[MetadataResult]:
+    async def enrich_media_files(self, file_assets: List[FileAsset], language: str) -> List[MetadataResult]:
         """
-        批量丰富元数据（核心优化：一次性查库）
-        1. 异步批量查询所有file_ids对应的FileAsset
-        2. 直接调用enrich_media_file（传FileAsset）
-        3. 处理查不到FileAsset的file_id
+        处理同一父目录下的一组文件
+        - 多文件共同参与名称解析，提升标题/年份等信息的准确度
+        - 电影：一次搜索与详情获取，复用到所有版本
+        - 剧集：只获取系列与季详情，单集信息从季详情 episodes 中按集数映射
         """
         results: List[MetadataResult] = []
-        semaphore = asyncio.Semaphore(max_concurrency)  # 并发控制
+        if not file_assets:
+            return results
 
-        # -------------------------- 核心步骤：一次性查询所有FileAsset --------------------------
+        path_infos: Dict[int, Dict[str, Any]] = {}
+        tasks: List[asyncio.Task] = []
+        for fa in file_assets:
+            tasks.append(asyncio.create_task(asyncio.to_thread(guessit, fa.full_path)))
+        parsed_list = await asyncio.gather(*tasks, return_exceptions=True)
+        for fa, parsed in zip(file_assets, parsed_list):
+            if isinstance(parsed, Exception):
+                logger.error(f"解析文件名失败: file_id={fa.id}, 错误={parsed}")
+                path_infos[fa.id] = {}
+            else:
+                path_infos[fa.id] = parsed or {}
+
+        movie_files: List[FileAsset] = []
+        episode_files: List[FileAsset] = []
+        for fa in file_assets:
+            info = path_infos.get(fa.id, {})
+            media_type = info.get("type")
+            ep_num = info.get("episode")
+            if media_type == "movie" and ep_num is None:
+                movie_files.append(fa)
+            else:
+                episode_files.append(fa)
+
+        if movie_files:
+            movie_tasks: List[asyncio.Task] = []
+            for fa in movie_files:
+                movie_tasks.append(asyncio.create_task(self.enrich_media_file(fa, language)))
+            movie_results = await asyncio.gather(*movie_tasks, return_exceptions=True)
+            for fa, res in zip(movie_files, movie_results):
+                if isinstance(res, Exception):
+                    logger.error(f"处理电影文件失败: file_id={fa.id}, 错误={res}", exc_info=True)
+                    results.append({
+                        "user_id": fa.user_id,
+                        "file_id": fa.id,
+                        "contract_type": "",
+                        "contract_payload": {},
+                        "path_info": path_infos.get(fa.id, {}),
+                        "success": False,
+                        "error_msg": f"处理电影文件失败: {str(res)}",
+                    })
+                else:
+                    results.append(res)
+
+        if not episode_files:
+            return results
+
+        episode_infos = [path_infos.get(fa.id, {}) for fa in episode_files]
+        titles = [pi.get("title") for pi in episode_infos]
+        years = [pi.get("year") for pi in episode_infos]
+        countries = [pi.get("country") for pi in episode_infos]
+        seasons = [pi.get("season") for pi in episode_infos]
+
+        agg_title = self._most_common_non_empty(titles) or titles[0] if titles else None
+        agg_year = self._most_common_non_empty(years)
+        agg_country = self._most_common_non_empty(countries)
+        agg_season = self._most_common_non_empty(seasons)
+
+        corrected_type = MediaType.TV_EPISODE
+
+        if not agg_title:
+            for fa in episode_files:
+                results.append({
+                    "user_id": fa.user_id,
+                    "file_id": fa.id,
+                    "contract_type": "",
+                    "contract_payload": {},
+                    "path_info": path_infos.get(fa.id, {}),
+                    "success": False,
+                    "error_msg": "无法解析有效标题"
+                })
+            return results
+
+        logger.info(
+            f"📦 组级搜索: title='{agg_title}', 年份={agg_year}, 语言={language}, 类型={corrected_type.value}, 组大小={len(episode_files)}"
+        )
+        search_results = await scraper_manager.search_media(
+            title=agg_title,
+            year=agg_year,
+            media_type=corrected_type,
+            language=language,
+        )
+
+        if not search_results:
+            err_msg = f"未找到元数据: title='{agg_title}' (年份={agg_year})"
+            logger.warning(err_msg)
+            for fa in episode_files:
+                results.append({
+                    "user_id": fa.user_id,
+                    "file_id": fa.id,
+                    "contract_type": "",
+                    "contract_payload": {},
+                    "path_info": path_infos.get(fa.id, {}),
+                    "success": False,
+                    "error_msg": err_msg
+                })
+            return results
+
+        parsed_data = {
+            "title": agg_title,
+            "year": agg_year,
+            "language": language,
+            "country": agg_country,
+        }
+        best_match = self._get_best_match(search_results, parsed_data)
+        if not best_match:
+            err_msg = f"无最优匹配结果: title='{agg_title}' (年份={agg_year})"
+            logger.warning(err_msg)
+            for fa in episode_files:
+                results.append({
+                    "user_id": fa.user_id,
+                    "file_id": fa.id,
+                    "contract_type": "",
+                    "contract_payload": {},
+                    "path_info": path_infos.get(fa.id, {}),
+                    "success": False,
+                    "error_msg": err_msg
+                })
+            return results
+
+        logger.info(
+            f"🏆 组级最佳匹配：title='{best_match.title}', 年份={best_match.year}, ID={getattr(best_match, 'id', None)}"
+        )
+
+        season_number = agg_season or 1
+        try:
+            series_detail: Optional[ScraperSeriesDetail] = await scraper_manager.get_series_details_cached(
+                best_match=best_match,
+                language=language,
+            )
+            season_detail: Optional[ScraperSeasonDetail] = await scraper_manager.get_season_details_cached(
+                best_match=best_match,
+                language=language,
+                season=season_number,
+            )
+        except Exception as e:
+            logger.error(f"获取系列/季详情失败: {e}", exc_info=True)
+            series_detail = None
+            season_detail = None
+
+        if not season_detail or not season_detail.episodes:
+            logger.warning("季详情缺失或无 episodes，回退为逐集详情模式")
+            for fa in episode_files:
+                path_info = path_infos.get(fa.id, {})
+                ep_num = path_info.get("episode")
+                if ep_num is None:
+                    results.append({
+                        "user_id": fa.user_id,
+                        "file_id": fa.id,
+                        "contract_type": "",
+                        "contract_payload": {},
+                        "path_info": path_info,
+                        "success": False,
+                        "error_msg": "剧集文件缺少 episode 编号，无法匹配单集",
+                    })
+                    continue
+                try:
+                    contract_type, details_obj = await scraper_manager.get_detail(
+                        best_match=best_match,
+                        media_type=MediaType.TV_EPISODE,
+                        language=language,
+                        season=season_number,
+                        episode=int(ep_num),
+                    )
+                    results.append({
+                        "user_id": fa.user_id,
+                        "file_id": fa.id,
+                        "contract_type": contract_type,
+                        "contract_payload": details_obj.model_dump() if details_obj else {},
+                        "path_info": path_info,
+                        "success": bool(details_obj),
+                        "error_msg": "" if details_obj else "未获取到单集详情",
+                    })
+                except Exception as e:
+                    logger.error(f"获取单集详情失败: file_id={fa.id}, 错误={e}", exc_info=True)
+                    results.append({
+                        "user_id": fa.user_id,
+                        "file_id": fa.id,
+                        "contract_type": "",
+                        "contract_payload": {},
+                        "path_info": path_info,
+                        "success": False,
+                        "error_msg": f"获取单集详情失败: {str(e)}",
+                    })
+            return results
+
+        for fa in episode_files:
+            path_info = path_infos.get(fa.id, {})
+            ep_num = path_info.get("episode")
+            if ep_num is None:
+                results.append({
+                    "user_id": fa.user_id,
+                    "file_id": fa.id,
+                    "contract_type": "",
+                    "contract_payload": {},
+                    "path_info": path_info,
+                    "success": False,
+                    "error_msg": "剧集文件缺少 episode 编号，无法匹配单集",
+                })
+                continue
+
+            episode_item: Optional[ScraperEpisodeItem] = None
+            try:
+                for item in season_detail.episodes:
+                    if item.episode_number == int(ep_num):
+                        episode_item = item
+                        break
+            except Exception as e:
+                logger.error(f"遍历季 episodes 失败: {e}", exc_info=True)
+
+            if not episode_item:
+                results.append({
+                    "user_id": fa.user_id,
+                    "file_id": fa.id,
+                    "contract_type": "",
+                    "contract_payload": {},
+                    "path_info": path_info,
+                    "success": False,
+                    "error_msg": f"在季详情中未找到第 {ep_num} 集",
+                })
+                continue
+
+            try:
+                episode_detail = ScraperEpisodeDetail(
+                    episode_id=episode_item.episode_id,
+                    episode_number=episode_item.episode_number,
+                    season_number=episode_item.season_number,
+                    name=episode_item.name,
+                    overview=episode_item.overview,
+                    air_date=episode_item.air_date,
+                    runtime=episode_item.runtime,
+                    still_path=episode_item.still_path,
+                    vote_average=episode_item.vote_average,
+                    vote_count=episode_item.vote_count,
+                    provider=getattr(season_detail, "provider", None),
+                    provider_url=getattr(season_detail, "provider_url", None),
+                    artworks=getattr(season_detail, "artworks", []),
+                    credits=getattr(season_detail, "credits", []),
+                    external_ids=getattr(season_detail, "external_ids", []),
+                    raw_data=season_detail.raw_data,
+                    series=series_detail,
+                    season=season_detail,
+                    episode_type=None,
+                )
+            except Exception as e:
+                logger.error(f"构造单集详情对象失败: file_id={fa.id}, 错误={e}", exc_info=True)
+                results.append({
+                    "user_id": fa.user_id,
+                    "file_id": fa.id,
+                    "contract_type": "",
+                    "contract_payload": {},
+                    "path_info": path_info,
+                    "success": False,
+                    "error_msg": f"构造单集详情失败: {str(e)}",
+                })
+                continue
+
+            results.append({
+                "user_id": fa.user_id,
+                "file_id": fa.id,
+                "contract_type": "episode",
+                "contract_payload": episode_detail.model_dump(),
+                "path_info": path_info,
+                "success": True,
+                "error_msg": "",
+            })
+
+        return results
+
+    async def enrich_multiple_files(self, file_ids: List[int], user_id: int, max_concurrency: int = 20) -> List[MetadataResult]:
+        """
+        批量丰富元数据
+        - 一次性查出所有 FileAsset 与用户语言
+        - 按父目录路径分组，一组通常为一季的所有集或一个电影的多版本
+        - 每组调用 enrich_media_files，充分利用组内信息提升解析准确率
+        """
+        results: List[MetadataResult] = []
+        semaphore = asyncio.Semaphore(max_concurrency)
+
         async with AsyncSessionLocal() as session:
-            # 批量查询：IN条件一次获取所有数据，减少数据库连接次数
             stmt = select(FileAsset).where(FileAsset.id.in_(file_ids))
             result = await session.exec(stmt)
             file_assets = result.all()
 
             user_stmt = select(User).where(User.id == user_id)
             user_result = await session.exec(user_stmt)
-            language = user_result.first().language
-        
-           
+            user_obj = user_result.first()
+            language = getattr(user_obj, "language", "zh-CN") if user_obj else "zh-CN"
 
-        # 构建file_id到FileAsset的映射，方便快速匹配
         file_asset_map: Dict[int, FileAsset] = {fa.id: fa for fa in file_assets}
 
-        # -------------------------- 处理每个file_id（含不存在的情况） --------------------------
-        # 1. 先处理查不到FileAsset的file_id，返回错误结果
         for file_id in file_ids:
             if file_id not in file_asset_map:
                 err_msg = f"文件不存在: file_id={file_id}"
                 logger.error(err_msg)
                 results.append({
-                    "user_id": 0,
+                    "user_id": user_id,
                     "file_id": file_id,
                     "contract_type": "",
                     "contract_payload": {},
                     "path_info": {},
                     "success": False,
-                    "error_msg": err_msg
+                    "error_msg": err_msg,
                 })
 
-        # 2. 异步处理查到的FileAsset（用信号量控制并发）
-        async def _bound_enrich(file_asset: FileAsset):
+        grouped: Dict[str, List[FileAsset]] = {}
+        for fa in file_assets:
+            key = self._get_parent_dir_key(fa)
+            grouped.setdefault(key, []).append(fa)
+
+        async def _process_group(group_files: List[FileAsset]) -> List[MetadataResult]:
             async with semaphore:
                 try:
-                    # 直接调用enrich_media_file，传file_asset、language
-                    return await self.enrich_media_file(
-                        file_asset=file_asset,
-                        language=language,
-                    )
+                    if len(group_files) == 1:
+                        fa = group_files[0]
+                        res = await self.enrich_media_file(fa, language)
+                        return [res]
+                    return await self.enrich_media_files(group_files, language)
                 except Exception as e:
-                    # 在协程内部捕获异常，确保单个任务失败不影响其他任务
-                    # 并返回一个标准的错误结果格式
-                    logger.error(f"处理文件 {file_asset.id} 时发生内部错误: {e}", exc_info=True)
-                    return {
-                        "user_id": file_asset.user_id,
-                        "file_id": file_asset.id,
-                        "contract_type": "",
-                        "contract_payload": {},
-                        "path_info": {},
-                        "success": False,
-                        "error_msg": f"内部处理错误: {str(e)}"
-                    }
+                    logger.error(f"处理分组失败: 错误={e}", exc_info=True)
+                    group_results: List[MetadataResult] = []
+                    for fa in group_files:
+                        group_results.append({
+                            "user_id": fa.user_id,
+                            "file_id": fa.id,
+                            "contract_type": "",
+                            "contract_payload": {},
+                            "path_info": {},
+                            "success": False,
+                            "error_msg": f"分组处理失败: {str(e)}",
+                        })
+                    return group_results
 
+        tasks_group = [asyncio.create_task(_process_group(group_files)) for group_files in grouped.values()]
+        group_results_list = await asyncio.gather(*tasks_group, return_exceptions=True)
 
-        # 创建任务并执行
-        tasks = [asyncio.create_task(_bound_enrich(fa)) for fa in file_asset_map.values()]
-        completed_results = await asyncio.gather(*tasks, return_exceptions=True) # <-- 关键改动
-
-        # 处理 gather 返回的结果，因为 return_exceptions=True，结果中可能包含 Exception 对象
-        for res in completed_results:
-            if isinstance(res, Exception):
-                # 这种情况理论上不应该发生，因为我们在 _bound_enrich 中已经捕获了所有异常
-                # 但作为最后一道防线，以防万一
-                logger.critical(f"未知异常被 gather 捕获: {res}", exc_info=True)
-                # 可以选择添加一个通用的错误结果，或者直接忽略
+        for group_res in group_results_list:
+            if isinstance(group_res, Exception):
+                logger.critical(f"未知分组异常: {group_res}", exc_info=True)
                 continue
-            else:
-                # res 是 MetadataResult 字典
-                results.append(res)
+            results.extend(group_res)
 
         return results
+
 
     # region
     # async def enrich_media_file(self, file_id: int) -> MetadataResult:
@@ -709,8 +989,5 @@ class MetadataEnricher:
     #         return {"file_id": file_id, "user_id": 0, "contract_type": "", "contract_payload": {}}
     # endregion   
 
-
 # 全局元数据丰富器实例
 metadata_enricher = MetadataEnricher()
-
-

@@ -302,6 +302,76 @@ class ScraperManager:
         except Exception:
             return
 
+    async def get_series_details_cached(
+        self,
+        best_match: "ScraperSearchResult",
+        language: str = "",
+    ) -> Optional["ScraperSeriesDetail"]:
+        """
+        获取并缓存系列详情，只命中一次插件调用
+        """
+        self._ensure_started()
+
+        provider = getattr(best_match, "provider", None)
+        provider_id = getattr(best_match, "id", None)
+        if not provider or provider_id is None:
+            return None
+
+        plugin = self._plugins.get(provider)
+        if not plugin:
+            return None
+
+        lang = language or getattr(plugin, "default_language", "")
+        cache_key = self._cache_key("series", provider, lang, int(provider_id))
+        redis_key = self._redis_key("series", provider, lang, int(provider_id))
+        return await self._get_or_compute_cached_model(
+            cache_key,
+            redis_key,
+            ScraperSeriesDetail,
+            lambda: self._call_with_timeout(
+                provider,
+                "get_series_details",
+                plugin.get_series_details(int(provider_id), lang),
+            ),
+        )
+
+    async def get_season_details_cached(
+        self,
+        best_match: "ScraperSearchResult",
+        language: str = "",
+        season: Optional[int] = None,
+    ) -> Optional["ScraperSeasonDetail"]:
+        """
+        获取并缓存某一季详情，只命中一次插件调用
+        """
+        self._ensure_started()
+
+        if season is None:
+            return None
+
+        provider = getattr(best_match, "provider", None)
+        provider_id = getattr(best_match, "id", None)
+        if not provider or provider_id is None:
+            return None
+
+        plugin = self._plugins.get(provider)
+        if not plugin:
+            return None
+
+        lang = language or getattr(plugin, "default_language", "")
+        cache_key = self._cache_key("season", provider, lang, int(provider_id), int(season))
+        redis_key = self._redis_key("season", provider, lang, int(provider_id), int(season))
+        return await self._get_or_compute_cached_model(
+            cache_key,
+            redis_key,
+            ScraperSeasonDetail,
+            lambda: self._call_with_timeout(
+                provider,
+                "get_season_details",
+                plugin.get_season_details(int(provider_id), int(season), lang),
+            ),
+        )
+
     async def _get_or_compute_cached_model(
         self,
         cache_key: Tuple[Any, ...],

@@ -11,7 +11,7 @@
 - 安装依赖：`pip install -r requirements.txt`
 - cd media-server/ && source  venv/bin/activate && uvicorn main:app --reload
 - cd media-server/ && source  venv/bin/activate && python start_task_executor.py
-- cd media-server/ && source  venv/bin/activate && dramatiq services.task.consumers
+- cd media-server/ && source  venv/bin/activate && dramatiq services.task.consumers --processes 4 --threads 1
 - cd media-client && flutter run -d web-server --web-port 5200     # 启动前端
 {
   "email": "user@example.com",
@@ -3143,7 +3143,7 @@ toolName: CompactFake
   "still_path": "/cYkgj88MbQy4FDuIikWDd9t9z19.jpg",
   "vote_average": 0.0,
   "vote_count": 1
-
+}
 
 ```
 

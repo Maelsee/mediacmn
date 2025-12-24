@@ -960,14 +960,14 @@ class MetadataPersistenceService:
 
                 # --- 3. 条件性更新 MediaCore ---
                 # 如果 provider 是 'tmdb'，则更新主表的 tmdb_id
-                if provider == 'tmdb':
-                    # 直接执行 UPDATE 语句比先 SELECT 再 UPDATE 更高效
-                    session.execute(
-                        update(MediaCore).where(
-                            MediaCore.user_id == user_id,
-                            MediaCore.id == core_id
-                        ).values(tmdb_id=external_id_str)
-                    )
+                # if provider == 'tmdb':
+                #     # 直接执行 UPDATE 语句比先 SELECT 再 UPDATE 更高效
+                #     session.execute(
+                #         update(MediaCore).where(
+                #             MediaCore.user_id == user_id,
+                #             MediaCore.id == core_id
+                #         ).values(tmdb_id=external_id_str)
+                #     )
                 
                 # 提交保存点：如果所有操作都成功，提交保存点
                 savepoint.commit()
@@ -1526,17 +1526,17 @@ class MetadataPersistenceService:
         }
         model_cls = model_map.get(metadata_type)
         if isinstance(metadata, dict):
-            # if model_cls:
-            #     try:
-            #         metadata = model_cls.model_validate(metadata)
-            #     except Exception as ve:
-            #         logger.error(f"元数据校验失败: {ve}")
-            #         # 这里可以选择抛出异常或降级为 dict
-            # else:
-            metadata = _DictWrapper(metadata)
-                # 如果没有找到对应的模型类，metadata 依然是 dict
-                # 这可能会导致后续 handler 报错，建议增加警告
-            logger.debug(f"类型 {metadata_type} 没有关联的模型类，将以 dict 形式继续")
+            if model_cls:
+                try:
+                    metadata = model_cls.model_validate(metadata)
+                except Exception as ve:
+                    logger.error(f"元数据校验失败: {ve}")
+                    # 这里可以选择抛出异常或降级为 dict
+            else:
+                metadata = _DictWrapper(metadata)
+                    # 如果没有找到对应的模型类，metadata 依然是 dict
+                    # 这可能会导致后续 handler 报错，建议增加警告
+                logger.info(f"类型 {metadata_type} 没有关联的模型类，将以 dict 形式继续")
         
         
 

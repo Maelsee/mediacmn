@@ -140,6 +140,7 @@ def test_manager_get_detail_caches_series_and_season_and_times_out():
         await scraper_manager.get_detail(bm, MediaType.TV_EPISODE, language="en-US", season=1, episode=1)
         assert plugin.series_calls == 1
         assert plugin.season_calls == 1
+        # 第二次同一单集仍然执行一次插件调用（未对 episode 结果做缓存）
         assert plugin.episode_calls == 4
 
         plugin2 = DummyPlugin()
