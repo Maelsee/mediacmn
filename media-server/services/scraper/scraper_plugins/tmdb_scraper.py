@@ -316,7 +316,7 @@ class TmdbScraper(ScraperPlugin):
                         overview=ep.get("overview"),
                         air_date=ep.get("air_date"),
                         runtime=ep.get("runtime"),
-                        still_path=ep.get("still_path"),
+                        still_path=f"{self._image_base}/w500{ep['still_path']}" if ep.get("still_path") else None,
                         vote_average=ep.get("vote_average"),
                         vote_count=ep.get("vote_count"),
                     ))

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query, HTTPException, Path
+from pydantic import BaseModel, conint
 from sqlmodel import Session, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from core.db import get_async_session
@@ -87,16 +87,27 @@ async def list_home_cards(
 
 @router.get("/{id}/detail", response_model=MediaDetailResponse)
 async def media_detail(
-    id: int,
+    id: int = Path(..., ge=1, le=2147483647),
     current_subject: str = Depends(get_current_subject),
     db: AsyncSession = Depends(get_async_session),
 ):
     """
     媒体详情
-    
+    - 若找不到对应媒体，返回 404 而不是响应校验错误
     """
     user_id = int(current_subject)
-    return await media_service.get_media_detail(db=db, user_id=user_id, core_id=id)
+    detail = await media_service.get_media_detail(db=db, user_id=user_id, core_id=id)
+    if not detail or detail.get("error") in {"not_found", "series_not_found"}:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "media_not_found", "message": "媒体不存在或无权限"},
+        )
+    if detail.get("error"):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "media_detail_error", "message": detail.get("error")},
+        )
+    return detail
 
 
 async def _compose_playinfo_inline(db: AsyncSession, fa: FileAsset) -> dict:
@@ -169,7 +180,7 @@ async def _compose_playinfo_inline(db: AsyncSession, fa: FileAsset) -> dict:
 
 @router.get("/play/{file_id}")
 async def get_play_url(
-    file_id: int,
+    file_id: int = Path(..., ge=1, le=2147483647),
     current_subject: str = Depends(get_current_subject),
     db: AsyncSession = Depends(get_async_session),
 ):
@@ -187,7 +198,7 @@ async def get_play_url(
 
 
 class RefreshPlayRequest(BaseModel):
-    file_id: int
+    file_id: conint(ge=1, le=2147483647)
 
 @router.post("/play/refresh")
 async def refresh_play_url(

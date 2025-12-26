@@ -5,7 +5,7 @@ import asyncio
 import logging
 import os
 from collections import Counter
-from typing import Dict, List, Optional, Any, TypedDict
+from typing import Dict, List, Optional, Any, TypedDict, AsyncIterator
 from sqlmodel import select
 from guessit import guessit
 from core.db import AsyncSessionLocal
@@ -480,6 +480,8 @@ class MetadataEnricher:
                 for item in season_detail.episodes:
                     if item.episode_number == int(ep_num):
                         episode_item = item
+                        # episode_item.provider = getattr(season_detail, "provider", None)
+                        # logger.info(f"匹配到第 {ep_num} 集: {episode_item}")
                         break
             except Exception as e:
                 logger.error(f"遍历季 episodes 失败: {e}", exc_info=True)
@@ -543,14 +545,10 @@ class MetadataEnricher:
 
         return results
 
-    async def enrich_multiple_files(self, file_ids: List[int], user_id: int, max_concurrency: int = 20) -> List[MetadataResult]:
+    async def iter_enrich_multiple_files(self, file_ids: List[int], user_id: int, max_concurrency: int = 20) -> AsyncIterator[MetadataResult]:
         """
-        批量丰富元数据
-        - 一次性查出所有 FileAsset 与用户语言
-        - 按父目录路径分组，一组通常为一季的所有集或一个电影的多版本
-        - 每组调用 enrich_media_files，充分利用组内信息提升解析准确率
+        流式批量丰富元数据，按分组异步产出单条结果
         """
-        results: List[MetadataResult] = []
         semaphore = asyncio.Semaphore(max_concurrency)
 
         async with AsyncSessionLocal() as session:
@@ -569,7 +567,7 @@ class MetadataEnricher:
             if file_id not in file_asset_map:
                 err_msg = f"文件不存在: file_id={file_id}"
                 logger.error(err_msg)
-                results.append({
+                yield {
                     "user_id": user_id,
                     "file_id": file_id,
                     "contract_type": "",
@@ -577,7 +575,7 @@ class MetadataEnricher:
                     "path_info": {},
                     "success": False,
                     "error_msg": err_msg,
-                })
+                }
 
         grouped: Dict[str, List[FileAsset]] = {}
         for fa in file_assets:
@@ -608,14 +606,22 @@ class MetadataEnricher:
                     return group_results
 
         tasks_group = [asyncio.create_task(_process_group(group_files)) for group_files in grouped.values()]
-        group_results_list = await asyncio.gather(*tasks_group, return_exceptions=True)
-
-        for group_res in group_results_list:
-            if isinstance(group_res, Exception):
-                logger.critical(f"未知分组异常: {group_res}", exc_info=True)
+        for task in asyncio.as_completed(tasks_group):
+            try:
+                group_res = await task
+            except Exception as e:
+                logger.critical(f"未知分组异常: {e}", exc_info=True)
                 continue
-            results.extend(group_res)
+            for item in group_res:
+                yield item
 
+    async def enrich_multiple_files(self, file_ids: List[int], user_id: int, max_concurrency: int = 20) -> List[MetadataResult]:
+        """
+        兼容旧接口：收集流式结果为列表返回
+        """
+        results: List[MetadataResult] = []
+        async for item in self.iter_enrich_multiple_files(file_ids=file_ids, user_id=user_id, max_concurrency=max_concurrency):
+            results.append(item)
         return results
 
 

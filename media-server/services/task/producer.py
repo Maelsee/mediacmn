@@ -33,6 +33,17 @@ class PersistPayload(BaseModel):
     path_info: Dict
 
 
+class PersistBatchItemPayload(BaseModel):
+    file_id: int
+    contract_type: str
+    contract_payload: Dict
+    path_info: Dict
+
+
+class PersistBatchPayload(BaseModel):
+    user_id: int
+    items: List[PersistBatchItemPayload]
+
 
 class DeletePayload(BaseModel):
     user_id: int
@@ -104,12 +115,18 @@ async def _enqueue(
     try:
         # 3. 延迟导入 Actor（避免循环导入），映射队列与 Actor
         from .consumers import (
-            scan_worker, metadata_worker, persist_worker, delete_worker, localize_worker
+            scan_worker,
+            metadata_worker,
+            persist_worker,
+            persist_batch_worker,
+            delete_worker,
+            localize_worker,
         )
         actor_mapping = {
             "scan": scan_worker,
             "metadata": metadata_worker,
             "persist": persist_worker,
+            "persist_batch": persist_batch_worker,
             "delete": delete_worker,
             "localize": localize_worker,
         }
@@ -207,6 +224,22 @@ async def create_persist_task(
     if idempotency_key:
         payload["idempotency_key"] = idempotency_key
     return await _enqueue("persist", "persist", payload, priority=priority)
+
+
+async def create_persist_batch_task(
+    user_id: int,
+    items: List[Dict],
+    *,
+    priority: TaskPriority = TaskPriority.NORMAL,
+    idempotency_key: Optional[str] = None
+) -> str:
+    payload = PersistBatchPayload(
+        user_id=user_id,
+        items=items,
+    ).model_dump()
+    if idempotency_key:
+        payload["idempotency_key"] = idempotency_key
+    return await _enqueue("persist_batch", "persist_batch", payload, priority=priority)
 
 async def create_delete_task(
     user_id: int,

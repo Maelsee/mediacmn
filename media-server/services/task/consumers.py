@@ -132,7 +132,8 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
         # 1. 导入全局元数据增强器实例（避免重复初始化）
         from services.media.metadata_enricher import metadata_enricher
         # 导入持久化任务创建函数
-        from .producer import create_persist_task, create_localize_task
+        # from .producer import create_persist_task, create_localize_task
+        from .producer import create_persist_batch_task, create_localize_task
 
         from services.scraper.manager import scraper_manager  # 确保导入路径正确
         # 检查刮削插件系统是否运行
@@ -141,9 +142,6 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
             # 补救措施：如果确实没启动，这里才调用 startup
             await scraper_manager.startup()
             
-
-
-
         # 2. 解析任务参数
         user_id = payload.get("user_id")
         file_ids = payload.get("file_ids", [])
@@ -159,55 +157,125 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
         valid_result_count = 0
         localize_task_count = 0
 
-        batch_size = 200
-        total_files = len(file_ids)
+        batch_items: List[Dict[str, Any]] = []
+        BATCH_SIZE = 100  # 批次大小：每100条创建一次持久化任务
+        batch_number = 1  # 批次号，用于幂等性key唯一标识
 
-        for i in range(0, total_files, batch_size):
-            batch_ids = file_ids[i:i + batch_size]
-            logger.info(f"📦 处理元数据批次：{i // batch_size + 1}，文件数={len(batch_ids)}")
-            metadata_results = await metadata_enricher.enrich_multiple_files(
-                file_ids=batch_ids,
-                user_id=user_id,
-                max_concurrency=20
+        async for result in metadata_enricher.iter_enrich_multiple_files(file_ids=file_ids, user_id=user_id, max_concurrency=20):
+            if not result.get("success") or not result.get("contract_payload") or result.get("file_id") not in file_ids:
+                logger.warning(f"⚠️ 跳过无效元数据结果：file_id={result.get('file_id')}, contract_payload={bool(result.get('contract_payload'))}")
+                continue
+        # region 单文件处理
+        #     valid_result_count += 1
+        #     try:
+        #         idempotency_key = f"persist:{user_id}:{result.get('file_id')}:{result.get('contract_type')}"
+        #         await create_persist_task(
+        #             user_id=user_id,
+        #             file_id=result.get("file_id"),
+        #             contract_type=result.get("contract_type"),
+        #             contract_payload=result.get("contract_payload"),
+        #             path_info=result.get("path_info"),
+        #             idempotency_key=idempotency_key
+        #         )
+        #         persist_task_count += 1
+        #         logger.debug(f"✅ 为文件 {result.get('file_id')} 创建持久化任务：幂等键={idempotency_key}")
+        #     except Exception as e:
+        #         logger.error(f"❌ 为文件 {result.get('file_id')} 创建持久化任务失败：{e}", exc_info=True)
+
+        #     if localization_enabled:
+        #         try:
+        #             idempotency_key = f"localize:{user_id}:{result.get('file_id')}"
+        #             await create_localize_task(
+        #                 user_id=user_id,
+        #                 file_id=result.get("file_id"),
+        #                 storage_id=storage_id,
+        #                 idempotency_key=idempotency_key
+        #             )
+        #             localize_task_count += 1
+        #         except Exception as e:
+        #             logger.error(f"❌ 为文件 {result.get('file_id')} 创建本地化任务失败：{e}", exc_info=True)
+
+        # if localization_enabled and valid_result_count > 0:
+        #     logger.info(f"📌 元数据任务 {task_id} 已创建本地化任务：{localize_task_count}/{valid_result_count} 个")
+        # endregion
+
+        # region 批量处理
+            # 累计有效结果数
+            valid_result_count += 1
+            # 添加到当前批次
+            batch_items.append(
+                {
+                    "file_id": result.get("file_id"),
+                    "contract_type": result.get("contract_type"),
+                    "contract_payload": result.get("contract_payload"),
+                    "path_info": result.get("path_info") or {},
+                }
             )
-            logger.debug(f"📦 元数据批次完成：{len(metadata_results)} 个结果")
 
-            for result in metadata_results:
-                if not result.get("success") or not result.get("contract_payload") or result.get("file_id") not in batch_ids:
-                    logger.warning(f"⚠️ 跳过无效元数据结果：file_id={result.get('file_id')}, contract_payload={bool(result.get('contract_payload'))}")
-                    continue
-
-                valid_result_count += 1
+            # 批次满100条，创建持久化任务
+            if len(batch_items) >= BATCH_SIZE:
                 try:
-                    idempotency_key = f"persist:{user_id}:{result.get('file_id')}:{result.get('contract_type')}"
-                    await create_persist_task(
+                    # 幂等性key包含批次号，避免多批次重复
+                    idempotency_key = f"persist_batch:{user_id}:{task_id}:batch_{batch_number}"
+                    await create_persist_batch_task(
                         user_id=user_id,
-                        file_id=result.get("file_id"),
-                        contract_type=result.get("contract_type"),
-                        contract_payload=result.get("contract_payload"),
-                        path_info=result.get("path_info"),
-                        idempotency_key=idempotency_key
+                        items=batch_items,
+                        idempotency_key=idempotency_key,
                     )
-                    persist_task_count += 1
-                    logger.debug(f"✅ 为文件 {result.get('file_id')} 创建持久化任务：幂等键={idempotency_key}")
+                    persist_task_count += len(batch_items)
+                    logger.info(
+                        f"✅ 元数据任务 {task_id} 已创建第 {batch_number} 批持久化任务："
+                        f"批次大小={len(batch_items)}, 累计持久化={persist_task_count}"
+                    )
+                    # 清空当前批次，准备下一批
+                    batch_items.clear()
+                    batch_number += 1
                 except Exception as e:
-                    logger.error(f"❌ 为文件 {result.get('file_id')} 创建持久化任务失败：{e}", exc_info=True)
+                    logger.error(
+                        f"❌ 元数据任务 {task_id} 创建第 {batch_number} 批持久化任务失败",
+                        exc_info=True
+                    )
+                    # 可根据业务需求选择：继续下一批/终止流程/重试当前批
+                    # 此处保留原逻辑：记录错误后继续处理下一批
+                    batch_items.clear()
+                    batch_number += 1
+        
 
-                if localization_enabled:
-                    try:
-                        idempotency_key = f"localize:{user_id}:{result.get('file_id')}"
-                        await create_localize_task(
-                            user_id=user_id,
-                            file_id=result.get("file_id"),
-                            storage_id=storage_id,
-                            idempotency_key=idempotency_key
-                        )
-                        localize_task_count += 1
-                    except Exception as e:
-                        logger.error(f"❌ 为文件 {result.get('file_id')} 创建本地化任务失败：{e}", exc_info=True)
+        # 处理剩余不足100条的最后一批数据
+        if batch_items:
+            try:
+                idempotency_key = f"persist_batch:{user_id}:{task_id}:batch_{batch_number}"
+                await create_persist_batch_task(
+                    user_id=user_id,
+                    items=batch_items,
+                    idempotency_key=idempotency_key,
+                )
+                persist_task_count += len(batch_items)
+                logger.info(
+                    f"✅ 元数据任务 {task_id} 已创建第 {batch_number} 批（最后一批）持久化任务："
+                    f"批次大小={len(batch_items)}, 累计持久化={persist_task_count}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"❌ 元数据任务 {task_id} 创建第 {batch_number} 批（最后一批）持久化任务失败",
+                    exc_info=True
+                )
+        # endregion
 
-        if localization_enabled and valid_result_count > 0:
-            logger.info(f"📌 元数据任务 {task_id} 已创建本地化任务：{localize_task_count}/{valid_result_count} 个")
+        
+        #  批量处理本地化任务
+        # if localization_enabled:
+        #     try:
+        #         idempotency_key = f"localize:{user_id}:{result.get('file_id')}"
+        #         await create_localize_task(
+        #             user_id=user_id,
+        #             file_id=result.get("file_id"),
+        #             storage_id=storage_id,
+        #             idempotency_key=idempotency_key
+        #         )
+        #         localize_task_count += 1
+        #     except Exception as e:
+        #         logger.error(f"❌ 为文件 {result.get('file_id')} 创建本地化任务失败：{e}", exc_info=True)
 
         # 6. 更新任务最终状态（基于有效结果数判断，而非全量成功）
         if valid_result_count > 0:
@@ -245,9 +313,6 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
         )
 
 
-# --------------------------
-# 3. 持久化任务（异步函数 + 原生同步 actor 装饰器）
-# --------------------------
 @actor(queue_name="persist")
 async def persist_worker(task_id: str, payload: Dict[str, Any]) -> None:
     logger.info(f"✅ 消费者接收到持久化任务：task_id={task_id}，file_id={payload.get('file_id')}")
@@ -305,6 +370,43 @@ async def persist_worker(task_id: str, payload: Dict[str, Any]) -> None:
             error_message=error_msg,
             finished_at=_now(),
             updated_at=_now()
+        )
+
+
+@actor(queue_name="persist_batch")
+async def persist_batch_worker(task_id: str, payload: Dict[str, Any]) -> None:
+    logger.info(f"✅ 消费者接收到批量持久化任务：task_id={task_id}")
+    store = get_state_store()
+
+    try:
+        await store.update_status(task_id, TaskStatus.RUNNING)
+
+        items = payload.get("items", [])
+        if not items:
+            raise ValueError("持久化批量任务缺少 items 参数")
+
+        from services.media.metadata_persistence_async_service import MetadataPersistenceAsyncService
+
+        svc = MetadataPersistenceAsyncService()
+        result = await svc.apply_metadata_batch(items)
+        logger.info(f"批量持久化任务 {task_id}：{result}")
+        await store.update_status(
+            task_id,
+            TaskStatus.SUCCESS,
+            finished_at=_now(),
+            updated_at=_now(),
+            result=json.dumps(result),
+        )
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"❌ 批量持久化任务 {task_id} 执行失败：{error_msg}", exc_info=True)
+        await store.update_status(
+            task_id,
+            TaskStatus.FAILED,
+            error_message=error_msg,
+            finished_at=_now(),
+            updated_at=_now(),
         )
 
 # --------------------------

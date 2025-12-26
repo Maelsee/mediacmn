@@ -1372,6 +1372,10 @@ class MetadataPersistenceService:
             title_val = getattr(metadata, "name", None) or ""
             air_date,year_val = self._parse_dt(getattr(metadata, "air_date", None))
             tmdb_id = str(getattr(metadata, "episode_id", None)) if getattr(metadata, "provider", None) == "tmdb" and getattr(metadata, "episode_id", None) else None
+            still_path_url = getattr(metadata, "still_path", None)
+            # if still_path_url and getattr(metadata, "provider", None) == "tmdb":
+            #     if not isinstance(still_path_url, str) or not still_path_url.startswith("http"):
+            #         still_path_url = "https://image.tmdb.org/t/p/w500" + str(still_path_url)
             # 1. 首先安全地获取或创建 series_core 和 season_core
             # 这些函数已经被改造为并发安全
             series_core = None
@@ -1395,7 +1399,7 @@ class MetadataPersistenceService:
                 title=title_val,
                 plot=getattr(metadata, "overview", None),
                 display_rating=getattr(metadata, "vote_average", None),
-                display_poster_path=getattr(metadata, "still_path", None),
+                display_poster_path=still_path_url,
                 display_date=air_date,
                 year=year_val,
                 tmdb_id=tmdb_id,
@@ -1407,7 +1411,7 @@ class MetadataPersistenceService:
                 set_={
                     # 'plot': getattr(metadata, "overview", None),
                     # 'display_rating': getattr(metadata, "vote_average", None),
-                    # 'display_poster_path': getattr(metadata, "still_path", None),
+                    # 'display_poster_path': still_path_url,
                     # 'display_date': air_date,
                     # 'year': year_val,
                     # 'title': title_val,
@@ -1433,7 +1437,7 @@ class MetadataPersistenceService:
                 runtime=getattr(metadata, "runtime", None),
                 rating=getattr(metadata, "vote_average", None),
                 vote_count=getattr(metadata, "vote_count", None),
-                still_path=getattr(metadata, "still_path", None),
+                still_path=still_path_url,
                 episode_type=getattr(metadata, "episode_type", None),
                 aired_date=air_date
             ).on_conflict_do_update(
@@ -1446,7 +1450,7 @@ class MetadataPersistenceService:
                     # 'runtime': getattr(metadata, "runtime", None),
                     # 'rating': getattr(metadata, "vote_average", None),
                     # 'vote_count': getattr(metadata, "vote_count", None),
-                    # 'still_path': getattr(metadata, "still_path", None),
+                    # 'still_path': still_path_url,
                     # 'episode_type': getattr(metadata, "episode_type", None),
                     # 'aired_date': air_date
                 }
@@ -1454,7 +1458,7 @@ class MetadataPersistenceService:
             session.execute(stmt_ext)
 
             # --- 4. 调用其他已经改造过的 Upsert 辅助函数 ---
-            self._upsert_artworks(session, user_id, episode_core_id, getattr(metadata, "provider", None), getattr(metadata, "artworks", None))   
+            # self._upsert_artworks(session, user_id, episode_core_id, getattr(metadata, "provider", None), getattr(metadata, "artworks", None))   
             self._upsert_credits(session, user_id, episode_core_id, getattr(metadata, "credits", None), getattr(metadata, "provider", None))
             self._upsert_external_ids(session, user_id, episode_core_id, getattr(metadata, "external_ids", None))
        
@@ -1579,6 +1583,41 @@ class MetadataPersistenceService:
             # 考虑是否需要在这里回滚，但通常由调用方决定
             # session.rollback()
             return False
+
+    # async def apply_metadata_batch_async(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    #     if not items:
+    #         return {"processed": 0, "succeeded": 0, "errors": []}
+
+    #     from core.db import get_session as get_db_session
+    #     from models.media_models import FileAsset
+
+    #     def _run() -> Dict[str, Any]:
+    #         processed = 0
+    #         succeeded = 0
+    #         errors: List[Dict[str, Any]] = []
+    #         with next(get_db_session()) as session:
+    #             for item in items:
+    #                 file_id = item.get("file_id")
+    #                 contract_type = item.get("contract_type")
+    #                 metadata = item.get("contract_payload") or {}
+    #                 path_info = item.get("path_info") or {}
+    #                 if not file_id or not contract_type or not metadata:
+    #                     errors.append({"file_id": file_id, "error": "missing_params"})
+    #                     continue
+    #                 media_file = session.get(FileAsset, file_id)
+    #                 if not media_file:
+    #                     errors.append({"file_id": file_id, "error": "file_not_found"})
+    #                     continue
+    #                 ok = self.apply_metadata(session, media_file, metadata=metadata, metadata_type=contract_type, path_info=path_info)
+    #                 processed += 1
+    #                 if ok:
+    #                     succeeded += 1
+    #                 else:
+    #                     errors.append({"file_id": file_id, "error": "apply_failed"})
+    #             session.commit()
+    #         return {"processed": processed, "succeeded": succeeded, "errors": errors}
+
+    #     return await asyncio.to_thread(_run)
     
     # region _apply_series_detail 
     # def _apply_series_detail(self, session, user_id: int, sd: ScraperSeriesDetail) -> MediaCore:

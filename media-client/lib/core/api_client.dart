@@ -178,7 +178,7 @@ class ApiClient {
 
   Future<SourceCreateResponse> createSource(
       Map<String, dynamic> payload) async {
-    final res = await _client.post(_u('/api/storage'),
+    final res = await _client.post(_u('/api/storage-config'),
         headers: _headers(headers: {'Content-Type': 'application/json'}),
         body: jsonEncode(payload));
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -418,7 +418,7 @@ class ApiClient {
   }
 
   Future<List<SourceItem>> getSources({int page = 1, int size = 20}) async {
-    final res = await _client.get(_u('/api/storage'), headers: _headers());
+    final res = await _client.get(_u('/api/storage-config'), headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list.map(SourceItem.fromJson).toList();
@@ -435,7 +435,7 @@ class ApiClient {
 
   Future<SourceItem> getSource(String sourceId) async {
     final res =
-        await _client.get(_u('/api/storage/$sourceId'), headers: _headers());
+        await _client.get(_u('/api/storage-config/$sourceId'), headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final wrapped = data['data'] as Map<String, dynamic>?;
@@ -446,7 +446,7 @@ class ApiClient {
 
   Future<Map<String, dynamic>> getStorageDetail(String sourceId) async {
     final res =
-        await _client.get(_u('/api/storage/$sourceId'), headers: _headers());
+        await _client.get(_u('/api/storage-config/$sourceId'), headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final wrapped = data['data'] as Map<String, dynamic>?;
@@ -457,7 +457,7 @@ class ApiClient {
 
   Future<void> updateSource(
       String sourceId, Map<String, dynamic> payload) async {
-    final res = await _client.put(_u('/api/storage/$sourceId'),
+    final res = await _client.put(_u('/api/storage-config/$sourceId'),
         headers: _headers(headers: {'Content-Type': 'application/json'}),
         body: jsonEncode(payload));
     if (res.statusCode >= 200 && res.statusCode < 300) return;
@@ -474,7 +474,7 @@ class ApiClient {
 
   Future<void> deleteSource(String sourceId) async {
     final res =
-        await _client.delete(_u('/api/storage/$sourceId'), headers: _headers());
+        await _client.delete(_u('/api/storage-config/$sourceId'), headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) return;
     throw Exception('delete_source_failed');
   }

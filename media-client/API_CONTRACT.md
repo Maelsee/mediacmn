@@ -7,12 +7,12 @@
 - WebSocket：将 `http/https` 转换为 `ws/wss`，示例：`ws(s)://<host>/tasks/stream`
 
 ## 资源库（Sources）
-- GET `/api/storage/`
+- GET `/api/storage-config/`
   - Query：`storage_type?`（筛选：`webdav|smb|local|cloud`）
   - Res：`[{ id, user_id, name, storage_type, status? }]`
   - 状态值：`enabled|disabled|disconnected|error`（用于前端展示连接/可用性与启停状态）
 -后端提供资源库所有列表的api：
-- GET `/api/storage/`
+- GET `/api/storage-config/`
   - Res：200 OK `[
   {
     "id": 0,
@@ -26,7 +26,7 @@
 
 
 - POST `/sources`
-- 后端POST /api/storage/
+- 后端POST /api/storage-config/
   - Req（WebDAV 示例）：
     ```json
     {
@@ -96,18 +96,18 @@
       ```
   
 
-- GET `/api/storage/{id}`
+- GET `/api/storage-config/{id}`
   - Res：`{ success: true, message: string, data: { id, user_id, name, hostname,login,root_path,select_path,storage_type, created_at, updated_at, status?, detail } }`
 
-- PUT `/api/storage/{id}`
+- PUT `/api/storage-config/{id}`
   - Req（示例）：`{ name: string }`
   - Res：`{ id, name, storage_type, is_active, priority, updated_at }`
 
-- DELETE `/api/storage/{id}`
+- DELETE `/api/storage-config/{id}`
   - Res：`{ message: string }`
 
 测试当前资源库是否连接成功：
-- GET `/api/storage-unified/{storage_id}/test`
+- GET `/api/storage-server/{storage_id}/test`
   - Res：`{ success: true, message: string }`
 
 

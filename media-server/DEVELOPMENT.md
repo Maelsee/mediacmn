@@ -4566,3 +4566,25 @@ ScraperEpisodeItem（季内集条目）
 ---
 
 如果你希望我再把“跨进程击穿”也处理掉（Redis 分布式 singleflight：同一个 series/season/movie 在所有 worker 进程间同一时间只会打一次 TMDB），我可以在当前 Redis 缓存基础上加一个轻量实现（`SET NX EX` + 短等待轮询读取缓存），并补齐对应测试用例。
+
+
+batch_items.append(
+                {
+                    "file_id": result.get("file_id"),
+                    "contract_type": result.get("contract_type"),
+                    "contract_payload": result.get("contract_payload"),
+                    "path_info": result.get("path_info") or {},
+                }
+            )
+if batch_items:
+            try:
+                idempotency_key = f"persist_batch:{user_id}:{task_id}"
+                await create_persist_batch_task(
+                    user_id=user_id,
+                    items=batch_items,
+                    idempotency_key=idempotency_key,
+                )
+                persist_task_count = len(batch_items)
+                logger.info(f"✅ 元数据任务 {task_id} 已创建批量持久化任务：items={persist_task_count}")
+            except Exception as e:
+                logger.error(f"❌ 创建批量持久化任务失败：{e}", exc_info=True)

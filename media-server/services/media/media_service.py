@@ -27,11 +27,15 @@ from services.media.metadata_persistence_service import MetadataPersistenceServi
 class MediaService:
     def __init__(self):
         self.CACHE_EXPIRE_SECONDS = 3600
+        self._redis = None
         s = get_settings()
         try:
-            self._redis = redis.from_url(s.SCRAPER_CACHE_REDIS_URL, db=1, decode_responses=True)
+            redis_url = getattr(s, "SCRAPER_CACHE_REDIS_URL", None)
+            if redis_url:
+                self._redis = redis.from_url(redis_url, db=1, decode_responses=True)
         except Exception as e:
-            logger.error(f"MediaService: Redis 初始化失败: {e}")
+            logger.error(f"MediaService: Redis 初始化失败: {e}", exc_info=True)
+            self._redis = None
 
     def _runtime_text(self, minutes: Optional[int]) -> Optional[str]:
         if minutes is None:
@@ -72,19 +76,35 @@ class MediaService:
         if not storage_id:
             return None
         cache_key = f"MediaService:storage_sample_info:{storage_id}"
-        cache_data = await self._redis.get(cache_key)
-        if cache_data:
-            return json.loads(cache_data) if cache_data != "null" else None
+        if self._redis:        
+            try:
+                cache_data = await self._redis.get(cache_key)
+            except Exception as e:
+                logger.warning(f"MediaService: 读取存储缓存失败: {e}", exc_info=True)
+                cache_data = None
+            if cache_data:
+                try:
+                    return json.loads(cache_data) if cache_data != "null" else None
+                except Exception as e:
+                    logger.warning(f"MediaService: 解析存储缓存 JSON 失败: {e}", exc_info=True)
         st = (await db.exec(select(StorageConfig).where(StorageConfig.id == storage_id))).first()
         if not st:
-            await self._redis.setex(cache_key, 60, "null")
+            if self._redis:
+                try:
+                    await self._redis.setex(cache_key, 60, "null")
+                except Exception as e:
+                    logger.warning(f"MediaService: 写入存储空值缓存失败: {e}", exc_info=True)
             return None
         storage_info = {
             "id": st.id,
             "name": st.name,
             "type": st.storage_type
         }
-        await self._redis.setex(cache_key, self.CACHE_EXPIRE_SECONDS, json.dumps(storage_info))
+        if self._redis:
+            try:
+                await self._redis.setex(cache_key, self.CACHE_EXPIRE_SECONDS, json.dumps(storage_info))
+            except Exception as e:
+                logger.warning(f"MediaService: 写入存储缓存失败: {e}", exc_info=True)
         return storage_info
 
     def _normalize_asset_type(self, asset: FileAsset) -> str:
@@ -400,8 +420,8 @@ class MediaService:
                 "media_type": "movie",
                 "runtime": getattr(movie_ext, "runtime_minutes", None) if movie_ext else None,
                 "runtime_text": self._runtime_text(getattr(movie_ext, "runtime_minutes", None) if movie_ext else None),
-                "directors": self._get_crew(db, user_id, core.id, "Director"),
-                "writers": self._get_crew(db, user_id, core.id, "Writer"),
+                # "directors": await self._get_crew(db, user_id, core.id, "Director"),
+                # "writers": await self._get_crew(db, user_id, core.id, "Writer"),
             }
         else:
             return await self._get_series_detail2(db, user_id, core.id)
