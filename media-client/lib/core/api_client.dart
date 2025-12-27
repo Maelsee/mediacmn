@@ -119,7 +119,7 @@ class ApiClient {
       }
       return;
     }
-    throw Exception('refresh_failed');
+    throw Exception('刷新令牌失败');
   }
 
   Future<void> logout() async {
@@ -132,50 +132,98 @@ class ApiClient {
     setTokenExpiresIn(null);
   }
 
-  Future<ScanGroup> scanAll({List<String>? sourceIds}) async {
-    final qs = <String>[];
-    if (sourceIds != null && sourceIds.isNotEmpty) {
-      qs.add('sources=${Uri.encodeComponent(sourceIds.join(','))}');
-    }
-    final q = qs.isEmpty ? '' : '?${qs.join('&')}';
-    final res = await _client.get(_u('/api/scan/all$q'), headers: _headers());
+  /// 启动扫描任务
+  /// [storageId] 可选的存储 ID，如果不传则扫描所有存储
+  /// [scanPath] 可选的扫描路径列表，如果不传则扫描存储根路径
+  Future<String> startScan({int? storageId, List<String>? scanPath}) async {
+    final payload = <String, dynamic>{
+      if (storageId != null) 'storage_id': storageId,
+      'scan_path': scanPath ?? [],
+    };
+    final res = await _client.post(
+      _u('/api/scan/start'),
+      headers: _headers(headers: {'Content-Type': 'application/json'}),
+      body: jsonEncode(payload),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
-      // 后端 TaskResponse → 需要适配为 ScanGroup 结构的最小体
-      final gid = (data['task_id'] as String?) ?? 'group';
-      return ScanGroup(
-          groupId: gid,
-          status: data['status'] as String? ?? 'pending',
-          progress: 0,
-          tasks: const []);
+      // 返回任务 ID，如果是批量任务则返回批次 ID
+      return (data['task_id'] as String?) ?? '';
     }
-    throw Exception('scan_all_failed');
+    throw Exception('启动扫描任务失败');
   }
 
-  Future<String> createScanTask({required String storageId}) async {
-    final sid = int.tryParse(storageId);
-    final res = await _client.post(_u('/api/scan/create-task'),
-        headers: _headers(headers: {'Content-Type': 'application/json'}),
-        body: jsonEncode({'storage_id': sid ?? storageId}));
+  Future<List<Map<String, dynamic>>> listDirectory(
+      int storageId, String path) async {
+    final res = await _client.get(
+      _u('/api/storage-server/$storageId/list?path=${Uri.encodeComponent(path)}'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final taskId = data['task_id'] as String?;
-      if (taskId != null && taskId.isNotEmpty) return taskId;
+      final entries = (data['entries'] as List).cast<Map<String, dynamic>>();
+      return entries;
     }
-    throw Exception('create_scan_task_failed');
+    throw Exception('获取目录列表失败');
   }
 
+  Future<List<Map<String, dynamic>>> listOnlyDirectory(
+      int storageId, String path) async {
+    final res = await _client.get(
+      _u('/api/storage-server/$storageId/listdir?path=${Uri.encodeComponent(path)}'),
+      headers: _headers(),
+    );
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final entries = (data['entries'] as List).cast<Map<String, dynamic>>();
+      return entries;
+    }
+    throw Exception('获取目录列表失败');
+  }
+
+  Future<bool> testConnection(int storageId) async {
+    final res = await _client.get(
+      _u('/api/storage-server/$storageId/test'),
+      headers: _headers(),
+    );
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return (data['success'] as bool?) ?? false;
+    }
+    return false;
+  }
+
+  Future<void> enableStorage(int storageId) async {
+    final res = await _client.post(
+      _u('/api/storage-server/$storageId/enable'),
+      headers: _headers(),
+    );
+    if (res.statusCode >= 200 && res.statusCode < 300) return;
+    throw Exception('启用存储失败');
+  }
+
+  Future<void> disableStorage(int storageId) async {
+    final res = await _client.post(
+      _u('/api/storage-server/$storageId/disable'),
+      headers: _headers(),
+    );
+    if (res.statusCode >= 200 && res.statusCode < 300) return;
+    throw Exception('禁用存储失败');
+  }
+
+  /// 获取任务组状态
   Future<List<ScanTask>> getGroup(String groupId) async {
     final res =
-        await _client.get(_u('/scan/groups/$groupId'), headers: _headers());
+        await _client.get(_u('/api/scan/groups/$groupId'), headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final items = (data['tasks'] as List).cast<Map<String, dynamic>>();
       return items.map(ScanTask.fromJson).toList();
     }
-    throw Exception('scan_group_failed');
+    throw Exception('获取任务组失败');
   }
 
+  /// 创建存储配置
   Future<SourceCreateResponse> createSource(
       Map<String, dynamic> payload) async {
     final res = await _client.post(_u('/api/storage-config'),
@@ -185,27 +233,29 @@ class ApiClient {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return SourceCreateResponse.fromJson(data);
     }
-    throw Exception('create_source_failed');
+    throw Exception('创建存储失败');
   }
 
+  /// 获取指定存储的任务列表
   Future<List<ScanTask>> getTasksBySource(String sourceId) async {
-    final res =
-        await _client.get(_u('/tasks?sources=$sourceId'), headers: _headers());
+    final res = await _client.get(_u('/api/tasks?sources=$sourceId'),
+        headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list.map(ScanTask.fromJson).toList();
     }
-    throw Exception('get_tasks_failed');
+    throw Exception('获取任务列表失败');
   }
 
+  /// 获取扫描任务状态
   Future<Map<String, dynamic>> getScanTaskStatus(String taskId) async {
     final res =
-        await _client.get(_u('/api/scan/task/$taskId'), headers: _headers());
+        await _client.get(_u('/api/scan/status/$taskId'), headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return data;
     }
-    throw Exception('get_task_status_failed');
+    throw Exception('获取任务状态失败');
   }
 
   Future<bool> testStorageConnection(String storageId) async {
@@ -226,7 +276,7 @@ class ApiClient {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return data;
     }
-    throw Exception('get_play_url_failed');
+    throw Exception('获取播放地址失败');
   }
 
   Future<Map<String, dynamic>> refreshPlayUrl(int fileId) async {
@@ -237,7 +287,7 @@ class ApiClient {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return data;
     }
-    throw Exception('refresh_play_url_failed');
+    throw Exception('刷新播放地址失败');
   }
 
   Future<int?> getPlaybackProgress(int fileId) async {
@@ -301,7 +351,7 @@ class ApiClient {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list.map(RecentCardItem.fromApi).toList();
     }
-    throw Exception('get_recent_failed');
+    throw Exception('获取最近播放失败');
   }
 
   Future<List<Map<String, dynamic>>> getRecentRaw({
@@ -322,14 +372,14 @@ class ApiClient {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list;
     }
-    throw Exception('get_recent_raw_failed');
+    throw Exception('获取原始播放历史失败');
   }
 
   Future<void> deletePlaybackProgress(int fileId) async {
     final res = await _client.delete(_u('/api/playback/progress/$fileId'),
         headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) return;
-    throw Exception('delete_progress_failed');
+    throw Exception('删除播放进度失败');
   }
 
   Future<HomeCardsResponse> getLibraryHome() async {
@@ -340,19 +390,19 @@ class ApiClient {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return HomeCardsResponse.fromJson(data);
     }
-    throw Exception('get_library_home_failed');
+    throw Exception('获取首页内容失败');
   }
 
   Future<PagedMediaResponse> getLibraryCategoryItems(String categoryId,
       {int page = 1, int pageSize = 30}) async {
     final res = await _client.get(
-        _u('/library/categories/$categoryId/items?page=$page&page_size=$pageSize'),
+        _u('/api/library/categories/$categoryId/items?page=$page&page_size=$pageSize'),
         headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return PagedMediaResponse.fromJson(data);
     }
-    throw Exception('get_category_items_failed');
+    throw Exception('获取分类项失败');
   }
 
   Future<FilterCardsResponse> searchMedia(
@@ -394,7 +444,7 @@ class ApiClient {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return FilterCardsResponse.fromJson(data);
     }
-    throw Exception('search_failed');
+    throw Exception('搜索失败');
   }
 
   Future<MediaDetail> getMediaDetail(int id) async {
@@ -404,55 +454,58 @@ class ApiClient {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return MediaDetail.fromJson(data);
     }
-    throw Exception('get_media_detail_failed');
+    throw Exception('获取媒体详情失败');
   }
 
   Future<List<Map<String, dynamic>>> getSubtitles(int fileId) async {
-    final res =
-        await _client.get(_u('/subtitles/$fileId'), headers: _headers());
+    final res = await _client.get(_u('/api/media/subtitles/$fileId'),
+        headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list;
     }
-    throw Exception('get_subtitles_failed');
+    throw Exception('获取字幕失败');
   }
 
   Future<List<SourceItem>> getSources({int page = 1, int size = 20}) async {
-    final res = await _client.get(_u('/api/storage-config'), headers: _headers());
+    final res =
+        await _client.get(_u('/api/storage-config'), headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list.map(SourceItem.fromJson).toList();
     }
-    throw Exception('get_sources_failed');
+    throw Exception('获取存储源失败');
   }
 
   Future<void> scanSource(String sourceId) async {
-    final res =
-        await _client.post(_u('/sources/$sourceId/scan'), headers: _headers());
-    if (res.statusCode >= 200 && res.statusCode < 300) return;
-    throw Exception('scan_source_failed');
+    final id = int.tryParse(sourceId);
+    if (id != null) {
+      await startScan(storageId: id);
+      return;
+    }
+    throw Exception('无效的存储 ID');
   }
 
   Future<SourceItem> getSource(String sourceId) async {
-    final res =
-        await _client.get(_u('/api/storage-config/$sourceId'), headers: _headers());
+    final res = await _client.get(_u('/api/storage-config/$sourceId'),
+        headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final wrapped = data['data'] as Map<String, dynamic>?;
       return SourceItem.fromJson(wrapped ?? data);
     }
-    throw Exception('get_source_failed');
+    throw Exception('获取存储源失败');
   }
 
   Future<Map<String, dynamic>> getStorageDetail(String sourceId) async {
-    final res =
-        await _client.get(_u('/api/storage-config/$sourceId'), headers: _headers());
+    final res = await _client.get(_u('/api/storage-config/$sourceId'),
+        headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final wrapped = data['data'] as Map<String, dynamic>?;
       return wrapped ?? data;
     }
-    throw Exception('get_storage_detail_failed');
+    throw Exception('获取存储详情失败');
   }
 
   Future<void> updateSource(
@@ -461,22 +514,27 @@ class ApiClient {
         headers: _headers(headers: {'Content-Type': 'application/json'}),
         body: jsonEncode(payload));
     if (res.statusCode >= 200 && res.statusCode < 300) return;
-    throw Exception('update_source_failed');
+    throw Exception('更新存储失败');
   }
 
   Future<void> toggleSource(String sourceId, {required bool enabled}) async {
-    final res = await _client.post(
-        _u('/sources/$sourceId/${enabled ? 'enable' : 'disable'}'),
-        headers: _headers());
-    if (res.statusCode >= 200 && res.statusCode < 300) return;
-    throw Exception('toggle_source_failed');
+    final id = int.tryParse(sourceId);
+    if (id != null) {
+      if (enabled) {
+        await enableStorage(id);
+      } else {
+        await disableStorage(id);
+      }
+      return;
+    }
+    throw Exception('无效的存储 ID');
   }
 
   Future<void> deleteSource(String sourceId) async {
-    final res =
-        await _client.delete(_u('/api/storage-config/$sourceId'), headers: _headers());
+    final res = await _client.delete(_u('/api/storage-config/$sourceId'),
+        headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) return;
-    throw Exception('delete_source_failed');
+    throw Exception('删除存储失败');
   }
 
   Future<String> loginWithEmail(String email, String password) async {
@@ -499,7 +557,7 @@ class ApiClient {
       setTokenExpiresIn(expiresIn);
       return token;
     }
-    throw Exception('login_failed');
+    throw Exception('登录失败');
   }
 }
 

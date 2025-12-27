@@ -85,16 +85,14 @@ class _RecentListPageState extends ConsumerState<RecentListPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('最近观看'), 
+        title: const Text('最近观看'),
         // backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          TextButton(onPressed: _toggleEdit, child: const Text('编辑'))
-        ],
+        actions: [TextButton(onPressed: _toggleEdit, child: const Text('编辑'))],
       ),
       body: RefreshIndicator(
         onRefresh: _onRefresh,

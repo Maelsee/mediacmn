@@ -5,12 +5,13 @@ import 'app_shell.dart';
 // import 'media_library/media_home_page.dart';
 import 'media_library/search_page.dart';
 import 'media_library/detail_page.dart';
-import 'media_player/play_page.dart';
+import 'media_player/media_player_page.dart';
 import 'media_library/media_models.dart';
-import 'source_library/sources_home_page.dart';
-import 'source_library/source_type_select_page.dart';
-import 'source_library/source_edit_page.dart';
-import 'source_library/source_webdav_form_page.dart';
+import 'package:media_client/source_library/sources_home_page.dart';
+import 'package:media_client/source_library/source_type_select_page.dart';
+import 'package:media_client/source_library/source_edit_page.dart';
+import 'package:media_client/source_library/source_webdav_form_page.dart';
+import 'package:media_client/source_library/storage_browser_page.dart';
 // import 'profile/home_page.dart';
 import 'profile/login_page.dart';
 import 'profile/home_sections_page.dart';
@@ -24,6 +25,14 @@ final appRouter = GoRouter(
   observers: [routeObserver],
   initialLocation: '/media',
   routes: [
+    GoRoute(
+      path: '/player/:id',
+      builder: (context, state) {
+        final coreId = state.pathParameters['id']!;
+        final extra = state.extra;
+        return MediaPlayerPage(coreId: coreId, extra: extra);
+      },
+    ),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
           AppShell(navigationShell: navigationShell),
@@ -73,14 +82,6 @@ final appRouter = GoRouter(
                   return MediaDetailPage(mediaId: id, previewItem: extraItem);
                 },
               ),
-              GoRoute(
-                path: 'play/:id',
-                builder: (context, state) {
-                  final id = state.pathParameters['id']!;
-                  final extra = state.extra;
-                  return PlayPage(coreId: id, extra: extra);
-                },
-              ),
               // 移除旧的分类列表页，统一使用卡片页
             ],
           ),
@@ -98,6 +99,17 @@ final appRouter = GoRouter(
                     return const SourceWebDavFormPage();
                   }
                   return const SourceTypeSelectPage();
+                },
+              ),
+              GoRoute(
+                path: 'browse/:id',
+                builder: (context, state) {
+                  final idStr = state.pathParameters['id']!;
+                  final id = int.tryParse(idStr) ?? 0;
+                  final path = state.uri.queryParameters['path'] ?? '/';
+                  final title = state.uri.queryParameters['title'];
+                  return StorageBrowserPage(
+                      storageId: id, path: path, title: title);
                 },
               ),
               GoRoute(

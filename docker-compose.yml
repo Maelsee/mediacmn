@@ -23,7 +23,7 @@ services:
     # expose:
     #   - "6379"
     ports:
-      - "9001:6379"
+      - "10001:6379"
     # volumes:
     #   - redis_data:/data
     command: redis-server --requirepass redis123
@@ -35,7 +35,7 @@ services:
     container_name: media_redis_cache
     restart: unless-stopped
     ports:
-      - "9002:6379"
+      - "10002:6379"
     command: ["redis-server","--requirepass","redis123","--maxmemory","1gb","--maxmemory-policy","allkeys-lru"]
     networks:
       - media_network

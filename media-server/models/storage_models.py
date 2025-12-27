@@ -29,6 +29,7 @@ class StorageConfig(SQLModel, table=True):
         sa_type=String(20),
         description="存储类型：webdav|smb|local|cloud"
     )
+    root_path: str = Field(default="/", description="存储逻辑根路径/基础路径")
     
     is_active: bool = Field(default=True, description="配置是否激活（True激活，False禁用）")
     # is_online: bool = Field(default=False, description="配置是否在线（True已连接，False未连接）")

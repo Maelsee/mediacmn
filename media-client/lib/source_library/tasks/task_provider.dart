@@ -28,7 +28,24 @@ class TasksNotifier extends StateNotifier<TasksState> {
   TasksNotifier(this.api) : super(const TasksState());
 
   Future<void> triggerGlobalScan({List<String>? sourceIds}) async {
-    final group = await api.scanAll(sourceIds: sourceIds);
+    // 适配新API：sourceIds 不再直接支持批量传，这里如果 sourceIds 为空则全量，
+    // 如果不为空，则应该循环调用或者后端支持。
+    // 根据需求 1，右上角刷新按钮不传参数，即 sourceIds 为空。
+    // 如果 sourceIds 有值，暂且取第一个或者循环调用。
+    // 这里简化处理：全量扫描
+    final taskId = await api.startScan();
+
+    // 构造一个虚拟的 Group/Task 状态
+    // 因为后端现在返回的是 taskId (单任务或批处理任务ID)，不是 ScanGroup 对象
+    // 我们需要调整 state 管理。
+    // 临时方案：把 taskId 当作 groupId，状态置为 pending
+    final group = ScanGroup(
+      groupId: taskId,
+      status: 'pending',
+      progress: 0,
+      tasks: [],
+    );
+
     state = TasksState(
         running: const [],
         completed: const [],

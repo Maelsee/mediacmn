@@ -537,10 +537,12 @@ class StorageConfigService:
             raise ValueError(f"存储配置名称 '{request.name}' 已存在")
 
         # 2. 开启事务创建
+        root_path = getattr(request.config, "root_path", "/") or "/"
         storage_config = StorageConfig(
             user_id=user_id,
             name=request.name,
-            storage_type=request.storage_type
+            storage_type=request.storage_type,
+            root_path=root_path
         )
         db.add(storage_config)
         await db.flush() # 获取生成的 ID
@@ -592,6 +594,10 @@ class StorageConfigService:
                     if k == "select_path" and isinstance(v, list):
                         v = json.dumps(v)
                     setattr(detail_config, k, v)
+                if hasattr(config_update, "root_path"):
+                    root_path_val = getattr(config_update, "root_path")
+                    if root_path_val is not None:
+                        storage_config.root_path = root_path_val or "/"
                 db.add(detail_config)
 
         db.add(storage_config)

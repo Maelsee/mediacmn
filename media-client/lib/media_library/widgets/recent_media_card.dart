@@ -36,11 +36,13 @@ class RecentMediaCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () async {
-        await GoRouter.of(context).push('/media/play/${item.id}', extra: {
+        await GoRouter.of(context).push('/player/${item.id}', extra: {
           'fileId': item.fileId,
           'detail': {
             'id': item.id,
             'media_type': item.mediaType,
+            'name': item.name,
+            'poster_path': item.coverUrl,
           },
           'asset': null,
           'candidates': const <dynamic>[],

@@ -12,7 +12,7 @@
 - cd media-server/ && source  venv/bin/activate && uvicorn main:app --reload
 - cd media-server/ && source  venv/bin/activate && python start_task_executor.py
 - cd media-server/ && source  venv/bin/activate && dramatiq services.task.consumers --processes 4 --threads 1
-- cd media-client && flutter run -d web-server --web-port 5200     # 启动前端
+- cd media-client && flutter run -d web-server --web-port 5200 --web-hostname 0.0.0.0 --disable-dds     # 启动前端 (推荐 WSL/远程环境)
 {
   "email": "user@example.com",
   "password": "string"

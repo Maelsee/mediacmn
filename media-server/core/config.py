@@ -56,11 +56,11 @@ class Settings(BaseSettings):
     URL_SIGNING_ALG: str = Field(default="HS256", description="签名算法")
 
     # Redis 配置
-    REDIS_URL: str = Field(default="redis://:redis123@localhost:9001", description="Redis 连接字符串")
+    REDIS_URL: str = Field(default="redis://:redis123@localhost:10001", description="Redis 连接字符串")
     REDIS_DB: int = Field(default=0, description="Redis 数据库编号")
 
     # 刮削详情缓存 Redis 配置（建议与任务队列 Redis 分离）
-    SCRAPER_CACHE_REDIS_URL: str = Field(default="redis://:redis123@localhost:9002", description="刮削缓存 Redis 连接字符串")
+    SCRAPER_CACHE_REDIS_URL: str = Field(default="redis://:redis123@localhost:10002", description="刮削缓存 Redis 连接字符串")
     SCRAPER_CACHE_REDIS_DB: int = Field(default=0, description="刮削缓存 Redis 数据库编号")
 
     # 元数据服务 API Key（全局 .env 管理）

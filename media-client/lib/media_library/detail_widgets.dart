@@ -586,7 +586,7 @@ class DetailPlayButton extends StatelessWidget {
               }
             }
 
-            context.push('/media/play/${detail.id}', extra: {
+            context.push('/player/${detail.id}', extra: {
               'detail': detail,
               'asset': asset,
               'candidates': candidates,

@@ -4,6 +4,7 @@
 提供统一的存储操作接口，支持多种存储后端
 """
 
+from ast import stmt
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from sqlmodel import select
@@ -12,8 +13,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession  # ✅ 导入SQLModel的As
 from pydantic import BaseModel, Field
 from datetime import datetime
 # 关键：使用异步 Session 获取函数
-# from core.db import get_async_session
-# from core.security import get_current_subject, get_user_id
+from core.db import AsyncSessionLocal
+from core.security import get_current_subject, get_user_id
 from services.storage.storage_service import storage_service
 from models.storage_models import StorageConfig
 from services.storage.storage_client import  StorageEntry
@@ -120,6 +121,49 @@ async def list_storage_directory(
         logger.error(f"列出目录失败: {e}")
         raise HTTPException(status_code=500, detail=f"列出目录失败: {str(e)}")
 
+# /api/storage-server/{storage_id}/listdir
+@router.get("/{storage_id}/listdir", response_model=StorageListResponse)
+async def list_storage_only_directory(
+    storage_id: int = Path(..., description="存储配置ID"),
+    path: str = Query("/", description="目录路径"),
+    depth: int = Query(1, description="递归深度, 默认1"),  
+    # current_user: str = Depends(get_current_subject),
+):
+    """
+    列出存储目录中的文件夹
+    
+    需要权限: storage:read
+    """
+    # logger.info(f"列出目录: {storage_id}, {path}, {depth}")
+    # if path == "/":
+    #     path = "/dav"
+    if path == "/":
+        async with AsyncSessionLocal() as session:
+            try:
+                stmt = select(StorageConfig).where(StorageConfig.id == storage_id)
+                storage_config = await session.exec(
+                    stmt
+                )
+                storage_config = storage_config.first()
+                path = storage_config.root_path or "/"
+                
+            except Exception as e:
+                logger.error(f"列出目录失败: {e}")
+    try:
+        entries = await storage_service.list_directory(storage_id, path, depth)
+        # 过滤出目录
+        entries = [entry for entry in entries if entry.is_dir]
+        return StorageListResponse(
+            entries=entries,
+            path=path,
+            total_count=len(entries), 
+        )
+        
+    except Exception as e:
+        logger.error(f"列出目录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"列出目录失败: {str(e)}")
+    
+
 
 @router.get("/{storage_id}/info", response_model=StorageInfoResponse)
 async def get_storage_info(
@@ -224,5 +268,83 @@ async def delete_path(
     except Exception as e:
         logger.error(f"删除失败: {e}")
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+
+@router.post("/{storage_id}/enable")
+async def enable_storage(
+    storage_id: int = Path(..., description="存储配置ID"),
+    current_user: str = Depends(get_current_subject)
+):
+    """
+    启用存储配置
+    """
+    user_id = get_user_id(current_user)
+    try:
+        async with AsyncSessionLocal() as session:
+            stmt = select(StorageConfig).where(
+                StorageConfig.id == storage_id,
+                StorageConfig.user_id == user_id
+            )
+            result = await session.exec(stmt)
+            storage = result.first()
+
+            if not storage:
+                raise HTTPException(status_code=404, detail="未找到指定的存储配置")
+
+            storage.is_active = True
+            session.add(storage)
+            await session.commit()
+            await session.refresh(storage)
+
+            return {
+                "success": True,
+                "message": "存储配置已启用",
+                "id": storage.id,
+                "is_active": storage.is_active
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"启用存储配置失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"启用存储配置失败: {str(e)}")
+
+
+@router.post("/{storage_id}/disable")
+async def disable_storage(
+    storage_id: int = Path(..., description="存储配置ID"),
+    current_user: str = Depends(get_current_subject)
+):
+    """
+    禁用存储配置
+    """
+    user_id = get_user_id(current_user)
+    try:
+        async with AsyncSessionLocal() as session:
+            stmt = select(StorageConfig).where(
+                StorageConfig.id == storage_id,
+                StorageConfig.user_id == user_id
+            )
+            result = await session.exec(stmt)
+            storage = result.first()
+
+            if not storage:
+                raise HTTPException(status_code=404, detail="未找到指定的存储配置")
+
+            storage.is_active = False
+            session.add(storage)
+            await session.commit()
+            await session.refresh(storage)
+
+            return {
+                "success": True,
+                "message": "存储配置已禁用",
+                "id": storage.id,
+                "is_active": storage.is_active
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"禁用存储配置失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"禁用存储配置失败: {str(e)}")
 
 

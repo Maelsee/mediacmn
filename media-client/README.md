@@ -98,22 +98,35 @@ A new Flutter project.
         *   统一采用 16:9 宽卡片设计。
         *   封面逻辑：优先使用剧照（still_path），其次背景图（backdrop_path），最后海报（poster）。
         *   内容展示：显示剧集信息（SxxExx + 标题）、播放进度、播放按钮。
-    *   创建模块化 Section 组件 (`media-client/lib/media_library/home_sections/`)：
-        *   `BaseSectionHeader`: 统一的标题栏组件。
-        *   `RecentWatchSection`: 负责最近观看模块的展示，使用 `RecentMediaCard`。
-        *   `GenreSection`: 类型模块组件。
-        *   `MediaListSection`: 电影/电视剧列表模块组件。
-        *   `SectionFactory`: 工厂类，根据配置动态创建对应的 Section。
 
-4.  **状态管理优化**：
-    *   创建 `RecentNotifier` (`media-client/lib/media_library/recent_provider.dart`)，独立管理最近观看列表的状态，支持实时更新。
-    *   在 `MediaLibraryHomePage` 中使用 `SectionFactory` 根据用户设置（顺序、可见性）动态构建页面。
+### 播放器核心重构与UI焕新 (2025-12-26)
 
-5.  **页面重构**：
-    *   重构 `MediaLibraryHomePage`，移除硬编码的 switch-case 逻辑，改为数据驱动的列表渲染。
-    *   重构 `RecentListPage`，复用 `RecentMediaCard`，确保列表页与首页模块样式高度一致。
+**目标**：解决播放器布局错乱及无画面问题，全面重构冗余架构，实现强制横屏、手势交互、沉浸式UI及模块化代码结构。
 
-**成果**：
-*   首页实现了完全的模块化，易于扩展和维护。
-*   最近观看功能支持展示更丰富的信息（剧照、集数），且 UI 更加美观统一。
-*   解决了首页与列表页样式不一致的问题。
+**实施方案**：
+
+1.  **架构重构 (Architecture Refactor)**：
+    *   **模块合并**：将原有的分散文件整合为四个核心模块：
+        *   `player_source.dart`: 合并 `PlayableSource` 与 `SourceAdapter`，统一管理播放源解析逻辑。
+        *   `player_engine.dart`: 合并 `PlayerCore` 与 `PlayerStateManager`，封装 `media_kit` 底层操作与状态流转。
+        *   `player_ui.dart`: 整合 `VideoLayer`, `GestureLayer`, `ControlsLayer`，统一 UI 渲染逻辑。
+        *   `media_player_page.dart`: 合并 `PlayPage` 与 `PlaybackReporter`，作为业务入口。
+    *   **清理冗余**：删除 `optimized_player_view.dart` 及旧的 `ui/` 目录，消除死代码。
+
+2.  **UI/UX 焕新 (UI/UX Revamp)**：
+    *   **强制横屏**：进入播放页面自动切换至横屏模式，退出时恢复竖屏。
+    *   **沉浸式体验**：启用 `SystemUiMode.immersiveSticky` 隐藏系统栏，配合 `WakelockPlus` 保持屏幕常亮。
+    *   **手势交互**：
+        *   **双击**：屏幕两侧双击分别快进/快退 10秒，中间双击播放/暂停。
+        *   **滑动**：水平滑动实现精确进度调节，显示目标时间预览。
+        *   **双指缩放**：集成 `InteractiveViewer` 支持视频画面无级缩放，缩放状态下显示“还原”按钮。
+    *   **自动隐藏**：UI 控件在无操作 5秒后自动淡出，点击屏幕重新唤醒。
+
+3.  **核心功能优化 (Core Improvements)**：
+    *   **播放源解析**：优化 `DefaultSourceAdapter`，支持多层级（Detail/Assets/Candidates）文件ID提取与续播进度获取。
+    *   **状态管理**：引入 `ValueNotifier` 替代繁琐的 Stream 监听，对播放进度更新进行 200ms 节流处理，提升 UI 性能。
+    *   **进度上报**：重构 `PlaybackReporter` 为独立的心跳机制，确保播放进度准确同步至服务器。
+
+4.  **Bug 修复**：
+    *   修复 `Video` 组件在无约束布局下尺寸异常导致无画面的问题（引入 `LayoutBuilder`）。
+    *   修复控制栏按钮在小屏设备上的溢出问题。

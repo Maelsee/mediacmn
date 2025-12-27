@@ -53,7 +53,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME, 
         version="0.1.0",
-        lifespan=lifespan  # <--- 关键修改点
+        # lifespan=lifespan  # <--- 关键修改点
     )
 
     # 配置 CORS 中间件
@@ -77,11 +77,11 @@ def create_app() -> FastAPI:
     from api.routes_media import router as media_router
     from api.routes_storage_config import router as storage_config_router
     from api.routes_storage_server import router as storage_server_router
-    # from api.routes_scan_new import router as scan_new_router  # 新的统一扫描路由
+    from api.routes_scan import router as scan_router  # 新的统一扫描路由
     from api.routes_tasks import router as tasks_router
     # from api.routes_scraper import router as scraper_router
     from api.routes_playback import router as playback_router
-    from api.routes_collections import router as collections_router
+    # from api.routes_collections import router as collections_router
     from api.routes_playback import router as playback_router
 
 
@@ -89,11 +89,11 @@ def create_app() -> FastAPI:
     api_router.include_router(health_router, prefix="/health", tags=["health"])
     api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
     api_router.include_router(media_router, prefix="/media", tags=["media"])
-    api_router.include_router(collections_router, prefix="/collections", tags=["collections"])
+    # api_router.include_router(collections_router, prefix="/collections", tags=["collections"])
     api_router.include_router(playback_router, prefix="/playback", tags=["playback"])
     api_router.include_router(storage_config_router, prefix="/storage-config", tags=["storage-config"])
     api_router.include_router(storage_server_router, prefix="/storage-server", tags=["storage-server"])
-    # api_router.include_router(scan_new_router, prefix="/scan", tags=["scan"])  # 新的统一扫描路由
+    api_router.include_router(scan_router, prefix="/scan", tags=["scan"])  # 新的统一扫描路由
     api_router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])  # 任务生产者API
     # api_router.include_router(scraper_router, prefix="/scraper", tags=["scraper"])
     app.include_router(api_router, prefix="/api")

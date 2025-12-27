@@ -13,7 +13,6 @@ class RecentWatchSection extends ConsumerStatefulWidget {
 }
 
 class _RecentWatchSectionState extends ConsumerState<RecentWatchSection> {
-
   /// 初始化时触发最近观看列表加载（限制为5条，作为首页区块展示）
   final String title = '最近观看';
   // final String kind = 'recent';

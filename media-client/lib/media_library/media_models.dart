@@ -332,14 +332,14 @@ class AssetItem {
   final String type;
   final int? size;
   final String? sizeText;
-  final StorageItem? storageItem;  // 1. 改成单个对象，允许为空（用 ?）
-  AssetItem(
-      {required this.fileId,
-      required this.path,
-      required this.type,
-      this.size,
-      this.sizeText,
-      this.storageItem,  // 2. 移除默认空列表，改为可空
+  final StorageItem? storageItem; // 1. 改成单个对象，允许为空（用 ?）
+  AssetItem({
+    required this.fileId,
+    required this.path,
+    required this.type,
+    this.size,
+    this.sizeText,
+    this.storageItem, // 2. 移除默认空列表，改为可空
   });
   factory AssetItem.fromJson(Map<String, dynamic> json) => AssetItem(
         fileId: (json['file_id'] ?? 0) as int,
@@ -360,8 +360,8 @@ class AssetItem {
         //   return <StorageItem>[];
         // })(),
         // 3. 解析 API 的 "storage" 字段（单个对象），而不是 "storage_items" 数组
-        storageItem: json['storage'] != null 
-            ? StorageItem.fromJson(json['storage'] as Map<String, dynamic>) 
+        storageItem: json['storage'] != null
+            ? StorageItem.fromJson(json['storage'] as Map<String, dynamic>)
             : null,
       );
 }

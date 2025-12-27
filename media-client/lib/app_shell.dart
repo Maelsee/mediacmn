@@ -9,6 +9,7 @@ import 'source_library/tasks/task_tray.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'media_library/media_home_page.dart';
+import 'media_library/media_provider.dart';
 import 'source_library/sources_provider.dart';
 
 class AppShell extends StatefulWidget {
@@ -40,11 +41,29 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
-class MediaLibraryPage extends ConsumerWidget {
+class MediaLibraryPage extends ConsumerStatefulWidget {
   const MediaLibraryPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MediaLibraryPage> createState() => _MediaLibraryPageState();
+}
+
+class _MediaLibraryPageState extends ConsumerState<MediaLibraryPage> {
+  @override
+  Widget build(BuildContext context) {
+    // 监听任务状态，完成时刷新媒体库
+    ref.listen(tasksProvider, (previous, next) {
+      final wasScanning = previous?.currentGroup != null &&
+          previous?.running.isNotEmpty == true;
+      final isScanning =
+          next.currentGroup != null && next.running.isNotEmpty == true;
+
+      if (wasScanning && !isScanning) {
+        // 扫描完成，刷新媒体主页
+        ref.invalidate(mediaHomeProvider);
+      }
+    });
+
     final tasks = ref.watch(tasksProvider);
     final ready = ref.watch(libraryReadyProvider);
     final isScanning = tasks.currentGroup != null && tasks.running.isNotEmpty;

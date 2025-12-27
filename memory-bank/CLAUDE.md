@@ -82,7 +82,7 @@ flutter pub get
 flutter run
 
 # Run on specific platform
-flutter run -d web-server --web-port 5200  #目前只是用这个启动命令
+flutter run -d web-server --web-port 5200 --web-hostname 0.0.0.0 --disable-dds  # 目前推荐的启动命令 (WSL/远程环境)
 flutter run -d chrome
 flutter run -d windows
 flutter run -d android

@@ -27,7 +27,7 @@ class _HomeSectionsPageState extends ConsumerState<HomeSectionsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('自定义媒体库首页'), 
+        title: const Text('自定义媒体库首页'),
         // backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(

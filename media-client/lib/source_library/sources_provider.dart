@@ -33,7 +33,10 @@ class SourcesNotifier extends StateNotifier<SourcesState> {
 
   Future<void> scan(String sourceId) async {
     try {
-      await api.createScanTask(storageId: sourceId);
+      final id = int.tryParse(sourceId);
+      if (id != null) {
+        await api.startScan(storageId: id);
+      }
       // 兼容旧任务模型，后续由任务模块展示托盘
     } catch (_) {}
   }
