@@ -100,7 +100,7 @@ class MetadataEnricher:
 
         # 若过滤后无结果，保留原搜索结果（避免过度过滤导致无匹配）
         if not filtered_results or len(filtered_results) <=2 :
-            logger.debug(f"过滤后候选结果过少，保留原搜索结果（共{len(search_results)}条）")
+            logger.info(f"过滤后候选结果过少，保留原搜索结果（共{len(search_results)}条）")
             filtered_results = search_results
 
         # -------------------------- 步骤2：给候选结果打分 --------------------------
@@ -168,7 +168,7 @@ class MetadataEnricher:
 
         # 取排序后的第一个结果作为最优匹配
         best_match = scored_results[0][0]
-        logger.debug(
+        logger.info(
             f"最优匹配结果：title={best_match.title}, id={best_match.id}, "
             f"总分={scored_results[0][1]}, 来源={best_match.provider}"
         )
@@ -212,58 +212,37 @@ class MetadataEnricher:
             corrected_type = MediaType.MOVIE if path_info.get("type") == "movie" else MediaType.TV_EPISODE
 
             logger.info(f"🔍 搜索参数：title='{title}', 年份={year}, 语言={language}, 类型={corrected_type.value},季={season},集={episode}")
-            search_results = await scraper_manager.search_media(
+            search_results, corrected_type = await scraper_manager.rollback_search_media(
                 title=title,
-                year=year,
+                year=year if season and season<2 else None,
                 media_type=corrected_type,
                 language=language,
             )
 
-            if not search_results:
-                corrected_type = MediaType.MOVIE if corrected_type == MediaType.TV_EPISODE else MediaType.TV_EPISODE
-                logger.info(f"🔍 换类型搜索参数：title='{title}', 年份={year}, 语言={language}, 类型={corrected_type.value},季={season},集={episode}")
-
-                search_results = await scraper_manager.search_media(
-                    title=title,
-                    year=year,
-                    media_type=corrected_type,
-                    language=language,
-                )
-                # logger.info(f"🔍 换类型搜索结果：{search_results}")
+            if corrected_type == MediaType.TV_EPISODE and (season is None or episode is None):
                 path_info = await asyncio.to_thread(
                     self.media_parser.parse,
                     file_asset.full_path,
-                    corrected_type == MediaType.TV_EPISODE,
+                    True,
                 )
-                title = path_info.get("title")
-                season = path_info.get("season")
-                episode = path_info.get("episode")
-                year = path_info.get("year")
-                country = path_info.get("country")
+                title = path_info.get("title") or title
+                season = path_info.get("season") or season
+                episode = path_info.get("episode") or episode
+                year = path_info.get("year") or year
+                country = path_info.get("country") or country
 
-                if not search_results and year is not None:
-                    logger.info(
-                        f"🔍 按年份搜索未命中，尝试不带年份搜索: title='{title}', 原年份={year}, 类型={corrected_type.value}"
-                    )
-                    search_results = await scraper_manager.search_media(
-                        title=title,
-                        year=None,
-                        media_type=corrected_type,
-                        language=language,
-                    )
-
-                if not search_results:
-                    err_msg = f"未找到元数据: title='{title}' 年份={year}"
-                    logger.warning(err_msg)
-                    return {
-                        "user_id": file_asset.user_id,
-                        "file_id": file_asset.id,
-                        "contract_type": "",
-                        "contract_payload": {},
-                        "path_info": path_info,
-                        "success": False,
-                        "error_msg": err_msg,
-                    }
+            if not search_results:
+                err_msg = f"未找到元数据: title='{title}' 年份={year}"
+                logger.warning(err_msg)
+                return {
+                    "user_id": file_asset.user_id,
+                    "file_id": file_asset.id,
+                    "contract_type": "",
+                    "contract_payload": {},
+                    "path_info": path_info,
+                    "success": False,
+                    "error_msg": err_msg,
+                }
 
             # -------------------------- 3. 选择最优匹配与获取详情 --------------------------
             parsed_data = {"title": title, "year": year, "language": language, "country": country}
@@ -438,23 +417,12 @@ class MetadataEnricher:
         logger.info(
             f"📦 组级搜索: title='{agg_title}', 年份={agg_year}, 语言={language}, 类型={corrected_type.value}, 组大小={len(episode_files)}"
         )
-        search_results = await scraper_manager.search_media(
+        search_results, _ = await scraper_manager.rollback_search_media(
             title=agg_title,
-            year=agg_year,
+            year=agg_year if agg_season and agg_season<2 else None,
             media_type=corrected_type,
             language=language,
         )
-
-        if not search_results and agg_year is not None:
-            logger.info(
-                f"📦 组级按年份搜索未命中，尝试不带年份搜索: title='{agg_title}', 原年份={agg_year}, 类型={corrected_type.value}"
-            )
-            search_results = await scraper_manager.search_media(
-                title=agg_title,
-                year=None,
-                media_type=corrected_type,
-                language=language,
-            )
 
         if not search_results:
             err_msg = f"未找到元数据: title='{agg_title}' 年份={agg_year}"
@@ -569,6 +537,7 @@ class MetadataEnricher:
         for fa in episode_files:
             path_info = path_infos.get(fa.id, {})
             ep_num = path_info.get("episode")
+            part = path_info.get("part")
             if ep_num is None:
                 results.append({
                     "user_id": fa.user_id,
@@ -639,11 +608,15 @@ class MetadataEnricher:
                 })
                 continue
 
+            payload = episode_detail.model_dump()
+            if part is not None:
+                payload["part"] = part
+
             results.append({
                 "user_id": fa.user_id,
                 "file_id": fa.id,
                 "contract_type": "episode",
-                "contract_payload": episode_detail.model_dump(),
+                "contract_payload": payload,
                 "path_info": path_info,
                 "success": True,
                 "error_msg": "",
@@ -729,7 +702,9 @@ class MetadataEnricher:
         async for item in self.iter_enrich_multiple_files(file_ids=file_ids, user_id=user_id, max_concurrency=max_concurrency):
             results.append(item)
         return results
-
+        
+# 全局元数据丰富器实例
+metadata_enricher = MetadataEnricher()
 
     # region
     # async def enrich_media_file(self, file_id: int) -> MetadataResult:
@@ -1100,6 +1075,3 @@ class MetadataEnricher:
     #         logger.error(f"丰富文件 {file_id} 异常: {e}")
     #         return {"file_id": file_id, "user_id": 0, "contract_type": "", "contract_payload": {}}
     # endregion   
-
-# 全局元数据丰富器实例
-metadata_enricher = MetadataEnricher()

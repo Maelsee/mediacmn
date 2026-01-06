@@ -9,7 +9,10 @@ class ProfileHomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      // appBar: AppBar(title: const Text('我的')),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: ListView(padding: const EdgeInsets.all(12), children: [
         Consumer(builder: (context, ref, _) {
           final auth = ref.watch(authUserProvider);

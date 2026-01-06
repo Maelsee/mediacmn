@@ -78,7 +78,7 @@ class MediaParser:
             return True
         parts = re.split(r"[\\/]+", s)
         for p in parts:
-            if p in ("动画", "综艺", "剧集", "电视剧"):
+            if p.lower() in ("动画","anime", "综艺","variety", "剧集","tv", "电视剧"):
                 return True
         return False
 
@@ -212,6 +212,7 @@ class MediaParser:
 
         base = re.sub(r"第\s*(\d+)\s*季", lambda m: f"S{int(m.group(1)):02d}", base)
         base = re.sub(r"第\s*(\d+)\s*[话集]", lambda m: f"E{int(m.group(1))}", base)
+        base = re.sub(r"第\s*(\d+)\s*期", lambda m: f"E{int(m.group(1))}", base)
 
         base = re.sub(r"\s+", " ", base).strip()
         return base + ext
@@ -299,6 +300,50 @@ class MediaParser:
             cn_parts_final = re.findall(r"[\u4e00-\u9fff]{2,}", str(title_final))
             if cn_parts_final:
                 info["title"] = max(cn_parts_final, key=len)
+
+        texts = []
+        ep_title = info.get("episode_title")
+        if isinstance(ep_title, str) and ep_title:
+            texts.append(ep_title)
+        base_name = os.path.basename(raw_path)
+        if base_name:
+            texts.append(base_name)
+        texts.append(raw_path)
+
+        if info.get("episode") is None:
+            for text in texts:
+                m = re.search(r"第\s*(\d+)\s*期", text)
+                if m:
+                    info["episode"] = int(m.group(1))
+                    break
+            if info.get("episode") is None:
+                for text in texts:
+                    m = re.search(r"第\s*(\d+)\s*[话集]", text)
+                    if m:
+                        info["episode"] = int(m.group(1))
+                        break
+
+        part = info.get("part")
+        if part is None:
+            for text in texts:
+                m = re.search(r"[Pp]art\s*(\d+)", text)
+                if m:
+                    part = int(m.group(1))
+                    break
+        if part is None and "综艺" in raw_path:
+            for text in texts:
+                if re.search(r"第\s*\d+\s*期上", text):
+                    part = 1
+                    break
+                if re.search(r"第\s*\d+\s*期中", text):
+                    part = 2
+                    break
+                if re.search(r"第\s*\d+\s*期下", text):
+                    part = 3
+                    break
+
+        if part is not None:
+            info["part"] = part
 
         return info
 media_parser = MediaParser()

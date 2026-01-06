@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../core/api_client.dart';
+
+import '../core/playback_history/providers.dart';
+import '../core/playback_history/recent_repository.dart';
 import 'media_models.dart';
 
 class RecentState {
@@ -14,21 +16,17 @@ class RecentState {
 }
 
 class RecentNotifier extends StateNotifier<RecentState> {
-  final ApiClient api;
-  RecentNotifier(this.api) : super(const RecentState());
+  /// 最近观看仓库。
+  final RecentRepository _repository;
+
+  RecentNotifier(this._repository) : super(const RecentState());
 
   /// 加载最近观看列表
   /// - `limit`: 最大返回条数（默认 20）
   /// 会在未登录时返回空列表，避免触发未授权错误
   Future<void> load({int limit = 20}) async {
-    if (!api.isLoggedIn) {
-      state = const RecentState(items: []);
-      return;
-    }
-
     try {
-      // 从后端获取最近观看列表（已按系列去重）
-      final items = await api.getRecent(limit: limit);
+      final items = await _repository.getRecent(limit: limit);
       state = RecentState(items: items);
     } catch (e) {
       state = RecentState(error: '$e', items: state.items);
@@ -38,9 +36,6 @@ class RecentNotifier extends StateNotifier<RecentState> {
 
 final recentProvider =
     StateNotifierProvider<RecentNotifier, RecentState>((ref) {
-  final api = ref.watch(apiClientProvider);
-  final n = RecentNotifier(api);
-  // Remove automatic load() here to prevent side effects during provider initialization
-  // The load() should be called explicitly by the UI
-  return n;
+  final repo = ref.watch(recentRepositoryProvider);
+  return RecentNotifier(repo);
 });

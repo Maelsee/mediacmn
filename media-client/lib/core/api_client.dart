@@ -72,6 +72,36 @@ class ApiClient {
     _writeHive('token_expires_at', _tokenExpiresAt?.millisecondsSinceEpoch);
   }
 
+  Map<String, dynamic> _normalizeWebdavPayload(Map<String, dynamic> payload) {
+    final out = Map<String, dynamic>.from(payload);
+    final configAny = out['config'];
+    if (configAny is! Map) return out;
+
+    final config = <String, dynamic>{};
+    for (final e in configAny.entries) {
+      config['${e.key}'] = e.value;
+    }
+
+    final storageType = out['storage_type'];
+    final isWebdav = storageType == 'webdav' ||
+        (config.containsKey('root_path') && config.containsKey('verify_ssl'));
+    if (!isWebdav) return out;
+
+    final raw = config['hostname'];
+    if (raw is String) {
+      var hostname = raw.trim();
+      while (hostname.endsWith('/')) {
+        hostname = hostname.substring(0, hostname.length - 1);
+      }
+      if (hostname.isNotEmpty && !hostname.contains('://')) {
+        hostname = 'http://$hostname';
+      }
+      config['hostname'] = hostname;
+      out['config'] = config;
+    }
+    return out;
+  }
+
   Map<String, String> authHeaders() {
     final h = <String, String>{};
     if (_isTokenValid()) {
@@ -113,6 +143,15 @@ class ApiClient {
         body: jsonEncode({'refresh_token': rt}));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final accessToken = data['access_token'] as String?;
+      final token = accessToken ?? data['token'] as String?;
+      final tokenType = data['token_type'] as String?;
+      final expiresIn = (data['expires_in'] as num?)?.toInt();
+      if (token != null && token.isNotEmpty) {
+        setToken(token);
+        setTokenType(tokenType);
+        setTokenExpiresIn(expiresIn);
+      }
       final newRt = data['refresh_token'] as String?;
       if (newRt != null && newRt.isNotEmpty) {
         setRefreshToken(newRt);
@@ -140,11 +179,31 @@ class ApiClient {
       if (storageId != null) 'storage_id': storageId,
       'scan_path': scanPath ?? [],
     };
+
+    if (!_isTokenValid()) {
+      await refreshToken();
+    }
+
     final res = await _client.post(
       _u('/api/scan/start'),
       headers: _headers(headers: {'Content-Type': 'application/json'}),
       body: jsonEncode(payload),
     );
+
+    if (res.statusCode == 401) {
+      await refreshToken();
+      final retry = await _client.post(
+        _u('/api/scan/start'),
+        headers: _headers(headers: {'Content-Type': 'application/json'}),
+        body: jsonEncode(payload),
+      );
+      if (retry.statusCode >= 200 && retry.statusCode < 300) {
+        final data = jsonDecode(retry.body) as Map<String, dynamic>;
+        return (data['task_id'] as String?) ?? '';
+      }
+      throw Exception('启动扫描失败(401)');
+    }
+
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       // 返回任务 ID，如果是批量任务则返回批次 ID
@@ -226,9 +285,11 @@ class ApiClient {
   /// 创建存储配置
   Future<SourceCreateResponse> createSource(
       Map<String, dynamic> payload) async {
-    final res = await _client.post(_u('/api/storage-config'),
+    final normalized = _normalizeWebdavPayload(payload);
+    // 307 Redirect fix: Add trailing slash
+    final res = await _client.post(_u('/api/storage-config/'),
         headers: _headers(headers: {'Content-Type': 'application/json'}),
-        body: jsonEncode(payload));
+        body: jsonEncode(normalized));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return SourceCreateResponse.fromJson(data);
@@ -290,6 +351,11 @@ class ApiClient {
     throw Exception('刷新播放地址失败');
   }
 
+  /// 获取指定文件的历史播放进度（用于续播）。
+  ///
+  /// 对应接口：`GET /api/playback/progress/{file_id}`，返回示例：
+  /// `{ "position_ms": 0, "duration_ms": null }`。
+  /// 仅使用 `position_ms`，未记录或请求失败时返回 null。
   Future<int?> getPlaybackProgress(int fileId) async {
     final res = await _client.get(_u('/api/playback/progress/$fileId'),
         headers: _headers());
@@ -486,21 +552,19 @@ class ApiClient {
   }
 
   /// 获取指定文件所属剧集的选集列表
-  Future<List<Map<String, dynamic>>> getEpisodes(int fileId) async {
+  Future<FileEpisodesResponse> getEpisodes(int fileId) async {
     final res = await _client.get(_u('/api/media/file/$fileId/episodes'),
         headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final items =
-          (data['episodes'] as List? ?? const []).cast<Map<String, dynamic>>();
-      return items;
+      return FileEpisodesResponse.fromJson(data);
     }
     throw Exception('获取选集列表失败');
   }
 
   Future<List<SourceItem>> getSources({int page = 1, int size = 20}) async {
     final res =
-        await _client.get(_u('/api/storage-config'), headers: _headers());
+        await _client.get(_u('/api/storage-config/'), headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list.map(SourceItem.fromJson).toList();
@@ -541,9 +605,10 @@ class ApiClient {
 
   Future<void> updateSource(
       String sourceId, Map<String, dynamic> payload) async {
+    final normalized = _normalizeWebdavPayload(payload);
     final res = await _client.put(_u('/api/storage-config/$sourceId'),
         headers: _headers(headers: {'Content-Type': 'application/json'}),
-        body: jsonEncode(payload));
+        body: jsonEncode(normalized));
     if (res.statusCode >= 200 && res.statusCode < 300) return;
     throw Exception('更新存储失败');
   }
@@ -589,6 +654,16 @@ class ApiClient {
       return token;
     }
     throw Exception('登录失败');
+  }
+
+  Future<void> register(String email, String password) async {
+    final res = await _client.post(_u('/api/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return;
+    }
+    throw Exception('注册失败');
   }
 }
 

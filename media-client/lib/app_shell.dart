@@ -21,11 +21,15 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
+  /// 底部导航栏高度（用于减少垂直空间占用）。
+  static const double _bottomNavigationBarHeight = 64;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: widget.navigationShell,
       bottomNavigationBar: NavigationBar(
+        height: _bottomNavigationBarHeight,
         selectedIndex: widget.navigationShell.currentIndex,
         destinations: const [
           NavigationDestination(

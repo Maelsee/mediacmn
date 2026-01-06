@@ -549,13 +549,21 @@ class DetailPlayButton extends StatelessWidget {
         height: 48,
         child: FilledButton.icon(
           onPressed: () {
-            // Logic to play
+            // 播放逻辑：
+            // - 电影：传入选中版本的首个资源作为播放入口。
+            // - 剧集：传入选中季版本的 episodes 列表，并以选中集作为入口。
             final sIndex = selectedSeasonIndex ?? 0;
             final eIndex = selectedEpisodeIndex ?? 0;
             final vIndex = selectedVersionIndex ?? 0;
 
             AssetItem? asset;
             List<dynamic> candidates = [];
+
+            // 当前选择的季版本下的选集列表（用于播放器选集面板）。
+            List<EpisodeDetail> episodes = const [];
+
+            // 当前选择的季版本 ID（用于播放器侧做关联展示/缓存）。
+            int? seasonVersionId;
 
             if (detail.mediaType == 'movie') {
               if (detail.versions != null && detail.versions!.isNotEmpty) {
@@ -574,6 +582,8 @@ class DetailPlayButton extends StatelessWidget {
                 if (versions.isNotEmpty) {
                   final version =
                       versions[vIndex.clamp(0, versions.length - 1)];
+                  seasonVersionId = version.id;
+                  episodes = version.episodes;
                   if (version.episodes.isNotEmpty) {
                     final episode = version
                         .episodes[eIndex.clamp(0, version.episodes.length - 1)];
@@ -590,6 +600,8 @@ class DetailPlayButton extends StatelessWidget {
               'detail': detail,
               'asset': asset,
               'candidates': candidates,
+              if (episodes.isNotEmpty) 'episodes': episodes,
+              if (seasonVersionId != null) 'seasonVersionId': seasonVersionId,
             });
           },
           icon: const Icon(Icons.play_arrow),
@@ -990,7 +1002,7 @@ class DetailSeasonsEpisodes extends StatelessWidget {
                             fontWeight: isSelected
                                 ? FontWeight.bold
                                 : FontWeight.normal),
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],

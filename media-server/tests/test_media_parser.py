@@ -80,3 +80,16 @@ def test_media_parser_episode_hints_cover_common_chinese_patterns(path, expected
     assert info.get("title") == expected_title
     assert info.get("type") == "episode"
     assert info.get("episode") == expected_episode
+
+
+def test_media_parser_variety_issue_with_phase_and_upper_part():
+    parser = MediaParser()
+
+    path = "/dav/302/133quark302/综艺/现在就出发/S03/2025.11.08-第3期上.mp4"
+    info = parser.parse(path, strict_episode=parser.should_force_episode(path))
+
+    assert info.get("title") == "现在就出发"
+    assert info.get("type") == "episode"
+    assert info.get("season") == 3
+    assert info.get("episode") == 3
+    assert info.get("part") == 1

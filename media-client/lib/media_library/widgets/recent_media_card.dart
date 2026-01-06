@@ -46,6 +46,7 @@ class RecentMediaCard extends StatelessWidget {
           },
           'asset': null,
           'candidates': const <dynamic>[],
+          'start': item.positionMs, // 传递播放进度
         });
         if (onPlayReturn != null) {
           onPlayReturn!();

@@ -612,6 +612,34 @@ class ScraperManager:
             
         return all_results
 
+    async def rollback_search_media(self, title: str, year: Optional[int], media_type: MediaType, language: str) -> Tuple[List[ScraperSearchResult], MediaType]:
+        """回滚搜索（类型切换,去掉年份）"""
+        self._ensure_started()
+
+        current_type = media_type
+
+        results = await self.search_media(title=title, year=year, media_type=current_type, language=language)
+        if results:
+            return results, current_type
+
+        alt_type = MediaType.MOVIE if current_type == MediaType.TV_EPISODE else MediaType.TV_EPISODE
+        logger.info(f"回滚搜索：当前类型 {current_type} 无结果，尝试切换为 {alt_type}")
+        results = await self.search_media(title=title, year=year, media_type=alt_type, language=language)
+        if results:
+            return results, alt_type
+
+        if year is not None:
+            logger.info(f"回滚搜索：去掉年份 {year}")
+            results = await self.search_media(title=title, year=None, media_type=current_type, language=language)
+            if results:
+                return results, current_type
+
+            results = await self.search_media(title=title, year=None, media_type=alt_type, language=language)
+            if results:
+                return results, alt_type
+
+        return [], current_type
+       
     async def _call_with_timeout(self, provider: str, op: str, coro: Awaitable[Any]) -> Any:
         try:
             return await asyncio.wait_for(coro, timeout=self._timeout_seconds)

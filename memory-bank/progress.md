@@ -45,3 +45,8 @@
   - 评估：更新了评估脚本 `evaluate_media_parser_dataset.py` 以兼容新的扁平化标注格式。
   - 结果：初步评估显示季（90.1%）与集（94.4%）解析准确率较高，标题（72.7%）与年份（57.1%）仍有优化空间，主要原因是解析器类型定义（episode vs tv/anime）不一致导致整体准确率为 0%，后续需对齐类型定义。
 
+- 2026-01-06 综艺“第N期上/PartN”命名解析与刮削链路修复：
+  - 问题：对于 `/dav/302/133quark302/综艺/现在就出发/S03/2025.11.08-第3期上.mp4` 等综艺路径，名称解析器未填充 `episode/part`，导致组级刮削阶段在 `metadata_enricher.py` 内检测到 `episode` 为空而直接返回空 `contract_payload`，无法绑定到季详情中的对应单集。
+  - 解析器：在 `MediaParser._preprocess_name` 与 `parse` 后处理逻辑中，新增对“第N期”中文期号与“上/中/下”和 `PartN` 文本的识别，将“第3期上”归一为 `episode=3, part=1`，并保证综艺目录下的“第N期中/下”分别映射到 `part=2/3`，统一交由解析器输出 `episode/part` 字段。
+  - 丰富器：在 `MetadataEnricher` 组级装配逻辑中，仅消费 `path_info` 中的 `episode/part` 字段：按 `episode` 精确匹配季详情中的单集条目，并在返回的 `contract_payload` 中透传 `part` 字段，避免在业务层重复解析文件名，明确“解析器负责命名解析、丰富器负责刮削与组装”的职责分工。
+  - 测试：扩展 `tests/test_media_parser.py` 新增综艺样例用例，覆盖“第3期上”路径的季、集与分段解析；后端 `pytest` 全量 16 项测试全部通过，保证改动稳定性。

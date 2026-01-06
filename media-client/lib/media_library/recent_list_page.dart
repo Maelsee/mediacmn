@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../core/api_client.dart';
+import '../core/playback_history/providers.dart';
 import 'media_models.dart';
 import 'widgets/recent_media_card.dart';
 
@@ -44,10 +44,12 @@ class _RecentListPageState extends ConsumerState<RecentListPage> {
       _error = null;
     });
     try {
-      final api = ref.read(apiClientProvider);
-      final raw = await api.getRecentRaw(
-          page: _page, pageSize: 30, sort: 'updated_desc');
-      final newItems = raw.map((e) => RecentCardItem.fromApi(e)).toList();
+      final repo = ref.read(recentRepositoryProvider);
+      final newItems = await repo.fetchRecentPage(
+        page: _page,
+        pageSize: 30,
+        sort: 'updated_desc',
+      );
       setState(() {
         _items.addAll(newItems);
         _page += 1;
@@ -162,8 +164,8 @@ class _RecentListPageState extends ConsumerState<RecentListPage> {
     final fid = it.fileId;
     if (fid == null) return;
     try {
-      final api = ref.read(apiClientProvider);
-      await api.deletePlaybackProgress(fid);
+      final repo = ref.read(playbackProgressRepositoryProvider);
+      await repo.deleteProgress(fileId: fid);
       if (!mounted) return;
       setState(() {
         _items.removeWhere((e) => e.fileId == fid);

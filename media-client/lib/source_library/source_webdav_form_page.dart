@@ -18,9 +18,11 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
   final _form = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _endpoint = TextEditingController();
+  final _port = TextEditingController();
   final _username = TextEditingController();
   final _password = TextEditingController();
   final _basePath = TextEditingController();
+  String _protocol = 'HTTP';
   bool _busy = false;
 
   @override
@@ -38,6 +40,7 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
       final detail =
           await ref.read(apiClientProvider).getStorageDetail(widget.sourceId!);
       _applyPrefill(detail);
+      if (mounted) setState(() {});
     } catch (_) {}
   }
 
@@ -53,7 +56,25 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
     final rootPath = (detail['root_path'] as String?) ??
         (d['root_path'] as String?) ??
         _basePath.text;
-    _endpoint.text = hostname;
+
+    try {
+      var urlStr = hostname;
+      if (!urlStr.contains('://')) {
+        urlStr = 'http://$urlStr';
+      }
+      final uri = Uri.parse(urlStr);
+      if (uri.scheme.isNotEmpty) {
+        _protocol = uri.scheme.toUpperCase();
+      }
+      _endpoint.text = uri.host;
+      if (uri.hasPort) {
+        _port.text = uri.port.toString();
+      }
+    } catch (_) {
+      // Fallback if parsing fails
+      _endpoint.text = hostname;
+    }
+
     _username.text = login;
     _basePath.text = rootPath;
   }
@@ -76,20 +97,42 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
                         validator: _req),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      initialValue: 'HTTP',
+                      key: ValueKey(_protocol),
+                      initialValue: _protocol,
                       items: const [
                         DropdownMenuItem(value: 'HTTP', child: Text('HTTP')),
                         DropdownMenuItem(value: 'HTTPS', child: Text('HTTPS'))
                       ],
-                      onChanged: (_) {},
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() => _protocol = v);
+                      },
                       decoration: const InputDecoration(labelText: '协议'),
                     ),
                     const SizedBox(height: 12),
-                    TextFormField(
-                        controller: _endpoint,
-                        decoration: const InputDecoration(
-                            labelText: '地址*', hintText: '请输入IP或域名'),
-                        validator: _req),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: TextFormField(
+                              controller: _endpoint,
+                              decoration: const InputDecoration(
+                                  labelText: '地址*', hintText: 'IP或域名'),
+                              validator: _req),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 1,
+                          child: TextFormField(
+                            controller: _port,
+                            decoration: const InputDecoration(
+                                labelText: '端口', hintText: '选填'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                     TextFormField(
                         controller: _basePath,
@@ -122,16 +165,64 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
 
   String? _req(String? v) => (v == null || v.isEmpty) ? '必填' : null;
 
+  String _buildHostname() {
+    final endpointRaw = _endpoint.text.trim();
+    final portRaw = _port.text.trim();
+    if (endpointRaw.isEmpty) return '';
+
+    String scheme = _protocol.toLowerCase();
+    String host = endpointRaw;
+    int? port;
+
+    if (endpointRaw.contains('://')) {
+      try {
+        final uri = Uri.parse(endpointRaw);
+        if (uri.scheme.isNotEmpty) scheme = uri.scheme.toLowerCase();
+        if (uri.host.isNotEmpty) host = uri.host;
+        if (uri.hasPort) port = uri.port;
+      } catch (_) {}
+    }
+
+    if (!endpointRaw.contains('://') && host.contains(':') && portRaw.isEmpty) {
+      final idx = host.lastIndexOf(':');
+      final h = host.substring(0, idx);
+      final p = int.tryParse(host.substring(idx + 1));
+      if (h.isNotEmpty && p != null) {
+        host = h;
+        port = p;
+      }
+    }
+
+    final portFromField = int.tryParse(portRaw);
+    if (portFromField != null) {
+      port = portFromField;
+    }
+
+    host = host.trim();
+    if (host.toLowerCase().startsWith('http://')) {
+      host = host.substring(7);
+    } else if (host.toLowerCase().startsWith('https://')) {
+      host = host.substring(8);
+    }
+    while (host.endsWith('/')) {
+      host = host.substring(0, host.length - 1);
+    }
+
+    final portPart = port != null ? ':$port' : '';
+    return '$scheme://$host$portPart';
+  }
+
   Future<void> _onSave() async {
     if (!(_form.currentState?.validate() ?? false)) return;
     setState(() => _busy = true);
     try {
+      final hostname = _buildHostname();
       if (widget.sourceId != null && widget.sourceId!.isNotEmpty) {
         final api = ref.read(apiClientProvider);
         final payload = {
           'name': _name.text,
           'config': {
-            'hostname': _endpoint.text,
+            'hostname': hostname,
             'login': _username.text,
             'root_path': _basePath.text,
             if (_password.text.isNotEmpty) 'password': _password.text,
@@ -143,7 +234,7 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
             .updateName(widget.sourceId!, _name.text);
         ref.read(sourcesProvider.notifier).cacheDetail(widget.sourceId!, {
           'name': _name.text,
-          'hostname': _endpoint.text,
+          'hostname': hostname,
           'login': _username.text,
           'root_path': _basePath.text,
         });
@@ -157,7 +248,7 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
           'name': _name.text,
           'storage_type': 'webdav',
           'config': {
-            'hostname': _endpoint.text,
+            'hostname': hostname,
             'login': _username.text,
             'password': _password.text,
             'root_path': _basePath.text,
@@ -167,7 +258,7 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
         ref.read(sourcesProvider.notifier).cacheDetail(res.id, {
           'name': _name.text,
           'storage_type': 'webdav',
-          'hostname': _endpoint.text,
+          'hostname': hostname,
           'login': _username.text,
           'root_path': _basePath.text,
           'verify_ssl': true,

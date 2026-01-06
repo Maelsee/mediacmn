@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../source_library/tasks/task_provider.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -50,6 +51,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       width: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : const Text('登录')),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () {
+              GoRouter.of(context).push('/profile/register');
+            },
+            child: const Text('没有账号？去注册'),
+          ),
           const SizedBox(height: 12),
           Opacity(
               opacity: 0.7,

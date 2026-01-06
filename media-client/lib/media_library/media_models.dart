@@ -297,6 +297,9 @@ class SeasonDetail {
 }
 
 class EpisodeDetail {
+  /// 剧集条目 ID（部分接口会返回，详情页数据可能为空）。
+  final int? id;
+
   final int episodeNumber;
   final String title;
   final int? runtime;
@@ -305,7 +308,8 @@ class EpisodeDetail {
   final Map<String, dynamic>? technical;
   final String? stillPath;
   EpisodeDetail(
-      {required this.episodeNumber,
+      {this.id,
+      required this.episodeNumber,
       required this.title,
       this.runtime,
       this.runtimeText,
@@ -313,6 +317,7 @@ class EpisodeDetail {
       this.technical,
       this.stillPath});
   factory EpisodeDetail.fromJson(Map<String, dynamic> json) => EpisodeDetail(
+        id: (json['id'] as num?)?.toInt(),
         episodeNumber: (json['episode_number'] ?? 0) as int,
         title: (json['title'] ?? '') as String,
         runtime: (json['runtime'] as num?)?.toInt(),
@@ -324,6 +329,37 @@ class EpisodeDetail {
         technical: json['technical'] as Map<String, dynamic>?,
         stillPath: json['still_path'] as String?,
       );
+}
+
+/// 文件维度的选集列表响应。
+///
+/// 对应接口：/api/media/file/{file_id}/episodes。
+class FileEpisodesResponse {
+  /// 当前请求的文件 ID。
+  final int fileId;
+
+  /// 所属季版本 ID（后端可能返回，部分场景可为空）。
+  final int? seasonVersionId;
+
+  /// 选集列表。
+  final List<EpisodeDetail> episodes;
+
+  FileEpisodesResponse({
+    required this.fileId,
+    required this.episodes,
+    this.seasonVersionId,
+  });
+
+  factory FileEpisodesResponse.fromJson(Map<String, dynamic> json) {
+    return FileEpisodesResponse(
+      fileId: (json['file_id'] as num?)?.toInt() ?? 0,
+      seasonVersionId: (json['season_version_id'] as num?)?.toInt(),
+      episodes: ((json['episodes'] as List?)?.cast<Map<String, dynamic>>() ??
+              const [])
+          .map(EpisodeDetail.fromJson)
+          .toList(),
+    );
+  }
 }
 
 class AssetItem {

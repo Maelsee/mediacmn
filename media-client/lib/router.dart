@@ -14,6 +14,7 @@ import 'package:media_client/source_library/source_webdav_form_page.dart';
 import 'package:media_client/source_library/storage_browser_page.dart';
 // import 'profile/home_page.dart';
 import 'profile/login_page.dart';
+import 'profile/register_page.dart';
 import 'profile/home_sections_page.dart';
 import 'media_library/media_kind_page.dart';
 import 'media_library/genres_page.dart';
@@ -21,7 +22,16 @@ import 'media_library/recent_list_page.dart';
 
 final routeObserver = RouteObserver<ModalRoute<void>>();
 
+/// 根导航 Key：用于承载“非首页”的全屏页面（不显示底部导航栏）。
+final _rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// 三个 Tab 分支各自的导航 Key：用于保存各分支内部的导航栈。
+final _mediaBranchNavigatorKey = GlobalKey<NavigatorState>();
+final _sourcesBranchNavigatorKey = GlobalKey<NavigatorState>();
+final _profileBranchNavigatorKey = GlobalKey<NavigatorState>();
+
 final appRouter = GoRouter(
+  navigatorKey: _rootNavigatorKey,
   observers: [routeObserver],
   initialLocation: '/media',
   routes: [
@@ -37,13 +47,14 @@ final appRouter = GoRouter(
       builder: (context, state, navigationShell) =>
           AppShell(navigationShell: navigationShell),
       branches: [
-        StatefulShellBranch(routes: [
+        StatefulShellBranch(navigatorKey: _mediaBranchNavigatorKey, routes: [
           GoRoute(
             path: '/media',
             builder: (context, state) => const MediaLibraryPage(),
             routes: [
               GoRoute(
                 path: 'search',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) {
                   final kind = state.uri.queryParameters['kind'];
                   return SearchPage(initialKind: kind);
@@ -51,6 +62,7 @@ final appRouter = GoRouter(
               ),
               GoRoute(
                 path: 'cards',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) {
                   final title = state.uri.queryParameters['title'];
                   final kind = state.uri.queryParameters['kind'];
@@ -65,14 +77,17 @@ final appRouter = GoRouter(
               ),
               GoRoute(
                 path: 'genres',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) => const GenresPage(),
               ),
               GoRoute(
                 path: 'recent',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) => const RecentListPage(),
               ),
               GoRoute(
                 path: 'detail/:id',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) {
                   final idStr = state.pathParameters['id']!;
                   // Try parsing as int, otherwise treat as 0 or error?
@@ -86,13 +101,14 @@ final appRouter = GoRouter(
             ],
           ),
         ]),
-        StatefulShellBranch(routes: [
+        StatefulShellBranch(navigatorKey: _sourcesBranchNavigatorKey, routes: [
           GoRoute(
             path: '/sources',
             builder: (context, state) => const SourcesHomePage(),
             routes: [
               GoRoute(
                 path: 'add',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) {
                   final t = state.uri.queryParameters['type'];
                   if (t == 'webdav') {
@@ -103,6 +119,7 @@ final appRouter = GoRouter(
               ),
               GoRoute(
                 path: 'browse/:id',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) {
                   final idStr = state.pathParameters['id']!;
                   final id = int.tryParse(idStr) ?? 0;
@@ -114,6 +131,7 @@ final appRouter = GoRouter(
               ),
               GoRoute(
                 path: ':id/edit',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) {
                   final id = state.pathParameters['id']!;
                   final t = state.uri.queryParameters['type'];
@@ -143,17 +161,24 @@ final appRouter = GoRouter(
             ],
           ),
         ]),
-        StatefulShellBranch(routes: [
+        StatefulShellBranch(navigatorKey: _profileBranchNavigatorKey, routes: [
           GoRoute(
             path: '/profile',
             builder: (context, state) => const ProfileHomePage(),
             routes: [
               GoRoute(
                 path: 'login',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) => const LoginPage(),
               ),
               GoRoute(
+                path: 'register',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => const RegisterPage(),
+              ),
+              GoRoute(
                 path: 'settings',
+                parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) => const HomeSectionsPage(),
               ),
             ],
