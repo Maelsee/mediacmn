@@ -3,16 +3,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_brightness/screen_brightness.dart';
-import '../../../logic/player_notifier.dart';
-import '../../../utils/formatters.dart';
+import '../../logic/player_notifier.dart';
+import '../../utils/formatters.dart';
 
-/// 手势控制层
-///
-/// 处理播放器上的所有手势操作：
-/// - 单击：切换 UI 显示/隐藏
-/// - 双击：播放/暂停或快进/快退
-/// - 水平滑动：调整播放进度
-/// - 垂直滑动：调整音量/亮度
 class GestureLayer extends ConsumerStatefulWidget {
   final VoidCallback onTap;
   final VoidCallback onActivity;
@@ -28,16 +21,14 @@ class GestureLayer extends ConsumerStatefulWidget {
 }
 
 class _GestureLayerState extends ConsumerState<GestureLayer> {
-  // 进度调节相关
   bool _isSeekSliding = false;
   Duration? _seekStartPosition;
   Duration? _seekTargetPosition;
   double _seekAccumulatedDelta = 0;
   static const double _seekSensitivity = 2.0;
 
-  // 音量/亮度调节相关
   bool _isVerticalSliding = false;
-  bool _isVolumeControl = false; // true: 音量, false: 亮度
+  bool _isVolumeControl = false;
   double _verticalStartValue = 0.0;
   double _verticalCurrentValue = 0.0;
   double _verticalAccumulatedDelta = 0;
@@ -46,16 +37,16 @@ class _GestureLayerState extends ConsumerState<GestureLayer> {
   Offset? _pointerDownPosition;
   bool _pointerMoved = false;
 
+  Timer? _tapResetTimer;
+  DateTime? _lastTapUpTime;
+  Offset? _lastTapUpPosition;
+  static const Duration _doubleTapMaxInterval = Duration(milliseconds: 280);
+
   @override
   void dispose() {
     _tapResetTimer?.cancel();
     super.dispose();
   }
-
-  Timer? _tapResetTimer;
-  DateTime? _lastTapUpTime;
-  Offset? _lastTapUpPosition;
-  static const Duration _doubleTapMaxInterval = Duration(milliseconds: 280);
 
   void _onPointerDown(PointerDownEvent event) {
     if (_activePointerId != null) return;
@@ -133,7 +124,6 @@ class _GestureLayerState extends ConsumerState<GestureLayer> {
       builder: (context, constraints) {
         return Stack(
           children: [
-            // 手势检测区域
             Listener(
               behavior: HitTestBehavior.opaque,
               onPointerDown: _onPointerDown,
@@ -153,14 +143,10 @@ class _GestureLayerState extends ConsumerState<GestureLayer> {
                 child: const SizedBox.expand(),
               ),
             ),
-
-            // 进度调节提示
             if (_isSeekSliding && _seekTargetPosition != null)
               Center(
                 child: _buildSeekOverlay(),
               ),
-
-            // 音量/亮度调节提示
             if (_isVerticalSliding)
               Center(
                 child: _buildVerticalOverlay(),
@@ -171,7 +157,6 @@ class _GestureLayerState extends ConsumerState<GestureLayer> {
     );
   }
 
-  // ==================== 手势处理逻辑 ====================
   void _handleDoubleTap(Offset position, BoxConstraints constraints) {
     widget.onActivity();
     final width = constraints.maxWidth;
@@ -180,16 +165,13 @@ class _GestureLayerState extends ConsumerState<GestureLayer> {
     final state = ref.read(playerProvider);
 
     if (dx < width * 0.3) {
-      // 左侧双击：快退 10s
       final newPos = state.position - const Duration(seconds: 10);
       notifier.seek(newPos < Duration.zero ? Duration.zero : newPos);
     } else if (dx > width * 0.7) {
-      // 右侧双击：快进 10s
       final newPos = state.position + const Duration(seconds: 10);
       final duration = state.duration;
       notifier.seek(newPos > duration ? duration : newPos);
     } else {
-      // 中间双击：播放/暂停
       notifier.toggle();
     }
   }
@@ -242,7 +224,6 @@ class _GestureLayerState extends ConsumerState<GestureLayer> {
       _verticalAccumulatedDelta = 0;
     });
 
-    // 右半屏调节音量，左半屏调节亮度
     if (details.globalPosition.dx > constraints.maxWidth * 0.5) {
       _isVolumeControl = true;
       _verticalStartValue = ref.read(playerProvider).volume / 100.0;
@@ -261,10 +242,8 @@ class _GestureLayerState extends ConsumerState<GestureLayer> {
     widget.onActivity();
     if (!_isVerticalSliding) return;
 
-    // 向上滑为负，需转为正向增加
     _verticalAccumulatedDelta -= details.primaryDelta!;
 
-    // 灵敏度调节
     final change = _verticalAccumulatedDelta * 0.005;
     final newValue = (_verticalStartValue + change).clamp(0.0, 1.0);
 
@@ -287,8 +266,6 @@ class _GestureLayerState extends ConsumerState<GestureLayer> {
       _isVerticalSliding = false;
     });
   }
-
-  // ==================== UI 构建 helper ====================
 
   Widget _buildSeekOverlay() {
     final state = ref.read(playerProvider);

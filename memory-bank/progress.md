@@ -5,3 +5,4 @@
 - 质量：运行 `flutter analyze` 确保代码无静态分析错误
 - 环境：解决 WSL/远程环境下 `flutter run -d web-server` 的调试服务连接报错问题，通过增加 `--disable-dds` 和 `--web-hostname 0.0.0.0` 参数优化启动流程
 - 播放器：重构 GestureLayer 手势分发，解决单击/双击/滑动冲突
+- 播放器：在 `ui/browser` 与 `ui/mobile` 间拆分播放页面布局，浏览器端移除亮度与滑动手势，仅保留点击与滚轮音量控制，并通过公共 `common` 目录复用视频层、控制栏和设置/选集面板

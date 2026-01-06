@@ -17,6 +17,13 @@ class ControlsLayer extends ConsumerWidget {
   final VoidCallback onEpisodesTap;
   final VoidCallback onTracksTap;
   final VoidCallback onOrientationToggle;
+  final bool showLockButton;
+  final bool showOrientationToggle;
+  final bool showSettingsButton;
+  final bool showEpisodesButton;
+  final bool showTracksButton;
+  final bool showSpeedButton;
+  final bool showVolumeButton;
 
   const ControlsLayer({
     super.key,
@@ -28,6 +35,13 @@ class ControlsLayer extends ConsumerWidget {
     required this.onEpisodesTap,
     required this.onTracksTap,
     required this.onOrientationToggle,
+    this.showLockButton = true,
+    this.showOrientationToggle = true,
+    this.showSettingsButton = true,
+    this.showEpisodesButton = true,
+    this.showTracksButton = true,
+    this.showSpeedButton = true,
+    this.showVolumeButton = true,
   });
 
   @override
@@ -39,7 +53,6 @@ class ControlsLayer extends ConsumerWidget {
         ignoring: !visible,
         child: Stack(
           children: [
-            // Top Bar
             if (!isLocked)
               Positioned(
                 top: 0,
@@ -47,8 +60,6 @@ class ControlsLayer extends ConsumerWidget {
                 right: 0,
                 child: _buildTopBar(context),
               ),
-
-            // Bottom Bar
             if (!isLocked)
               Positioned(
                 bottom: 0,
@@ -56,17 +67,16 @@ class ControlsLayer extends ConsumerWidget {
                 right: 0,
                 child: _buildBottomBar(context, ref),
               ),
-
-            // Lock Button
-            Positioned(
-              left: 20,
-              bottom: 100,
-              child: PlayerIconButton(
-                icon: isLocked ? Icons.lock : Icons.lock_open,
-                onTap: onLockToggle,
-                color: Colors.white,
+            if (showLockButton)
+              Positioned(
+                left: 20,
+                bottom: 100,
+                child: PlayerIconButton(
+                  icon: isLocked ? Icons.lock : Icons.lock_open,
+                  onTap: onLockToggle,
+                  color: Colors.white,
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -107,14 +117,16 @@ class ControlsLayer extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          PlayerIconButton(
-            icon: Icons.screen_rotation,
-            onTap: onOrientationToggle,
-          ),
-          PlayerIconButton(
-            icon: Icons.settings,
-            onTap: onSettingsTap,
-          ),
+          if (showOrientationToggle)
+            PlayerIconButton(
+              icon: Icons.screen_rotation,
+              onTap: onOrientationToggle,
+            ),
+          if (showSettingsButton)
+            PlayerIconButton(
+              icon: Icons.settings,
+              onTap: onSettingsTap,
+            ),
         ],
       ),
     );
@@ -143,7 +155,6 @@ class ControlsLayer extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Progress Bar
           Row(
             children: [
               Text(
@@ -179,43 +190,51 @@ class ControlsLayer extends ConsumerWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 8),
-
-          // Control Buttons
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Play/Pause
               PlayerIconButton(
                 icon: state.playing ? Icons.pause : Icons.play_arrow,
                 onTap: () => notifier.toggle(),
                 size: 32,
               ),
-
-              // Right side controls
               Row(
                 children: [
-                  PlayerTextButton(
-                    text: '${state.rate}x',
-                    onTap: () {
-                      // Cycle speed
-                      final speeds = [0.5, 1.0, 1.25, 1.5, 2.0];
-                      final index = speeds.indexOf(state.rate);
-                      final nextRate = speeds[(index + 1) % speeds.length];
-                      notifier.setRate(nextRate);
-                    },
-                  ),
-                  PlayerIconButton(
-                    icon: Icons.list,
-                    onTap: onEpisodesTap,
-                    tooltip: '选集',
-                  ),
-                  PlayerIconButton(
-                    icon: Icons.subtitles,
-                    onTap: onTracksTap,
-                    tooltip: '字幕/音轨',
-                  ),
+                  if (showVolumeButton)
+                    PlayerIconButton(
+                      icon: state.volume <= 0
+                          ? Icons.volume_off
+                          : Icons.volume_up,
+                      onTap: () {
+                        final isMuted = state.volume <= 0;
+                        final targetVolume = isMuted ? 50.0 : 0.0;
+                        notifier.setVolume(targetVolume);
+                      },
+                      tooltip: state.volume <= 0 ? '取消静音' : '静音',
+                    ),
+                  if (showSpeedButton)
+                    PlayerTextButton(
+                      text: '${state.rate}x',
+                      onTap: () {
+                        final speeds = [0.5, 1.0, 1.25, 1.5, 2.0];
+                        final index = speeds.indexOf(state.rate);
+                        final nextRate = speeds[(index + 1) % speeds.length];
+                        notifier.setRate(nextRate);
+                      },
+                    ),
+                  if (showEpisodesButton)
+                    PlayerIconButton(
+                      icon: Icons.list,
+                      onTap: onEpisodesTap,
+                      tooltip: '选集',
+                    ),
+                  if (showTracksButton)
+                    PlayerIconButton(
+                      icon: Icons.subtitles,
+                      onTap: onTracksTap,
+                      tooltip: '字幕/音轨',
+                    ),
                 ],
               ),
             ],
