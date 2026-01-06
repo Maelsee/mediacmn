@@ -55,6 +55,7 @@ class MetadataPersistenceAsyncService:
                 for item in items:
                     file_id = item.get("file_id")
                     contract_type = item.get("contract_type")
+                    
                     metadata = item.get("contract_payload") or {}
                     path_info = item.get("path_info") or {}
                     if not file_id or not contract_type or not metadata:

@@ -1,0 +1,148 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mediacmn_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mediacmn}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - internal
+
+  redis_queue:
+    image: redis:7-alpine
+    container_name: mediacmn_redis_queue
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "--appendonly", "yes"]
+    volumes:
+      - redis_queue_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - internal
+
+  redis_cache:
+    image: redis:7-alpine
+    container_name: mediacmn_redis_cache
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--requirepass",
+        "${REDIS_CACHE_PASSWORD:?REDIS_CACHE_PASSWORD is required}",
+        "--maxmemory",
+        "1gb",
+        "--maxmemory-policy",
+        "allkeys-lru"
+      ]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_CACHE_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - internal
+
+  api:
+    build:
+      context: ./media-server
+    container_name: mediacmn_api
+    restart: unless-stopped
+    env_file:
+      - ./deploy/.env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis_queue:
+        condition: service_healthy
+      redis_cache:
+        condition: service_healthy
+    command:
+      [
+        "sh",
+        "-c",
+        "if [ -f alembic.ini ] && [ -d alembic ]; then alembic upgrade head; fi; uvicorn main:app --host 0.0.0.0 --port 8000"
+      ]
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=2).read()"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 15
+      start_period: 30s
+    volumes:
+      - api_logs:/app/logs
+    networks:
+      - internal
+
+  worker:
+    build:
+      context: ./media-server
+    container_name: mediacmn_worker
+    restart: unless-stopped
+    env_file:
+      - ./deploy/.env.prod
+    depends_on:
+      redis_queue:
+        condition: service_healthy
+      redis_cache:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    command: ["dramatiq", "services.task.consumers", "--processes", "2", "--threads", "2"]
+    volumes:
+      - api_logs:/app/logs
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2
+    container_name: mediacmn_caddy
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    env_file:
+      - ./deploy/.env.prod
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "6069:6069"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+      - public
+
+volumes:
+  postgres_data:
+  redis_queue_data:
+  api_logs:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge
+  public:
+    driver: bridge

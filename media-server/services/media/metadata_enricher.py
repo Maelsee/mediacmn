@@ -7,7 +7,7 @@ import os
 from collections import Counter
 from typing import Dict, List, Optional, Any, TypedDict, AsyncIterator
 from sqlmodel import select
-from guessit import guessit
+from utils.media_parser import MediaParser,media_parser
 from core.db import AsyncSessionLocal
 from models.media_models import FileAsset
 from models.user import User
@@ -47,6 +47,7 @@ class MetadataEnricher:
         创建存储服务和文件名解析器实例
         """
         self.storage_service = storage_service
+        self.media_parser = MediaParser()
     
     def _get_best_match(self,search_results: List[ScraperSearchResult],parsed_data: dict,) -> Optional[ScraperSearchResult]:  # parsed_data名称解析器结果：{title: str, year: Optional[int], language: Optional[str], country: Optional[str]}
     
@@ -64,14 +65,29 @@ class MetadataEnricher:
             return None
 
         # -------------------------- 步骤1：过滤无效结果 --------------------------
+        def _norm_title(text: str) -> str:
+            s = (text or "").strip().lower()
+            return "".join(ch for ch in s if ch.isalnum() or "\u4e00" <= ch <= "\u9fff")
+
         parsed_title = parsed_data["title"].strip()
+        parsed_title_norm = _norm_title(parsed_title)
         parsed_country = parsed_data.get("country")  # 解析的地区（可选）
         filtered_results = []
 
         for result in search_results:
-            # 1.1 标题相关性过滤：解析的title必须是结果title/original_name的子集（避免同名无关结果）
+            # 1.1 标题相关性过滤：使用归一化后包含关系，增强中英文及符号兼容性
             result_title_candidates = [t for t in [result.title, result.original_name] if t and t.strip()]
-            title_matched = any(parsed_title in candidate.strip() for candidate in result_title_candidates)
+            title_matched = False
+            for candidate in result_title_candidates:
+                cand_norm = _norm_title(candidate)
+                if not cand_norm:
+                    continue
+                if parsed_title_norm == cand_norm:
+                    title_matched = True
+                    break
+                if parsed_title_norm and (parsed_title_norm in cand_norm or cand_norm in parsed_title_norm):
+                    title_matched = True
+                    break
             if not title_matched:
                 continue
 
@@ -97,11 +113,15 @@ class MetadataEnricher:
             result_vote_count = result.vote_count or 0  # 投票数（默认0）
             result_popularity = result.popularity or 0.0  # 流行度（默认0）
 
-            # 2.1 标题精确匹配（权重30：核心维度，完全匹配优先级最高）
-            if any(
-                parsed_title == candidate.strip() 
-                for candidate in [result.title, result.original_name] if candidate and candidate.strip()
-            ):
+            # 2.1 标题精确匹配（权重30：核心维度，使用归一化后的全等匹配）
+            title_exact_match = False
+            for candidate in [result.title, result.original_name]:
+                if not candidate:
+                    continue
+                if _norm_title(candidate) == parsed_title_norm and parsed_title_norm:
+                    title_exact_match = True
+                    break
+            if title_exact_match:
                 score += 30
 
             # 2.2 年份匹配（权重25：核心维度，区分同名称不同版本）
@@ -182,7 +202,8 @@ class MetadataEnricher:
         """
         logger.debug(f'用户语言{language}')
         try:
-            path_info = await asyncio.to_thread(guessit, file_asset.full_path)
+            strict_episode = self.media_parser.should_force_episode(file_asset.full_path)
+            path_info = await asyncio.to_thread(self.media_parser.parse, file_asset.full_path, strict_episode)
             title = path_info.get("title")
             season = path_info.get("season")
             episode = path_info.get("episode")
@@ -190,33 +211,65 @@ class MetadataEnricher:
             country = path_info.get("country")  
             corrected_type = MediaType.MOVIE if path_info.get("type") == "movie" else MediaType.TV_EPISODE
 
-            logger.info(f"🔍 搜索参数：title='{title}', 年份={year}, 语言={language}, 类型={corrected_type.value}")
+            logger.info(f"🔍 搜索参数：title='{title}', 年份={year}, 语言={language}, 类型={corrected_type.value},季={season},集={episode}")
             search_results = await scraper_manager.search_media(
                 title=title,
                 year=year,
                 media_type=corrected_type,
-                language=language
+                language=language,
             )
 
             if not search_results:
-                err_msg = f"未找到元数据: title='{title}' (年份={year})"
-                logger.warning(err_msg)
-                return {
-                    "user_id": file_asset.user_id,
-                    "file_id": file_asset.id,
-                    "contract_type": "",
-                    "contract_payload": {},
-                    "path_info": path_info,
-                    "success": False,
-                    "error_msg": err_msg
-                }
+                corrected_type = MediaType.MOVIE if corrected_type == MediaType.TV_EPISODE else MediaType.TV_EPISODE
+                logger.info(f"🔍 换类型搜索参数：title='{title}', 年份={year}, 语言={language}, 类型={corrected_type.value},季={season},集={episode}")
+
+                search_results = await scraper_manager.search_media(
+                    title=title,
+                    year=year,
+                    media_type=corrected_type,
+                    language=language,
+                )
+                # logger.info(f"🔍 换类型搜索结果：{search_results}")
+                path_info = await asyncio.to_thread(
+                    self.media_parser.parse,
+                    file_asset.full_path,
+                    corrected_type == MediaType.TV_EPISODE,
+                )
+                title = path_info.get("title")
+                season = path_info.get("season")
+                episode = path_info.get("episode")
+                year = path_info.get("year")
+                country = path_info.get("country")
+
+                if not search_results and year is not None:
+                    logger.info(
+                        f"🔍 按年份搜索未命中，尝试不带年份搜索: title='{title}', 原年份={year}, 类型={corrected_type.value}"
+                    )
+                    search_results = await scraper_manager.search_media(
+                        title=title,
+                        year=None,
+                        media_type=corrected_type,
+                        language=language,
+                    )
+
+                if not search_results:
+                    err_msg = f"未找到元数据: title='{title}' 年份={year}"
+                    logger.warning(err_msg)
+                    return {
+                        "user_id": file_asset.user_id,
+                        "file_id": file_asset.id,
+                        "contract_type": "",
+                        "contract_payload": {},
+                        "path_info": path_info,
+                        "success": False,
+                        "error_msg": err_msg,
+                    }
 
             # -------------------------- 3. 选择最优匹配与获取详情 --------------------------
             parsed_data = {"title": title, "year": year, "language": language, "country": country}
             best_match = self._get_best_match(search_results, parsed_data)
-            logger.info(f"🏆 最佳匹配：title='{best_match.title}', 年份={best_match.year}, ID={getattr(best_match, 'id', None)}")
             if not best_match:
-                err_msg = f"无最优匹配结果: title='{title}' (年份={year})"
+                err_msg = f"无最优匹配结果: title='{title}' 年份={year}"
                 logger.warning(err_msg)
                 return {
                     "user_id": file_asset.user_id,
@@ -228,6 +281,37 @@ class MetadataEnricher:
                     "error_msg": err_msg
                 }
 
+            logger.info(
+                "🏆 最佳匹配：title='%s', 年份=%s, ID=%s" % (
+                    getattr(best_match, "title", None),
+                    getattr(best_match, "year", None),
+                    getattr(best_match, "id", None),
+                )
+            )
+            # -------------------------- 4. 处理剧集类型 --------------------------
+            if corrected_type == MediaType.TV_EPISODE:
+                # 剧集类型：获取系列详情
+                series_detail: Optional[ScraperSeriesDetail] = await scraper_manager.get_series_details_cached(
+                    best_match=best_match,
+                    language=language,
+                )
+                # logger.info(f"🔍 组级系列搜索结果：{series_detail}")
+                if series_detail and series_detail.number_of_seasons:
+                    season = 1 if season > series_detail.number_of_seasons else season
+                    logger.info(f"🔍 系列搜索最大季数：{series_detail.number_of_seasons}，使用季数：{season_number}")
+                    # 剧集类型：获取季级详情
+                    season_detail: Optional[ScraperSeasonDetail] = await scraper_manager.get_season_details_cached(
+                        best_match=best_match,
+                        language=language,
+                        season=season,
+                    )
+                    # logger.info(f"🔍 季级系列搜索结果：{season_detail}")
+                    if season_detail and season_detail.episode_count:
+                        episode = 1 if episode > season_detail.episode_count else episode
+                        logger.info(f"🔍 季级系列搜索最大集数：{season_detail.episode_count}，使用集数：{episode}")
+                    
+             
+            
             # 获取元数据详情
             contract_type, details_obj = await scraper_manager.get_detail(
                 best_match=best_match,
@@ -236,6 +320,7 @@ class MetadataEnricher:
                 season=season,
                 episode=episode,
             )
+            logger.info(f"✅ 获取详情成功: contract_type={contract_type},  季={season}, 集={episode}")
 
             # -------------------------- 4. 返回结果 --------------------------
             return {
@@ -278,7 +363,8 @@ class MetadataEnricher:
         path_infos: Dict[int, Dict[str, Any]] = {}
         tasks: List[asyncio.Task] = []
         for fa in file_assets:
-            tasks.append(asyncio.create_task(asyncio.to_thread(guessit, fa.full_path)))
+            strict_episode = self.media_parser.should_force_episode(fa.full_path)
+            tasks.append(asyncio.create_task(asyncio.to_thread(self.media_parser.parse, fa.full_path, strict_episode)))
         parsed_list = await asyncio.gather(*tasks, return_exceptions=True)
         for fa, parsed in zip(file_assets, parsed_list):
             if isinstance(parsed, Exception):
@@ -326,6 +412,7 @@ class MetadataEnricher:
         years = [pi.get("year") for pi in episode_infos]
         countries = [pi.get("country") for pi in episode_infos]
         seasons = [pi.get("season") for pi in episode_infos]
+        logger.info(f"剧集文件信息: titles={titles}")
 
         agg_title = self._most_common_non_empty(titles) or titles[0] if titles else None
         agg_year = self._most_common_non_empty(years)
@@ -333,7 +420,8 @@ class MetadataEnricher:
         agg_season = self._most_common_non_empty(seasons)
 
         corrected_type = MediaType.TV_EPISODE
-
+        logger.info(f"剧集文件信息: agg_title={agg_title}, agg_year={agg_year}, agg_country={agg_country}, agg_season={agg_season}")    
+        
         if not agg_title:
             for fa in episode_files:
                 results.append({
@@ -357,8 +445,19 @@ class MetadataEnricher:
             language=language,
         )
 
+        if not search_results and agg_year is not None:
+            logger.info(
+                f"📦 组级按年份搜索未命中，尝试不带年份搜索: title='{agg_title}', 原年份={agg_year}, 类型={corrected_type.value}"
+            )
+            search_results = await scraper_manager.search_media(
+                title=agg_title,
+                year=None,
+                media_type=corrected_type,
+                language=language,
+            )
+
         if not search_results:
-            err_msg = f"未找到元数据: title='{agg_title}' (年份={agg_year})"
+            err_msg = f"未找到元数据: title='{agg_title}' 年份={agg_year}"
             logger.warning(err_msg)
             for fa in episode_files:
                 results.append({
@@ -368,7 +467,7 @@ class MetadataEnricher:
                     "contract_payload": {},
                     "path_info": path_infos.get(fa.id, {}),
                     "success": False,
-                    "error_msg": err_msg
+                    "error_msg": err_msg,
                 })
             return results
 
@@ -380,7 +479,7 @@ class MetadataEnricher:
         }
         best_match = self._get_best_match(search_results, parsed_data)
         if not best_match:
-            err_msg = f"无最优匹配结果: title='{agg_title}' (年份={agg_year})"
+            err_msg = f"无最优匹配结果: title='{agg_title}' 年份={agg_year}"
             logger.warning(err_msg)
             for fa in episode_files:
                 results.append({
@@ -399,16 +498,23 @@ class MetadataEnricher:
         )
 
         season_number = agg_season or 1
+        logger.info(f"🔍 组级搜索季数：{season_number}，解析季数：{agg_season}")
         try:
             series_detail: Optional[ScraperSeriesDetail] = await scraper_manager.get_series_details_cached(
                 best_match=best_match,
                 language=language,
             )
+            # logger.info(f"🔍 组级系列搜索结果：{series_detail}")
+            if series_detail and series_detail.number_of_seasons:
+                season_number = 1 if season_number > series_detail.number_of_seasons else season_number
+                logger.info(f"🔍 组级系列搜索最大季数：{series_detail.number_of_seasons}，使用季数：{season_number}")
+
             season_detail: Optional[ScraperSeasonDetail] = await scraper_manager.get_season_details_cached(
                 best_match=best_match,
                 language=language,
                 season=season_number,
             )
+            # logger.info(f"🔍 组级季搜索结果：{season_detail}")
         except Exception as e:
             logger.error(f"获取系列/季详情失败: {e}", exc_info=True)
             series_detail = None

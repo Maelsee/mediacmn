@@ -638,8 +638,13 @@ from urllib.parse import urlparse, quote, unquote
 from lxml import etree  # 需要安装 lxml: pip install lxml
 
 from ..storage_client import (
-    StorageClient, StorageEntry, StorageInfo, 
-    StorageConnectionError, StorageNotFoundError, StorageError
+    StorageClient,
+    StorageEntry,
+    StorageInfo,
+    StorageConnectionError,
+    StorageNotFoundError,
+    StoragePermissionError,
+    StorageError,
 )
 
 logger = logging.getLogger(__name__)
@@ -848,10 +853,15 @@ class WebDAVStorageClient(StorageClient):
         return entries
 
     def _build_url(self, path: str) -> str:
-        """统一路径构建，处理斜杠和转义"""
+        """统一路径构建，处理斜杠和转义（目录用，末尾带 /）"""
         clean_path = path.strip('/')
-        # 保持 root_path 逻辑
         url = f"{self._base_url}{quote(clean_path)}/"
+        return url
+
+    def _build_file_url(self, path: str) -> str:
+        """构建文件访问 URL（末尾不加 /，避免部分服务将其视为目录导致 403）"""
+        clean_path = path.strip('/')
+        url = f"{self._base_url}{quote(clean_path)}"
         return url
 
     async def list_dir(self, path: str = "/", depth: int = 1) -> List[StorageEntry]:
@@ -892,8 +902,10 @@ class WebDAVStorageClient(StorageClient):
                 raise StorageError(f"HTTP {resp.status}: {await resp.text()}")
 
     async def download_iter(self, path: str, chunk_size: int = 128 * 1024, offset: int = 0) -> AsyncIterator[bytes]:
-        """流式下载"""
-        url = self._build_url(path)
+        """流式下载（文件），使用不带尾部斜杠的 URL"""
+        url = self._build_file_url(path)
+        logger.info(f'---下载文件: {path}')
+        logger.info(f'----查看url: {url}')
         headers = {'Range': f'bytes={offset}-'} if offset > 0 else {}
         
         # 注意：下载大文件时不应在 _request 内部 await resp.read()
@@ -906,12 +918,14 @@ class WebDAVStorageClient(StorageClient):
                         yield chunk
                 elif resp.status == 404:
                     raise StorageNotFoundError(path)
+                elif resp.status == 403:
+                    raise StoragePermissionError(f"下载权限不足: {path}", path)
                 else:
-                    raise StorageError(f"下载失败: {resp.status}")
+                    raise StorageError(f"下载失败: HTTP {resp.status}")
 
     async def upload(self, path: str, data: bytes, content_type: Optional[str] = None) -> bool:
-        """上传"""
-        url = self._build_url(path)
+        """上传文件，使用不带尾部斜杠的 URL"""
+        url = self._build_file_url(path)
         headers = {'Content-Type': content_type} if content_type else {}
         async with await self._request('PUT', url, data=data, headers=headers) as resp:
             if resp.status in [200, 201, 204]:

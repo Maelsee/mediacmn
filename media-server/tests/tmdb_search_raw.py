@@ -4,7 +4,7 @@ from typing import Optional
 # 保证可直接运行：追加 media-server 到 sys.path
 sys.path.append(str(__file__).split('/media-server/')[0] + '/media-server')
 
-from services.scraper.tmdb import TmdbScraper
+from services.scraper.scraper_plugins.tmdb_scraper import TmdbScraper
 from services.scraper.base import MediaType
 
 

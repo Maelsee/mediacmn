@@ -53,7 +53,10 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME, 
         version="0.1.0",
-        # lifespan=lifespan  # <--- 关键修改点
+        lifespan=lifespan,
+        openapi_url="/api/openapi.json",
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
     )
 
     # 配置 CORS 中间件
@@ -82,7 +85,6 @@ def create_app() -> FastAPI:
     # from api.routes_scraper import router as scraper_router
     from api.routes_playback import router as playback_router
     # from api.routes_collections import router as collections_router
-    from api.routes_playback import router as playback_router
 
 
     api_router = APIRouter()

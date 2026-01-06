@@ -467,6 +467,7 @@ import logging
 from typing import Dict, List, Optional, Union, Any, Type
 from sqlmodel import select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
+from pydantic import BaseModel
 
 from models.storage_models import (
     StorageConfig, WebdavStorageConfig, SmbStorageConfig,
@@ -589,15 +590,23 @@ class StorageConfigService:
             detail_config = (await db.exec(detail_stmt)).first()
             
             if detail_config:
-                update_data = config_update.model_dump(exclude_unset=True)
+                if isinstance(config_update, BaseModel):
+                    update_data = config_update.model_dump(exclude_unset=True)
+                elif isinstance(config_update, dict):
+                    update_data = config_update
+                else:
+                    raise ValueError("无效的存储配置更新数据")
                 for k, v in update_data.items():
                     if k == "select_path" and isinstance(v, list):
                         v = json.dumps(v)
                     setattr(detail_config, k, v)
-                if hasattr(config_update, "root_path"):
+                root_path_val = None
+                if isinstance(config_update, BaseModel) and hasattr(config_update, "root_path"):
                     root_path_val = getattr(config_update, "root_path")
-                    if root_path_val is not None:
-                        storage_config.root_path = root_path_val or "/"
+                elif isinstance(config_update, dict):
+                    root_path_val = config_update.get("root_path")
+                if root_path_val is not None:
+                    storage_config.root_path = root_path_val or "/"
                 db.add(detail_config)
 
         db.add(storage_config)

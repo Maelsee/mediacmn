@@ -2,14 +2,16 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:media_kit/media_kit.dart';
 
 import '../../logic/player_notifier.dart';
-import '../common/components/side_panel.dart';
+import '../../../core/api_client.dart';
 import '../common/layers/controls_layer.dart';
 import '../common/layers/loading_layer.dart';
 import '../common/layers/video_layer.dart';
 import '../common/panels/episode_panel.dart';
 import '../common/panels/settings_panel.dart';
+import '../common/panels/tracks_panel.dart';
 
 class BrowserPlayerLayout extends ConsumerStatefulWidget {
   final String? title;
@@ -44,6 +46,12 @@ class _BrowserPlayerLayoutState extends ConsumerState<BrowserPlayerLayout> {
 
   bool _autoSkip = false;
   bool _enableHardwareAcceleration = true;
+
+  // 外挂字幕相关状态
+  List<Map<String, dynamic>> _externalSubtitles = [];
+  bool _loadingExternalSubtitles = false;
+  String? _externalSubtitleError;
+  int? _currentSubtitleFileId;
 
   @override
   void initState() {
@@ -120,8 +128,34 @@ class _BrowserPlayerLayoutState extends ConsumerState<BrowserPlayerLayout> {
     _onActivity();
   }
 
+  /// 加载当前文件对应的外挂字幕列表
+  Future<void> _loadExternalSubtitles(int fileId) async {
+    _currentSubtitleFileId = fileId;
+    setState(() {
+      _loadingExternalSubtitles = true;
+      _externalSubtitleError = null;
+    });
+    try {
+      final api = ref.read(apiClientProvider);
+      final list = await api.getSubtitles(fileId);
+      if (!mounted || fileId != _currentSubtitleFileId) return;
+      setState(() {
+        _externalSubtitles = list;
+        _loadingExternalSubtitles = false;
+      });
+    } catch (e) {
+      if (!mounted || fileId != _currentSubtitleFileId) return;
+      setState(() {
+        _externalSubtitles = [];
+        _loadingExternalSubtitles = false;
+        _externalSubtitleError = '$e';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // 监听播放器错误并在界面上提示
     ref.listen(playerProvider.select((s) => s.error), (prev, next) {
       if (next != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -129,6 +163,17 @@ class _BrowserPlayerLayoutState extends ConsumerState<BrowserPlayerLayout> {
         );
       }
     });
+
+    // 监听当前播放文件ID变化，动态加载对应的外挂字幕列表
+    ref.listen<int?>(
+      playerProvider.select((s) => s.fileId),
+      (prev, next) {
+        final fid = next;
+        if (fid != null && fid != _currentSubtitleFileId) {
+          _loadExternalSubtitles(fid);
+        }
+      },
+    );
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -228,69 +273,51 @@ class _BrowserPlayerLayoutState extends ConsumerState<BrowserPlayerLayout> {
     final state = ref.watch(playerProvider);
     final notifier = ref.read(playerProvider.notifier);
 
-    return SidePanel(
-      title: '字幕/音轨',
-      child: DefaultTabController(
-        length: 3,
-        child: Column(
-          children: [
-            const TabBar(
-              labelColor: Colors.blue,
-              unselectedLabelColor: Colors.white70,
-              indicatorColor: Colors.blue,
-              tabs: [
-                Tab(text: '音频'),
-                Tab(text: '字幕'),
-                Tab(text: '视频'),
-              ],
-            ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  ListView(
-                    children: state.tracks.audio.map((track) {
-                      return ListTile(
-                        title: Text(track.title ?? track.language ?? track.id,
-                            style: const TextStyle(color: Colors.white)),
-                        selected: track == state.track.audio,
-                        onTap: () => notifier.setAudioTrack(track),
-                        trailing: track == state.track.audio
-                            ? const Icon(Icons.check, color: Colors.blue)
-                            : null,
-                      );
-                    }).toList(),
-                  ),
-                  ListView(
-                    children: state.tracks.subtitle.map((track) {
-                      return ListTile(
-                        title: Text(track.title ?? track.language ?? track.id,
-                            style: const TextStyle(color: Colors.white)),
-                        selected: track == state.track.subtitle,
-                        onTap: () => notifier.setSubtitleTrack(track),
-                        trailing: track == state.track.subtitle
-                            ? const Icon(Icons.check, color: Colors.blue)
-                            : null,
-                      );
-                    }).toList(),
-                  ),
-                  ListView(
-                    children: state.tracks.video.map((track) {
-                      return ListTile(
-                        title: Text(track.title ?? track.language ?? track.id,
-                            style: const TextStyle(color: Colors.white)),
-                        selected: track == state.track.video,
-                        onTap: () => notifier.setVideoTrack(track),
-                        trailing: track == state.track.video
-                            ? const Icon(Icons.check, color: Colors.blue)
-                            : null,
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-          ],
+    return TracksPanel(
+      audioTracks: state.tracks.audio,
+      currentAudio: state.track.audio,
+      subtitleTracks: state.tracks.subtitle,
+      currentSubtitle: state.track.subtitle,
+      videoTracks: state.tracks.video,
+      externalSubtitles: _externalSubtitles,
+      loadingExternalSubtitles: _loadingExternalSubtitles,
+      externalSubtitleError: _externalSubtitleError,
+      onAudioSelected: (track) {
+        notifier.setAudioTrack(track);
+      },
+      onSubtitleSelected: (track) {
+        notifier.setSubtitleTrack(track);
+      },
+      onExternalSubtitleSelected: (sub) {
+        _handleExternalSubtitleTap(sub, notifier);
+      },
+      onVideoSelected: (track) {
+        notifier.setVideoTrack(track);
+      },
+    );
+  }
+
+  Future<void> _handleExternalSubtitleTap(
+      Map<String, dynamic> sub, PlayerNotifier notifier) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final url = sub['url'] as String?;
+    if (url == null || url.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('该外挂字幕暂不可用'),
+          backgroundColor: Colors.blueGrey,
         ),
+      );
+      return;
+    }
+    final name = (sub['name'] ?? sub['path'] ?? sub['id'] ?? '外挂字幕').toString();
+
+    final track = SubtitleTrack.uri(url, title: name);
+    notifier.setSubtitleTrack(track);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('已切换到外挂字幕: $name'),
+        backgroundColor: Colors.blueGrey,
       ),
     );
   }

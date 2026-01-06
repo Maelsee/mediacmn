@@ -83,6 +83,9 @@ class PlayerNotifier extends StateNotifier<MediaPlayerState> {
   /// 打开播放源
   Future<void> open(PlayableSource source, {bool autoPlay = true}) async {
     try {
+      // 更新当前播放文件ID，便于其他模块使用
+      state = state.copyWith(fileId: source.fileId);
+
       await _mediaService.open(source, autoPlay: autoPlay);
 
       // 处理续播

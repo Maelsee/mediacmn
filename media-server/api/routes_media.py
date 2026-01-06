@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, Query, HTTPException, Path
-from pydantic import BaseModel, conint
-from sqlmodel import Session, select
+from pydantic import BaseModel, conint, Field
+from sqlmodel import Session, select, and_
 from sqlmodel.ext.asyncio.session import AsyncSession
 from core.db import get_async_session
 from core.security import get_current_subject
 from services.media.media_service import MediaService
-from models.media_models import FileAsset
+from models.media_models import FileAsset, MediaCore, MediaVersion, EpisodeExt
 from models.storage_models import StorageConfig, WebdavStorageConfig
 import base64
 from core.config import get_settings
@@ -195,6 +195,135 @@ async def get_play_url(
     if not url:
         raise HTTPException(status_code=400, detail={"code": "compose_playurl_failed", "message": "无法生成播放链接"})
     return info
+
+
+class SubtitleItem(BaseModel):
+    id: str
+    name: str
+    path: str
+    size: Optional[int] = None
+    size_text: Optional[str] = None
+    language: Optional[str] = None
+    url: Optional[str] = None
+    headers: Optional[Dict[str, str]] = None
+    storage_type: Optional[str] = None
+
+
+class SubtitleListResponse(BaseModel):
+    file_id: int
+    items: List[SubtitleItem] = Field(default_factory=list)
+
+
+class SubtitleContentResponse(BaseModel):
+    file_id: int
+    path: str
+    content: str
+
+class EpisodeAssetItem(BaseModel):
+    file_id: int
+    path: str
+    size: Optional[int] = None
+    size_text: Optional[str] = None
+    language: Optional[str] = None
+
+
+class EpisodeItem(BaseModel):
+    id: int
+    episode_number: int
+    title: str
+    still_path: Optional[str] = None
+    assets: List[EpisodeAssetItem] = Field(default_factory=list)
+
+
+class EpisodeListResponse(BaseModel):
+    file_id: int
+    season_version_id: Optional[int] = None
+    episodes: List[EpisodeItem] = Field(default_factory=list)
+
+
+@router.get("/file/{file_id}/subtitles", response_model=SubtitleListResponse)
+async def list_file_subtitles(
+    file_id: int = Path(..., ge=1, le=2147483647),
+    current_subject: str = Depends(get_current_subject),
+    db: AsyncSession = Depends(get_async_session),
+):
+    user_id = int(current_subject)
+    asset = (
+        await db.exec(
+            select(FileAsset).where(
+                and_(FileAsset.id == file_id, FileAsset.user_id == user_id)
+            )
+        )
+    ).first()
+    if not asset:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "file_not_found", "message": "文件不存在或无权限"},
+        )
+
+    result = await media_service.get_file_subtitles(db=db, user_id=user_id, asset=asset)
+    return result
+
+
+@router.get("/file/{file_id}/subtitles/content", response_model=SubtitleContentResponse)
+async def get_subtitle_content(
+    file_id: int = Path(..., ge=1, le=2147483647),
+    path: str = Query(..., description="字幕文件路径（与列表接口中的 path 一致）"),
+    current_subject: str = Depends(get_current_subject),
+    db: AsyncSession = Depends(get_async_session),
+):
+    user_id = int(current_subject)
+    asset = (
+        await db.exec(
+            select(FileAsset).where(
+                and_(FileAsset.id == file_id, FileAsset.user_id == user_id)
+            )
+        )
+    ).first()
+    if not asset:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "file_not_found", "message": "文件不存在或无权限"},
+        )
+
+    try:
+        content = await media_service.download_subtitle_content(
+            db=db, user_id=user_id, asset=asset, subtitle_path=path
+        )
+    except Exception as e:
+        logger.error(f"下载字幕失败 file_id={file_id}, path={path}: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "subtitle_download_failed", "message": "下载字幕文件失败"},
+        )
+
+    return SubtitleContentResponse(file_id=file_id, path=path, content=content)
+
+
+@router.get("/file/{file_id}/episodes", response_model=EpisodeListResponse)
+async def list_file_episodes(
+    file_id: int = Path(..., ge=1, le=2147483647),
+    current_subject: str = Depends(get_current_subject),
+    db: AsyncSession = Depends(get_async_session),
+):
+    user_id = int(current_subject)
+    asset = (
+        await db.exec(
+            select(FileAsset).where(
+                and_(FileAsset.id == file_id, FileAsset.user_id == user_id)
+            )
+        )
+    ).first()
+    if not asset:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "file_not_found", "message": "文件不存在或无权限"},
+        )
+
+    result = await media_service.get_file_episode_list(
+        db=db, user_id=user_id, asset=asset
+    )
+    return result
 
 
 class RefreshPlayRequest(BaseModel):

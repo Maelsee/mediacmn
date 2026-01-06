@@ -28,8 +28,10 @@ class EpisodePanel extends StatelessWidget {
               itemBuilder: (context, index) {
                 final ep = episodes[index];
                 final isCurrent = index == currentEpisodeIndex;
+                final number = ep['episode_number'] ?? index + 1;
+                final rawTitle = (ep['name'] ?? '').toString().trim();
                 final title =
-                    ep['name'] ?? '第 ${ep['episode_number'] ?? index + 1} 集';
+                    rawTitle.isEmpty ? '第$number集' : '第$number集: $rawTitle';
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),

@@ -249,6 +249,7 @@ async def create_storage(
 ):
     """创建新的存储配置（包含基础信息和详细配置）。"""
     user_id = get_user_id(current_subject)
+    logger.info(f"创建存储配置请求: {request}")
     
     try:
         # 使用优化后的事务创建方法
@@ -279,13 +280,15 @@ async def update_storage(
     """统一更新存储配置（基础信息 + 详细配置，支持多类型）。"""
     user_id = get_user_id(current_subject)
     
-    # 将 Pydantic 模型转化为字典交给服务层处理，服务层已优化映射逻辑
     try:
+        update_payload = request.model_dump(exclude_unset=True, exclude={"config"})
+        if request.config is not None:
+            update_payload["config"] = request.config
         storage_config = await storage_service.update_storage_config(
             db=db,
             storage_id=storage_id,
             user_id=user_id,
-            **request.model_dump(exclude_unset=True)  # ✅ 仅传递前端提供的字段
+            **update_payload,  # ✅ 仅传递前端提供的字段
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

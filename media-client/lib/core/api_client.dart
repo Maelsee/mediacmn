@@ -447,6 +447,7 @@ class ApiClient {
     throw Exception('搜索失败');
   }
 
+  /// 获取媒体详情
   Future<MediaDetail> getMediaDetail(int id) async {
     final res =
         await _client.get(_u('/api/media/$id/detail'), headers: _headers());
@@ -457,14 +458,44 @@ class ApiClient {
     throw Exception('获取媒体详情失败');
   }
 
+  /// 获取指定文件的外挂字幕列表
   Future<List<Map<String, dynamic>>> getSubtitles(int fileId) async {
-    final res = await _client.get(_u('/api/media/subtitles/$fileId'),
+    final res = await _client.get(_u('/api/media/file/$fileId/subtitles'),
         headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
-      return list;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final items =
+          (data['items'] as List? ?? const []).cast<Map<String, dynamic>>();
+      return items;
     }
     throw Exception('获取字幕失败');
+  }
+
+  /// 下载指定字幕文件内容
+  Future<String> getSubtitleContent(int fileId, String path) async {
+    final encodedPath = Uri.encodeComponent(path);
+    final res = await _client.get(
+      _u('/api/media/file/$fileId/subtitles/content?path=$encodedPath'),
+      headers: _headers(),
+    );
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return (data['content'] as String?) ?? '';
+    }
+    throw Exception('下载字幕失败');
+  }
+
+  /// 获取指定文件所属剧集的选集列表
+  Future<List<Map<String, dynamic>>> getEpisodes(int fileId) async {
+    final res = await _client.get(_u('/api/media/file/$fileId/episodes'),
+        headers: _headers());
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final items =
+          (data['episodes'] as List? ?? const []).cast<Map<String, dynamic>>();
+      return items;
+    }
+    throw Exception('获取选集列表失败');
   }
 
   Future<List<SourceItem>> getSources({int page = 1, int size = 20}) async {

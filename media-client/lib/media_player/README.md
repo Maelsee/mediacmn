@@ -70,7 +70,7 @@
 ## 4. 已知问题与未来优化
 
 - **播放列表管理**: 目前播放列表逻辑仍部分耦合在 `MediaPlayerPage` 中，未来应迁移至 `PlaylistNotifier`。
-- **Web 端手势**: Web 端屏幕亮度调节不可用（已做 try-catch 处理）。
+- **Web 端手势**: Web 端屏幕亮度调节不可用（已做 try-catch 处理）。浏览器端播放页使用 Riverpod 的 `ref.listen` 监听播放错误与当前文件 `fileId`，监听逻辑已移动到 `build` 方法内部以避免断言错误。
 - **国际化**: 目前硬编码中文，建议后续添加 l10n 支持。
 
 ## 3. 功能方案设计
@@ -78,40 +78,45 @@
 ### 3.1 选集列表方案
 
 - 前端：
-  - 播放入口携带 `fileId` 信息，由 `MediaPlayerPage` 通过详情接口获取当前媒体及其相关版本 / 剧集元数据。
-  - 将同一剧集下的所有视频条目整理为统一的选集模型列表（包含 `fileId`、标题、集数、时长、缩略图地址等）。
-  - 在 UI 层使用可滚动列表构建选集组件：
-    - 横屏：通过 `EpisodePanel` 在右侧侧边面板中展示。
-    - 竖屏：通过底部面板展示，限制高度为屏幕三分之一，内部使用 `ListView` 支持长列表滚动。
+  - 播放入口携带 `fileId` 信息，由 `MediaPlayerPage` 优先通过后端 `/api/media/file/{file_id}/episodes` 接口获取该文件所属剧集的完整选集列表。
+  - 当后端未返回选集或接口不可用时，回退到 `detail.seasons[].episodes[].assets` 结构中解析本地选集列表，保证兼容旧数据。
+  - 将选集列表整理为统一的模型（包含 `fileId`、标题、集数等），并通过 `PlayerLayout` 传递给移动端与浏览器端的 `EpisodePanel` 组件展示。
   - 选中某一集时，将对应 `fileId` 回传给 `MediaPlayerPage`，触发重新解析播放源并续播。
 - 后端：
-  - 提供基于 `fileId` 的接口，返回该文件所属媒体的完整选集信息：
-    - 包含每一集的标题、集数、时长、缩略图、对应的 `fileId` 等字段。
-  - 建议与当前详情接口复用数据模型，避免多次查询。
+  - 提供基于 `fileId` 的接口 `/api/media/file/{file_id}/episodes`，返回该文件所属媒体的完整选集信息（包含每一集的标题、集数、对应资产及存储信息）。
+  - 通过 `season_version_id` 关联一季下的所有集版本，并结合 `EpisodeExt` 等扩展表返回业务所需字段。
 
 ### 3.2 字幕加载方案
 
 - 内嵌字幕：
   - 利用 `media_kit` 的轨道枚举能力，在打开媒体后枚举所有字幕轨道，并将其映射到前端的 `SubtitleTrack` 模型。
   - 通过 `MediaPlayerState.tracks.subtitle` 暴露所有可选字幕轨道，通过 `PlayerNotifier.setSubtitleTrack` 进行切换。
-- 外挂字幕：
-  - 通过后端提供的字幕列表接口，根据当前媒体或 `fileId` 拉取可用字幕文件（支持常见格式如 `.srt`、`.vtt`）。
-  - 前端根据返回的 URL 或文件标识加载字幕内容，并注入 `media_kit` 的自定义字幕轨道中。
-  - 支持在 UI 中与内嵌字幕统一展示和切换。
+- 外挂字幕（当前实现状态）：
+  - 通过后端提供的字幕列表接口 `/api/media/file/{file_id}/subtitles`，根据当前播放文件 `fileId` 拉取同目录下可用的外挂字幕文件（支持常见格式如 `.srt`、`.vtt`、`.ass` 等）。
+  - 列表接口在 WebDAV/Web DNA 存储场景下为每一项拼装可浏览的完整 `url`（由后端根据存储配置生成），同时返回 `path`、`size`、`language` 等元数据。
+  - **注意**：为了兼容 `media_kit` 播放器无法为外部字幕添加请求头的问题，后端会在生成 WebDAV 字幕 URL 时自动嵌入认证信息（Basic Auth），确保播放器可以直接访问受保护的字幕资源。
+  - 由于部分 WebDAV 后端（如云盘回源）对“下载”请求做了额外的回调校验（需要浏览器登录态），服务端主动发起下载会被拒绝，但通过前端使用 `url` 直接访问则可以浏览。因此当前实现对 WebDAV 字幕采取“直接 URL 加载”的方案：
+    - 字幕文件的真实访问权限仍由存储侧控制（如签名 URL、反向代理、回源鉴权等）。
+    - 后端只负责生成可访问的 `url`，不再尝试在服务端侧下载字幕内容。
+  - 前端在移动端和浏览器端统一使用 `TracksPanel` 组件，将返回的字幕文件列表在播放页的「字幕/音轨」面板中与内嵌字幕分组展示：
+    - 「内嵌字幕」区：展示来自播放器轨道的字幕。
+    - 「外挂字幕」区：展示来自后端接口的外挂字幕文件名。
+  - 点击任意外挂字幕时，前端直接使用列表中的 `url` 构造 `SubtitleTrack.uri(url, title)`，并通过 `PlayerNotifier.setSubtitleTrack` 切换到对应外挂字幕轨道。在 WebDAV/Web DNA 存储下，这个 `url` 由存储系统保证可浏览（例如通过签名链接或中间层代理），即使服务端主动下载会被回源拒绝，前端仍可正常加载用于播放显示。
 - 字幕样式自定义：
   - 在设置面板中预留字幕样式配置项（字体、字号、颜色、描边等），将用户配置持久化到本地存储。
   - 播放器在渲染字幕时读取这些设置，并在 `media_kit` 或自定义绘制层中应用。
 
 ### 3.3 音轨选择方案
 
-- 轨道识别：
-  - 媒体打开后，通过 `media_kit` 枚举所有音频轨道并转换为前端的 `AudioTrack` 模型，包含语言代码、标题、描述等信息。
-  - 将当前选中的音轨存储在 `MediaPlayerState.track.audio` 中。
+- 轨道识别（当前实现状态）：
+  - 媒体打开后，`PlayerNotifier` 通过订阅 `MediaService.tracksStream` 与 `trackStream`，将 `media_kit` 返回的 `Tracks` 与当前 `Track` 写入 `MediaPlayerState.tracks` 与 `MediaPlayerState.track`。
+  - `tracks.audio` 列表即为所有可用音频轨道，`track.audio` 为当前选中音轨。
 - UI 与交互：
-  - 使用 `TracksPanel` 中的「音频」Tab 展示所有可用音轨，采用 `ListView + ListTile` 形式。
-  - 当前选中音轨在列表中高亮并带有勾选标记。
-  - 点击列表项通过 `PlayerNotifier.setAudioTrack` 切换音轨，保持当前播放进度不变。
-- 语言标识：
-  - 结合语言代码与标题信息，在 UI 中展示人类可读的语言名称（如 `zh-CN` 映射为「简体中文」）。
-  - 在多音轨场景下，通过附加描述（如「导演评论音轨」）帮助用户快速识别。
-
+  - 在移动端和浏览器端的「字幕/音轨」面板中统一复用 `TracksPanel` 组件：
+    - 「音频」Tab 使用 `state.tracks.audio` 构建列表，当前选中音轨在 UI 中高亮并带有勾选标记。
+    - 「字幕」Tab 展示内嵌字幕与外挂字幕列表，并支持切换。
+    - 「视频」Tab 展示可用的视频轨道。
+  - 点击列表项通过 `PlayerNotifier.setAudioTrack` / `setSubtitleTrack` / `setVideoTrack` 调用底层 `MediaService` 完成轨道切换，保持当前播放进度不变。
+- 语言标识（规划中）：
+  - 当前直接使用轨道的 `title` / `language` / `id` 字段展示，尚未做语言代码到人类可读名称的映射。
+  - 后续可增加语言表，将常见语言代码（如 `zh-CN`）映射为「简体中文」，并支持额外描述（如「导演评论音轨」）以增强可读性。

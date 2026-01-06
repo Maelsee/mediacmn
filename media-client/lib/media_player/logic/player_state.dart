@@ -17,6 +17,8 @@ class MediaPlayerState {
   final bool isCompleted;
   final VideoController? videoController;
   final bool hardwareAccelerationEnabled;
+  // 当前播放的文件ID
+  final int? fileId;
 
   const MediaPlayerState({
     this.playing = false,
@@ -31,6 +33,7 @@ class MediaPlayerState {
     this.isCompleted = false,
     this.videoController,
     this.hardwareAccelerationEnabled = true,
+    this.fileId,
   });
 
   MediaPlayerState copyWith({
@@ -46,6 +49,7 @@ class MediaPlayerState {
     bool? isCompleted,
     VideoController? videoController,
     bool? hardwareAccelerationEnabled,
+    int? fileId,
   }) {
     return MediaPlayerState(
       playing: playing ?? this.playing,
@@ -61,6 +65,7 @@ class MediaPlayerState {
       videoController: videoController ?? this.videoController,
       hardwareAccelerationEnabled:
           hardwareAccelerationEnabled ?? this.hardwareAccelerationEnabled,
+      fileId: fileId ?? this.fileId,
     );
   }
 }
