@@ -56,27 +56,73 @@ cp deploy/.env.prod.example deploy/.env.prod
 docker compose --env-file deploy/.env.prod -f docker-compose.prod.yml up -d --build
 ```
 
-检查状态：
+> **注意：** 所有的 `docker compose` 命令（包括 `ps`, `logs`, `stop` 等）都必须携带 `--env-file deploy/.env.prod` 参数，否则会因为找不到必填的环境变量（如 `POSTGRES_PASSWORD`）而报错。
+
+### 4.1 简化命令（可选）
+如果你觉得每次都要输入 `--env-file` 太麻烦，可以在项目根目录创建一个 `.env` 软链接指向生产配置：
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f --tail=200 api
-docker compose -f docker-compose.prod.yml logs -f --tail=200 worker
+ln -s deploy/.env.prod .env
 ```
 
-## 4.1 访问入口说明（端口映射）
+创建后，你就可以直接运行简化命令，Docker 会自动加载 `.env`：
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f api
+```
 
-由于国内未备案域名在 80/443 端口会被拦截，本方案已调整为使用 **6069** 端口：
-- HTTP 入口：`http://maelsea.site:6069/`
-- API 文档：`http://maelsea.site:6069/api/docs`
-- 注意：此模式下不提供自动 HTTPS。
+## 5. 测试与验证
 
-健康检查：
-- API：`http://<DOMAIN>:6069/api/health/live`
-- 就绪：`http://<DOMAIN>:6069/api/health/ready`
-- 文档：`http://<DOMAIN>:6069/api/docs`
+部署完成后，请按照以下步骤验证系统是否正常运行。
 
-## 5. 数据迁移（从本地到服务器）
+### 5.1 检查容器状态
+确认所有容器的状态为 `Up` 且健康检查为 `healthy`（**记得带上 --env-file**）：
+
+```bash
+docker compose --env-file deploy/.env.prod -f docker-compose.prod.yml ps
+```
+
+预期输出中 `STATUS` 栏应包含 `(healthy)` 字样。
+
+### 5.2 验证 API 连通性
+在服务器本地或通过公网（如果已开放端口）测试 API 健康检查接口：
+
+```bash
+# 测试存活探针
+curl http://localhost:6069/api/health/live
+
+# 测试就绪探针（包含数据库和 Redis 连接检查）
+curl http://localhost:6069/api/health/ready
+```
+
+预期返回：`{"status":"ok"}` 或类似成功响应。
+
+### 5.3 检查服务日志
+如果某个服务未正常启动，查看其日志：
+
+```bash
+# 查看 API 日志
+docker compose --env-file deploy/.env.prod -f docker-compose.prod.yml logs -f api
+
+# 查看 Worker 日志（确认任务队列正常）
+docker compose --env-file deploy/.env.prod -f docker-compose.prod.yml logs -f worker
+```
+
+### 5.4 验证数据库连接
+进入 API 容器并尝试连接数据库：
+
+```bash
+docker exec -it mediacmn_api python -c "import os; from sqlmodel import create_engine; engine = create_engine(os.getenv('DATABASE_URL')); conn = engine.connect(); print('DB Connected!'); conn.close()"
+```
+
+### 5.5 验证 Redis 队列
+进入 Worker 容器确认 Dramatiq 能够连接 Redis：
+
+```bash
+docker exec -it mediacmn_worker dramatiq-admin stats
+```
+
+## 6. 数据迁移（从本地到服务器）
 
 ### 5.1 本地备份
 在本地开发目录执行以下命令，将数据导出为 SQL 文件：
@@ -163,7 +209,41 @@ docker compose -f docker-compose.prod.yml logs -f --tail=200 api
 docker compose --env-file deploy/.env.prod -f docker-compose.prod.yml up -d --build api
 ```
 
-### 7.3 需要挂载本地媒体目录（可选）
+### 7.4 Docker Hub 镜像拉取超时 (DeadlineExceeded)
+
+如果在构建镜像时遇到 `failed to resolve source metadata for docker.io/library/python:3.12-slim` 或 `i/o timeout`，通常是因为国内服务器访问 Docker Hub 不稳定。
+
+**解决方法 1：配置 Docker 镜像加速器（推荐）**
+
+在服务器上编辑（或创建） `/etc/docker/daemon.json`：
+
+```json
+{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://docker.mirrors.ustc.edu.cn",
+    "https://hub-mirror.c.163.com"
+  ]
+}
+```
+
+然后重启 Docker 服务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+**解决方法 2：直接在 Dockerfile 中使用镜像源**
+
+临时修改 `media-server/Dockerfile` 第一行（本项目推荐使用 `docker.1ms.run`）：
+
+```dockerfile
+# FROM python:3.12-slim
+FROM docker.1ms.run/library/python:3.12-slim
+```
+
+### 7.5 需要挂载本地媒体目录（可选）
 
 如果后端使用“本地存储（local）”扫描宿主机目录，需要把宿主机路径挂到 `api` 与 `worker` 容器，并保证只读/读写权限符合预期。示例（自行按服务器路径调整）：
 
@@ -175,3 +255,14 @@ docker compose --env-file deploy/.env.prod -f docker-compose.prod.yml up -d --bu
 ```
 
 然后在应用侧配置 `LocalStorageConfig.base_path=/data/media`。
+
+
+由于国内未备案域名在 80/443 端口会被拦截，本方案已调整为使用 **6069** 端口：
+- HTTP 入口：`http://maelsea.site:6069/`
+- API 文档：`http://maelsea.site:6069/api/docs`
+- 注意：此模式下不提供自动 HTTPS。
+
+健康检查：
+- API：`http://<DOMAIN>:6069/api/health/live`
+- 就绪：`http://<DOMAIN>:6069/api/health/ready`
+- 文档：`http://<DOMAIN>:6069/api/docs`

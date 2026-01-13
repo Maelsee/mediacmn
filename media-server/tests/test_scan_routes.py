@@ -4,6 +4,9 @@ from fastapi.testclient import TestClient
 from main import create_app
 from core.security import get_current_subject
 
+from services.scan.unified_scan_engine import UnifiedScanEngine
+from services.storage.storage_client import StorageEntry
+
 # 模拟数据库模型
 class MockStorageConfig:
     def __init__(self, id, user_id, root_path, is_active=True):
@@ -130,3 +133,54 @@ async def test_start_scan_invalid_storage(client):
         
         assert response.status_code == 404
         # 只要状态码对就行，detail 内容可能有变
+
+
+@pytest.mark.asyncio
+async def test_unified_scan_engine_collects_all_file_ids():
+    class FakeStorageClient:
+        def get_max_concurrency(self) -> int:
+            return 1
+
+        def is_alive(self) -> bool:
+            return True
+
+        async def list_dir(self, path: str):
+            return [
+                StorageEntry(name="a.mkv", path="/a.mkv", is_dir=False, size=1, etag="1"),
+                StorageEntry(name="b.mkv", path="/b.mkv", is_dir=False, size=1, etag="2"),
+                StorageEntry(name="c.mkv", path="/c.mkv", is_dir=False, size=1, etag="3"),
+            ]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    eng = UnifiedScanEngine()
+    eng.repo = AsyncMock()
+    eng.repo.get_all_paths_in_directory = AsyncMock(return_value={})
+    eng.processor.process_batch = AsyncMock(
+        return_value=[
+            {"status": "new", "is_media": True, "file_id": 11, "path": "/a.mkv"},
+            {"status": "updated", "is_media": True, "file_id": 22, "path": "/b.mkv"},
+            {"status": "unchanged", "is_media": True, "file_id": 33, "path": "/c.mkv"},
+        ]
+    )
+
+    with patch(
+        "services.scan.unified_scan_engine.storage_service.get_client",
+        new_callable=AsyncMock,
+        return_value=FakeStorageClient(),
+    ):
+        res = await eng.scan_storage(
+            storage_id=1,
+            scan_path="/",
+            user_id=1,
+            recursive=False,
+            max_depth=1,
+            batch_size=10,
+        )
+
+    assert res.new_file_ids == [11]
+    assert res.all_file_ids == [11, 22, 33]

@@ -10,6 +10,12 @@ class SettingsPanel extends StatelessWidget {
   final PlaylistMode playlistMode;
   final ValueChanged<PlaylistMode> onPlaylistModeChanged;
 
+  /// 当前画面缩放倍数（用于“画面大小”快捷设置）。
+  final double videoScale;
+
+  /// 更新画面缩放倍数回调（建议同步重置 offset）。
+  final ValueChanged<double> onVideoScaleChanged;
+
   const SettingsPanel({
     super.key,
     required this.settings,
@@ -18,6 +24,8 @@ class SettingsPanel extends StatelessWidget {
     required this.onFitChanged,
     required this.playlistMode,
     required this.onPlaylistModeChanged,
+    required this.videoScale,
+    required this.onVideoScaleChanged,
   });
 
   @override
@@ -79,9 +87,12 @@ class SettingsPanel extends StatelessWidget {
                 _buildSectionHeader('画面大小'),
                 _buildSegmentedControl(
                   options: ['50%', '75%', '100%', '125%'],
-                  selectedIndex: 2, // TODO: Bind to settings
+                  selectedIndex: _getVideoScaleIndex(),
                   onSelected: (index) {
-                    // TODO: Update settings
+                    final scales = [0.5, 0.75, 1.0, 1.25];
+                    if (index >= 0 && index < scales.length) {
+                      onVideoScaleChanged(scales[index]);
+                    }
                   },
                 ),
               ],
@@ -114,6 +125,21 @@ class SettingsPanel extends StatelessWidget {
       default:
         return 0;
     }
+  }
+
+  int _getVideoScaleIndex() {
+    final candidates = [0.5, 0.75, 1.0, 1.25];
+
+    var bestIndex = 2;
+    var bestDistance = double.infinity;
+    for (var i = 0; i < candidates.length; i++) {
+      final d = (videoScale - candidates[i]).abs();
+      if (d < bestDistance) {
+        bestDistance = d;
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
   }
 
   Widget _buildListTile(

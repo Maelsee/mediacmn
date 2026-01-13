@@ -9,7 +9,7 @@ from pathlib import Path
 from functools import lru_cache
 from typing import List, Optional, Union
 
-from pydantic import Field, BaseModel, AnyHttpUrl
+from pydantic import Field
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     TMDB_FALLBACK_LANGUAGE: str = Field(default="en-US", description="TMDB备选语言")
     TMDB_TIMEOUT: int = Field(default=30, description="TMDB请求超时时间（秒）")
     TMDB_PROXY: Optional[str] = Field(default=None, description="TMDB代理服务器")
+    TMDB_API_BASE_URL: str = Field(default="https://api.themoviedb.org/3", description="TMDB API 基准地址")
+    TMDB_IMAGE_BASE_URL: str = Field(default="https://image.tmdb.org/t/p", description="TMDB 图片基准地址")
+    TMDB_FORCE_IPV4: bool = Field(default=False, description="TMDB 请求是否强制使用 IPv4")
     TVMAZE_API_KEY: Optional[str] = Field(default=None, description="TVMaze API Key（如需要）")
     # TMDB 网络代理（可选），用于受限网络环境
     # TMDB_HTTP_PROXY: Optional[str] = Field(default=None, description="TMDB HTTP 代理，例如 http://127.0.0.1:7890")
@@ -85,6 +88,9 @@ class Settings(BaseSettings):
     # SCRAPER_FALLBACK_MOVIE: bool = Field(default=True, description="电影是否启用语言回退")
     # SCRAPER_FALLBACK_SERIES: bool = Field(default=False, description="剧集是否启用语言回退")
     ENABLE_SCRAPERS: List[str] = Field(default=["tmdb"], description="启用的刮削器插件")
+    SCRAPER_OP_TIMEOUT_SECONDS: float = Field(default=10.0, description="刮削器通用操作超时（秒）")
+    SCRAPER_PLUGIN_TEST_TIMEOUT_SECONDS: float = Field(default=15.0, description="刮削器插件连接测试超时（秒）")
+    SCRAPER_PLUGIN_STARTUP_TIMEOUT_SECONDS: float = Field(default=20.0, description="刮削器插件启动钩子超时（秒）")
     # 侧车本地化（NFO/海报）开关与限制
     SIDE_CAR_LOCALIZATION_ENABLED: bool = Field(default=False, description="是否启用侧车异步本地化")
     SIDE_CAR_LOCALIZATION_ARTWORK_LIMIT: int = Field(default=2, description="侧车阶段写入的艺术作品最大数量")

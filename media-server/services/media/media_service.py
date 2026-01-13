@@ -1114,7 +1114,7 @@ class MediaService:
                 for season_version in current_season_versions:
                     # 7.2 获取当前季版本下的单集版本列表
                     current_ep_versions = season_version_to_ep_versions.get(season_version.id, [])
-                    episodes_list = []
+                    episodes_by_core_id: Dict[int, Dict[str, Any]] = {}
 
                     for ep_version in current_ep_versions:
                         # 7.3 获取单集核心+扩展信息
@@ -1140,16 +1140,43 @@ class MediaService:
                         ]
 
                         # 7.5 组装单集数据
-                        episodes_list.append({
+                        episode_entry = {
                             "id": ep_core.id,
                             "episode_number": ep_ext.episode_number,
                             "title": ep_core.title,
                             "still_path": getattr(ep_ext, "still_path", None),
                             "assets": asset_list
-                        })
-                        # ========== 核心修复：按 episode_number 升序排序 ==========
-                        episodes_list.sort(key=lambda x: x["episode_number"])
-                        # ======================================================
+                        }
+
+                        existing = episodes_by_core_id.get(ep_core.id)
+                        if not existing:
+                            episodes_by_core_id[ep_core.id] = episode_entry
+                            continue
+
+                        if not existing.get("still_path") and episode_entry.get("still_path"):
+                            existing["still_path"] = episode_entry["still_path"]
+                        if not existing.get("title") and episode_entry.get("title"):
+                            existing["title"] = episode_entry["title"]
+                        if existing.get("episode_number") is None and episode_entry.get("episode_number") is not None:
+                            existing["episode_number"] = episode_entry["episode_number"]
+
+                        if asset_list:
+                            existing_assets = existing.get("assets") or []
+                            seen_file_ids = {
+                                a.get("file_id")
+                                for a in existing_assets
+                                if isinstance(a, dict) and a.get("file_id") is not None
+                            }
+                            for a in asset_list:
+                                fid = a.get("file_id") if isinstance(a, dict) else None
+                                if fid is None or fid in seen_file_ids:
+                                    continue
+                                existing_assets.append(a)
+                                seen_file_ids.add(fid)
+                            existing["assets"] = existing_assets
+
+                    episodes_list = list(episodes_by_core_id.values())
+                    episodes_list.sort(key=lambda x: (x.get("episode_number") or 0, x.get("id") or 0))
 
                     # 7.6 组装季版本数据（含存储名称）- 修复 sample_asset·                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              · 索引错误
                     storage_name = "未知存储"

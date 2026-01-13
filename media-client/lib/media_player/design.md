@@ -156,7 +156,7 @@ class PlayerService implements PlayerServiceBase {
 ```dart
 // 移动手势控制（落地实现为 StatefulWidget）
 // - 单击：显示/隐藏控制层
-// - 双击：左侧快退 / 中间播放暂停 / 右侧快进
+// - 双击：左侧 25% 快退 / 中间 50% 播放暂停 / 右侧 25% 快进
 // - 竖向拖动：左侧调亮度 / 右侧调音量
 // - 横向拖动：拖动进度
 // - 长按：临时 2 倍速播放（顶部提示“2倍速”，松开恢复）
@@ -320,6 +320,8 @@ Widget _buildControlsByPlatform(BuildContext context, PlayerService playerServic
 - 单测/组件测试：flutter test 全通过。
 - 性能基准：CommonControls 平均重建耗时约 1974.79us（基准测试输出）。
 
+最近一次确认（2026-01-11）：已运行 dart format .、flutter analyze、flutter test。
+
 ## 七、移动端 UI 详细设计与实现
 针对移动端横竖屏场景，实现了完整的播放控制和面板复用方案。
 
@@ -375,7 +377,8 @@ lib/media_player/ui/player/controls/mobile/
 | **音轨切换** | ✅ 已完成 | 监听 `tracksStream` 获取音轨列表，面板仅展示真实轨道（过滤 `auto/no`），点击切换（调用 `setAudioTrack`）。无轨道则展示空态。 | `audio_panel.dart`, `mobile_controls.dart`, `mobile_bottom_bar.dart`, `playback_state.dart`, `player_service.dart` |
 | **画质切换** | ✅ 已完成 | 监听 `tracksStream`，在 `QualityPanel` 列出视频轨道并支持切换。 | `quality_panel.dart`, `playback_state.dart` |
 | **播放模式** | ✅ 已完成 | 支持单曲循环、列表循环、不循环，状态同步至 `media_kit`。 | `settings_panel.dart`, `player_service.dart` |
-| **手势控制** | ✅ 已完成 | `MobileGestureLayer` 升级为 `StatefulWidget`，支持左侧亮度、右侧音量、水平进度拖动及双击播放/暂停。 | `mobile_controls.dart`, `common_player_layout.dart` |
+| **手势控制** | ✅ 已完成 | `MobileGestureLayer` 支持左侧亮度、右侧音量；水平进度拖动改为按“总位移/屏宽”映射更大范围；双击热区为左25%/中50%/右25%。 | `mobile_controls.dart`, `common_player_layout.dart` |
+| **画面大小** | ✅ 已完成 | 设置面板支持一键切换 50%/75%/100%/125%，通过更新 `PlaybackState.videoScale` 生效。 | `settings_panel.dart`, `playback_state.dart`, `common_player_layout.dart` |
 
 ### 8.2 状态管理完善
 - ✅ 将临时 UI 状态 (如 `_showSubtitles`, `_selectedSubtitle`) 迁移至 Riverpod `PlaybackState` 中统一管理。
@@ -444,7 +447,7 @@ lib/media_player/ui/player/controls/mobile/
 #### 3) 选集列表加载策略
 - **初始化阶段**：播放器拿到 `fileId` 后，会异步触发一次选集加载：
   - 若路由已传入 `episodes`，直接使用，不再请求后端。
-  - 否则调用 `ApiClient.getEpisodes(fileId)` 拉取并写入 `PlaybackState.episodes`。
+  - 否则调用 `ApiClient.getEpisodes(fileId)` 拉取，按“每集首个资源 fileId”等键去重后写入 `PlaybackState.episodes`。
 
 #### 4) 面板 UI 与点击播放
 - **展示内容**：剧集标题（`EpisodeDetail.title`）、封面（`stillPath`）、资源文件名（取首个资源的 path）。
@@ -480,8 +483,8 @@ lib/media_player/ui/player/controls/mobile/
     - 在 `MobileGestureLayer` 添加 `onLongPress` 手势支持。
     - 长按开始时设置速度 2.0x，结束时恢复 1.0x（或原速度）。
 5.  **加载动画百分比**:
-    - `LoadingOverlay` 增加显示缓冲百分比。
-    - 通过 `bufferStream` 与 `duration` 计算百分比。
+    - `LoadingOverlay` 的转圈动画改为始终匀速旋转（不再绑定到进度值）。
+    - 百分比仅作为进度信息展示，并对跳变做平滑显示，避免观感卡顿。
 6.  **进度条拖动支持**:
     - 改造 `MobileBottomBar` 中的 `Slider`。
     - 增加 `onChangeStart`, `onChanged`, `onChangeEnd` 处理，实现平滑拖动且不与播放进度冲突。
@@ -509,7 +512,7 @@ lib/media_player/ui/player/controls/mobile/
 - [x] 2. 字幕切换性能优化
 - [x] 3. 字幕样式美化
 - [x] 4. 手势长按倍速
-- [ ] 5. 加载百分比显示
+- [x] 5. 加载动画与百分比显示
 - [x] 6. 进度条拖动优化
 - [x] 7. 锁屏状态管理重构
 - [x] 8. PiP 模式 UI 隐藏

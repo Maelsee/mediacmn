@@ -255,6 +255,7 @@ class SeasonVersionItem {
 }
 
 class SeasonDetail {
+  final int id; // 新增：季 ID
   final int seasonNumber;
   final String? overview;
   final double? rating;
@@ -266,6 +267,7 @@ class SeasonDetail {
   final List<SeasonVersionItem>? versions;
   // final List<EpisodeDetail> episodes;
   SeasonDetail({
+    required this.id,
     required this.seasonNumber,
     this.overview,
     this.rating,
@@ -277,6 +279,7 @@ class SeasonDetail {
     this.versions = const [],
   });
   factory SeasonDetail.fromJson(Map<String, dynamic> json) => SeasonDetail(
+        id: (json['id'] ?? 0) as int, // 解析 ID
         seasonNumber: (json['season_number'] ?? 0) as int,
         overview: json['overview'] as String?,
         rating:

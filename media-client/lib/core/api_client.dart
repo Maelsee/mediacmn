@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config.dart';
+import 'playback_history/local_playback_store.dart';
 import '../source_library/tasks/task_models.dart';
 import '../source_library/source_models.dart';
 import '../media_library/media_models.dart';
@@ -169,6 +170,9 @@ class ApiClient {
     setRefreshToken(null);
     setTokenType(null);
     setTokenExpiresIn(null);
+    try {
+      await LocalPlaybackStore.clearAll();
+    } catch (_) {}
   }
 
   /// 启动扫描任务
@@ -312,6 +316,19 @@ class ApiClient {
   Future<Map<String, dynamic>> getScanTaskStatus(String taskId) async {
     final res =
         await _client.get(_u('/api/scan/status/$taskId'), headers: _headers());
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return data;
+    }
+    throw Exception('获取任务状态失败');
+  }
+
+  /// 获取通用任务状态
+  ///
+  /// 对应接口：`GET /api/tasks/{task_id}`
+  Future<Map<String, dynamic>> getTaskStatus(String taskId) async {
+    final res =
+        await _client.get(_u('/api/tasks/$taskId'), headers: _headers());
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return data;
@@ -664,6 +681,57 @@ class ApiClient {
       return;
     }
     throw Exception('注册失败');
+  }
+
+  /// 搜索 TMDB 媒体信息
+  Future<Map<String, dynamic>> searchTmdb(String query, String type,
+      {int page = 1}) async {
+    final encodedQuery = Uri.encodeComponent(query);
+    // 新接口: /api/tmdb/search/tv?q=...
+    // 假设 movie 接口为 /api/tmdb/search/movie?q=...
+    final res = await _client.get(
+        _u('/api/tmdb/search/$type?q=$encodedQuery&page=$page&language=zh-CN'),
+        headers: _headers());
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw Exception('搜索 TMDB 失败');
+  }
+
+  /// 获取 TMDB 剧集的所有季列表
+  Future<Map<String, dynamic>> getTmdbTvSeasons(int tmdbTvId) async {
+    // 新接口: /api/tmdb/tv/{id}?language=zh-CN
+    final res = await _client.get(_u('/api/tmdb/tv/$tmdbTvId?language=zh-CN'),
+        headers: _headers());
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw Exception('获取季列表失败');
+  }
+
+  /// 获取 TMDB 某一季的所有集信息
+  Future<Map<String, dynamic>> getTmdbTvSeasonEpisodes(
+      int tmdbTvId, int seasonNumber) async {
+    // 新接口: /api/tmdb/tv/{id}/season/{season}?language=zh-CN
+    final res = await _client.get(
+        _u('/api/tmdb/tv/$tmdbTvId/season/$seasonNumber?language=zh-CN'),
+        headers: _headers());
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw Exception('获取集列表失败');
+  }
+
+  /// 保存手动匹配结果
+  Future<Map<String, dynamic>> saveManualMatch(
+      int mediaId, Map<String, dynamic> payload) async {
+    final res = await _client.put(_u('/api/media/$mediaId/manual-match'),
+        headers: _headers(headers: {'Content-Type': 'application/json'}),
+        body: jsonEncode(payload));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw Exception('保存匹配结果失败');
   }
 }
 

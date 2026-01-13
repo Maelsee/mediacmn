@@ -1,4 +1,5 @@
 import logging
+import socket
 from datetime import datetime, timezone
 from typing import List, Optional, Dict
 
@@ -36,8 +37,8 @@ class TmdbScraper(ScraperPlugin):
         self._api_key = getattr(self._settings, "TMDB_API_KEY", None)
         self._v4_token = getattr(self._settings, "TMDB_V4_TOKEN", None)
         self._proxy = getattr(self._settings, "TMDB_PROXY", None)
-        self._base_url = "https://api.themoviedb.org/3"
-        self._image_base = "https://image.tmdb.org/t/p"
+        self._base_url = getattr(self._settings, "TMDB_API_BASE_URL", "https://api.themoviedb.org/3")
+        self._image_base = getattr(self._settings, "TMDB_IMAGE_BASE_URL", "https://image.tmdb.org/t/p")
         self._session: Optional[aiohttp.ClientSession] = None
 
     @property
@@ -61,13 +62,15 @@ class TmdbScraper(ScraperPlugin):
             # timeout = aiohttp.ClientTimeout(total=int(getattr(self._settings, "TMDB_TIMEOUT", 30)))
             # self._session = aiohttp.ClientSession(timeout=timeout, trust_env=True)
             # 这里不要传任何 timeout!
-            self._session = aiohttp.ClientSession(trust_env=True)
+            force_ipv4 = bool(getattr(self._settings, "TMDB_FORCE_IPV4", False))
+            family = socket.AF_INET if force_ipv4 else socket.AF_UNSPEC
+            connector = aiohttp.TCPConnector(ttl_dns_cache=300, family=family)
+            self._session = aiohttp.ClientSession(trust_env=True, connector=connector)
         return self._session
 
     async def _get(self, url: str, params: Optional[Dict] = None, headers: Optional[Dict] = None) -> aiohttp.ClientResponse:
         session = await self._ensure_session()
-        # 显式创建请求级别的超时对象
-        tm_out = aiohttp.ClientTimeout(total=20)
+        tm_out = aiohttp.ClientTimeout(total=float(getattr(self._settings, "TMDB_TIMEOUT", 30)))
         merged_headers = {"Accept": "application/json"}
         if headers:
             merged_headers.update(headers)
@@ -99,6 +102,7 @@ class TmdbScraper(ScraperPlugin):
     async def test_connection(self) -> bool:
         try:
             auth = self._auth()
+            tm_out = aiohttp.ClientTimeout(total=float(getattr(self._settings, "TMDB_TIMEOUT", 30)))
             endpoints = [
                 f"{self._base_url}/configuration",
                 f"{self._base_url}/trending/movie/day",
@@ -107,7 +111,10 @@ class TmdbScraper(ScraperPlugin):
             for ep in endpoints:
                 try:
                     session = await self._ensure_session()
-                    async with session.get(ep, params=auth["params"], headers=auth["headers"]) as resp:
+                    kwargs = {"params": auth["params"], "headers": auth["headers"], "timeout": tm_out}
+                    if self._proxy:
+                        kwargs["proxy"] = self._proxy
+                    async with session.get(ep, **kwargs) as resp:
                         if resp.status == 200:
                             return True
                 except Exception:
@@ -118,7 +125,6 @@ class TmdbScraper(ScraperPlugin):
 
     async def search(self, title: str, year: Optional[int], media_type: MediaType = None, language: str = '') -> List[ScraperSearchResult]:
         try:
-            session = await self._ensure_session()
             auth = self._auth()
             lang = language if language else self.default_language
             params = {**auth["params"], "language":lang, "query": title}
@@ -129,7 +135,7 @@ class TmdbScraper(ScraperPlugin):
                     params["year"] = year
                 else:
                     params["first_air_date_year"] = year
-            async with session.get(url, params=params, headers=auth["headers"]) as resp:
+            async with (await self._get(url, params=params, headers=auth["headers"])) as resp:
                 if resp.status != 200:
                     return []
                 data = await resp.json()
@@ -186,12 +192,11 @@ class TmdbScraper(ScraperPlugin):
     async def get_movie_details(self, movie_id: int, language: str ) -> Optional[ScraperMovieDetail]:
         """获取 TMDB 电影详情，包含外部ID、图像、演职员"""
         try:
-            session = await self._ensure_session()
             auth = self._auth()
             lang = language if language else self.default_language
             params = {**auth["params"], "language": lang, "append_to_response": "external_ids,images,credits"}
             url = f"{self._base_url}/movie/{movie_id}"
-            async with session.get(url, params=params, headers=auth["headers"]) as resp:
+            async with (await self._get(url, params=params, headers=auth["headers"])) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
@@ -242,12 +247,11 @@ class TmdbScraper(ScraperPlugin):
 
     async def get_series_details(self, series_id: int, language: str = "") -> Optional[ScraperSeriesDetail]:
         try:
-            session = await self._ensure_session()
             auth = self._auth()
             lang = language if language else self.default_language
             params = {**auth["params"], "language": lang, "append_to_response": "external_ids,images,credits"}
             url = f"{self._base_url}/tv/{series_id}"
-            async with session.get(url, params=params, headers=auth["headers"]) as resp:
+            async with (await self._get(url, params=params, headers=auth["headers"])) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
@@ -289,12 +293,11 @@ class TmdbScraper(ScraperPlugin):
 
     async def get_season_details(self, series_id: int, season_number: int, language: str = "") -> Optional[ScraperSeasonDetail]:
         try:
-            session = await self._ensure_session()
             auth = self._auth()
             lang = language if language else self.default_language
             params = {**auth["params"], "language": lang, "append_to_response": "external_ids,images,credits"}
             url = f"{self._base_url}/tv/{series_id}/season/{season_number}"
-            async with session.get(url, params=params, headers=auth["headers"]) as resp:
+            async with (await self._get(url, params=params, headers=auth["headers"])) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
@@ -344,12 +347,11 @@ class TmdbScraper(ScraperPlugin):
 
     async def get_episode_details(self, series_id: int, season_number: int, episode_number: int, language: str = "") -> Optional[ScraperEpisodeDetail]:
         try:
-            session = await self._ensure_session()
             auth = self._auth()
             lang = language if language else self.default_language
             params = {**auth["params"], "language": lang, "append_to_response": "external_ids,images"}
             url = f"{self._base_url}/tv/{series_id}/season/{season_number}/episode/{episode_number}"
-            async with session.get(url, params=params, headers=auth["headers"]) as resp:
+            async with (await self._get(url, params=params, headers=auth["headers"])) as resp:
                 if resp.status != 200:
                     return None
                 data = await resp.json()

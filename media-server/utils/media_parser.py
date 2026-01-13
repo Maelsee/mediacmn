@@ -1,10 +1,11 @@
 import os
 import re
 import logging
+import threading
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from guessit import guessit
+from guessit.api import GuessItApi
 
 class MediaParser:
     """
@@ -18,6 +19,7 @@ class MediaParser:
                                 如果不传，默认使用 utils/options.json
         """
         self.config_path: Optional[Path] = None
+        self._guessit_tls = threading.local()
         if custom_config_path:
             p = Path(custom_config_path)
             if p.exists():
@@ -40,6 +42,11 @@ class MediaParser:
 
         self._ignore_title_tokens = {
             "高清",
+            "帧率版本",
+            "地址发布页",
+            "收藏不迷路",
+            "电影港",
+            "发布页",
             "sd",
             "sdr",
             "hdr",
@@ -66,6 +73,51 @@ class MediaParser:
             "720p",
             "4k",
         }
+
+    def _extract_title_head_from_bracketed_segment(self, segment: str) -> Optional[str]:
+        """从形如“入青云[60帧率版本][全36集]...”的目录名中提取头部剧名。"""
+        if not segment:
+            return None
+
+        head = re.split(r"[\[【]", segment, maxsplit=1)[0].strip()
+        head = head.strip(" ._-“”\t")
+        if not head:
+            return None
+
+        cn_parts = re.findall(r"[\u4e00-\u9fff]{2,}", head)
+        if cn_parts:
+            return max(cn_parts, key=len)
+
+        if re.search(r"[A-Za-z]", head) and len(head) >= 2:
+            return head
+        return None
+
+    def _extract_title_head_from_dotted_segment(self, segment: str) -> Optional[str]:
+        if not segment or "." not in segment:
+            return None
+
+        head = segment.split(".", 1)[0].strip()
+        head = head.strip(" ._-“”\t")
+        if not head:
+            return None
+
+        cn_parts = re.findall(r"[\u4e00-\u9fff]{2,}", head)
+        if cn_parts:
+            return max(cn_parts, key=len)
+        if re.search(r"[A-Za-z]", head) and len(head) >= 2:
+            return head
+        return None
+
+    def _get_guessit_api(self) -> GuessItApi:
+        api = getattr(self._guessit_tls, "api", None)
+        if api is None:
+            api = GuessItApi()
+            self._guessit_tls.api = api
+        return api
+
+    def _guessit(self, name: str, options: Dict[str, Any]) -> Dict[str, Any]:
+        api = self._get_guessit_api()
+        return dict(api.guessit(name, options))
 
     def should_force_episode(self, filepath: str) -> bool:
         """根据路径与文件名快速判断是否应强制按剧集解析。"""
@@ -108,6 +160,22 @@ class MediaParser:
         if norm in self._ignore_dir_names or norm in self._ignore_title_tokens:
             return True
 
+        tokens = re.findall(r"[\u4e00-\u9fff]+|[a-z0-9]+", norm)
+        if tokens:
+            has_cjk = any("\u4e00" <= t[0] <= "\u9fff" for t in tokens)
+            if not has_cjk and all(
+                (t in self._ignore_title_tokens)
+                or (t in self._ignore_dir_names)
+                or re.fullmatch(r"\d+", t)
+                for t in tokens
+            ):
+                return True
+
+            if all(t in self._ignore_title_tokens for t in tokens if "\u4e00" <= t[0] <= "\u9fff") and any(
+                t in self._ignore_title_tokens for t in tokens
+            ):
+                return True
+
         if s in self._ignore_dir_names:
             return True
         if re.fullmatch(r"\d+", s):
@@ -140,6 +208,21 @@ class MediaParser:
                 m = re.search(r"([\u4e00-\u9fffA-Za-z0-9·\s]+)[(（](?:19|20)\d{2}[)）]", cleaned)
                 if m:
                     cleaned = m.group(1).strip()
+
+                dotted_head = self._extract_title_head_from_dotted_segment(cleaned)
+                if dotted_head and not self._is_ignorable_segment(dotted_head):
+                    if (
+                        re.search(r"\b\d{3,4}p\b", cleaned, flags=re.IGNORECASE)
+                        or re.search(r"\bfps\b", cleaned, flags=re.IGNORECASE)
+                        or "地址发布页" in cleaned
+                        or "收藏不迷路" in cleaned
+                    ):
+                        return dotted_head
+
+                if "[" in cleaned or "【" in cleaned:
+                    head_title = self._extract_title_head_from_bracketed_segment(cleaned)
+                    if head_title:
+                        return head_title
 
                 cn_parts = re.findall(r"[\u4e00-\u9fff]{2,}", cleaned)
                 if cn_parts:
@@ -248,23 +331,22 @@ class MediaParser:
 
         options = self._guessit_options(strict_episode, title_hint)
         try:
-            info = dict(guessit(clean_name, options))
+            info = self._guessit(clean_name, options)
         except Exception as e:
             logger = logging.getLogger(__name__)
             logger.error(
-                "GuessIt 解析失败，降级为默认配置",
+                f"GuessIt 解析失败，准备重试一次：{str(e)}",
                 extra={
                     "error": str(e),
                     "clean_name": clean_name,
                     "config_path": str(self.config_path) if self.config_path else None,
                 },
             )
-            fallback_options = {k: v for k, v in options.items() if k != "config"}
             try:
-                info = dict(guessit(clean_name, fallback_options))
+                info = dict(GuessItApi().guessit(clean_name, options))
             except Exception as e2:
                 logger.error(
-                    "GuessIt 在默认配置下仍然失败，返回空结果",
+                    "GuessIt 解析失败，返回空结果",
                     extra={"error": str(e2), "clean_name": clean_name},
                 )
                 info = {}
@@ -299,7 +381,10 @@ class MediaParser:
         if title_final:
             cn_parts_final = re.findall(r"[\u4e00-\u9fff]{2,}", str(title_final))
             if cn_parts_final:
-                info["title"] = max(cn_parts_final, key=len)
+                if title_hint and re.search(r"[\u4e00-\u9fff]", title_hint) and title_hint in cn_parts_final:
+                    info["title"] = title_hint
+                else:
+                    info["title"] = max(cn_parts_final, key=len)
 
         texts = []
         ep_title = info.get("episode_title")

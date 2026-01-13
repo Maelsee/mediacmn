@@ -21,15 +21,18 @@ class RecentNotifier extends StateNotifier<RecentState> {
 
   RecentNotifier(this._repository) : super(const RecentState());
 
+  Future<void> refresh({int limit = 20}) async => load(limit: limit);
+
   /// 加载最近观看列表
   /// - `limit`: 最大返回条数（默认 20）
   /// 会在未登录时返回空列表，避免触发未授权错误
   Future<void> load({int limit = 20}) async {
+    state = RecentState(items: state.items, loading: true);
     try {
       final items = await _repository.getRecent(limit: limit);
-      state = RecentState(items: items);
+      state = RecentState(items: items, loading: false);
     } catch (e) {
-      state = RecentState(error: '$e', items: state.items);
+      state = RecentState(error: '$e', items: state.items, loading: false);
     }
   }
 }

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'media_models.dart';
-import '../core/api_client.dart';
+import 'media_detail_provider.dart';
 import 'detail_widgets.dart';
 
 /// 媒体详情页组件，展示电影或剧集的详细信息并提供播放入口。
@@ -32,7 +32,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   /// - `Scaffold.backgroundColor` 取自背景图提取的主色，保证“无限向下延伸”
   Widget build(BuildContext context) {
     final AsyncValue<MediaDetail> detail =
-        ref.watch(_detailProvider(widget.mediaId));
+        ref.watch(mediaDetailProvider(widget.mediaId));
 
     return Scaffold(
       backgroundColor:
@@ -206,9 +206,22 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                           color: Colors.white),
                       onPressed: () {},
                     ),
-                    IconButton(
+                    PopupMenuButton<String>(
                       icon: const Icon(Icons.more_horiz, color: Colors.white),
-                      onPressed: () {},
+                      onSelected: (value) {
+                        if (value == 'manual_match') {
+                          context.push(
+                            '/media/detail/${widget.mediaId}/manual-match?seasonIndex=${_selectedSeasonIndex ?? 0}&versionIndex=${_selectedVersionIndex ?? 0}',
+                            extra: d,
+                          );
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'manual_match',
+                          child: Text('手动匹配'),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -220,10 +233,3 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     );
   }
 }
-
-/// 详情数据 Provider：按媒体 ID 拉取 `MediaDetail`。
-final _detailProvider =
-    FutureProvider.family<MediaDetail, int>((ref, id) async {
-  final api = ref.read(apiClientProvider);
-  return api.getMediaDetail(id);
-});

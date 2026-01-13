@@ -363,6 +363,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       onFitChanged: notifier.setFit,
       playlistMode: state.playlistMode,
       onPlaylistModeChanged: notifier.setPlaylistMode,
+      videoScale: state.videoScale,
+      onVideoScaleChanged: (scale) {
+        notifier.setVideoTransform(scale: scale, offset: Offset.zero);
+      },
     );
   }
 
@@ -540,6 +544,12 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
   /// 水平拖动开始时的起始播放位置。
   Duration _startPos = Duration.zero;
 
+  /// 水平拖动时的起始触点横坐标（用于计算总位移）。
+  double _seekStartDx = 0.0;
+
+  /// 水平拖动时的预览位置（抬手时用于最终 seek）。
+  Duration _seekPreviewPos = Duration.zero;
+
   /// 双指缩放开始时的起始倍数。
   double _startScale = 1.0;
 
@@ -597,9 +607,11 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
             },
             onDoubleTapDown: (d) {
               final w = MediaQuery.sizeOf(context).width;
-              if (d.localPosition.dx < w * 0.33) {
+
+              // 双击热区：左 25% 快退，中间 50% 播放/暂停，右 25% 快进。
+              if (d.localPosition.dx < w * 0.25) {
                 widget.onSeekBackward();
-              } else if (d.localPosition.dx > w * 0.66) {
+              } else if (d.localPosition.dx > w * 0.75) {
                 widget.onSeekForward();
               } else {
                 widget.onPlayPause();
@@ -622,6 +634,8 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
               // 单指：根据手势方向决定“进度/亮度/音量”。
               _dragMode = 0;
               _startPos = widget.position;
+              _seekPreviewPos = widget.position;
+              _seekStartDx = details.focalPoint.dx;
               _isLeftSide = details.focalPoint.dx < size.width / 2;
               if (_isLeftSide) {
                 try {
@@ -643,20 +657,12 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
 
               if (_dragMode == 4 || _pointerCount >= 2) {
                 // 双指缩放：倍数按比例缩放；位移按触点移动累加。
-                final nextScale = (_startScale * details.scale).clamp(1.0, 3.0);
+                final nextScale = (_startScale * details.scale).clamp(0.5, 3.0);
                 final rawOffset = _scaleOffset + details.focalPointDelta;
                 final nextOffset = _clampVideoOffset(
                     size: size, scale: nextScale, offset: rawOffset);
 
                 _scaleOffset = nextOffset;
-
-                if (nextScale <= 1.01) {
-                  widget.onVideoTransformChanged(1.0, Offset.zero);
-                  if (_overlayText != null) {
-                    setState(() => _overlayText = '缩放: 100%');
-                  }
-                  return;
-                }
 
                 widget.onVideoTransformChanged(nextScale, nextOffset);
                 setState(() {
@@ -702,13 +708,26 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
                 });
               } else if (_dragMode == 3) {
                 // 进度：水平滑动映射为时间偏移。
-                final deltaMs = dx * 200;
-                final newPos =
-                    _startPos + Duration(milliseconds: deltaMs.toInt());
+                final width = size.width <= 0 ? 1.0 : size.width;
+
+                // 将“总位移 / 屏幕宽度”映射为可调节的 seek 范围。
+                // 说明：
+                // - 全屏拖动（从左到右）至少可调 10 分钟。
+                // - 若视频更长，则按总时长的 25% 作为可调范围，保证长视频也足够灵敏。
+                final deltaRatio =
+                    (details.focalPoint.dx - _seekStartDx) / width;
+                final durationMs = widget.duration.inMilliseconds;
+
+                // 可调范围（毫秒）：取“总时长的 25%”与“10 分钟”中的较大值。
+                final rangeMs = ((durationMs * 0.25).toInt() < 10 * 60 * 1000)
+                    ? 10 * 60 * 1000
+                    : (durationMs * 0.25).toInt();
+                final deltaMs = (deltaRatio * rangeMs).toInt();
+                final newPos = _startPos + Duration(milliseconds: deltaMs);
                 final clamped = newPos < Duration.zero
                     ? Duration.zero
                     : (newPos > widget.duration ? widget.duration : newPos);
-                _startPos = clamped;
+                _seekPreviewPos = clamped;
                 setState(() {
                   _overlayText =
                       '${_formatDuration(clamped)} / ${_formatDuration(widget.duration)}';
@@ -717,7 +736,7 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
             },
             onScaleEnd: (_) {
               if (_dragMode == 3) {
-                widget.onSeek(_startPos);
+                widget.onSeek(_seekPreviewPos);
               }
               _flushPendingSystemVolume();
               setState(() {

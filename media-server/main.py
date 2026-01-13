@@ -84,6 +84,7 @@ def create_app() -> FastAPI:
     from api.routes_tasks import router as tasks_router
     # from api.routes_scraper import router as scraper_router
     from api.routes_playback import router as playback_router
+    from api.routes_tmdb import router as tmdb_router
     # from api.routes_collections import router as collections_router
 
 
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
     api_router.include_router(media_router, prefix="/media", tags=["media"])
     # api_router.include_router(collections_router, prefix="/collections", tags=["collections"])
     api_router.include_router(playback_router, prefix="/playback", tags=["playback"])
+    api_router.include_router(tmdb_router, prefix="/tmdb", tags=["tmdb"])
     api_router.include_router(storage_config_router, prefix="/storage-config", tags=["storage-config"])
     api_router.include_router(storage_server_router, prefix="/storage-server", tags=["storage-server"])
     api_router.include_router(scan_router, prefix="/scan", tags=["scan"])  # 新的统一扫描路由

@@ -5,6 +5,7 @@ import 'app_shell.dart';
 // import 'media_library/media_home_page.dart';
 import 'media_library/search_page.dart';
 import 'media_library/detail_page.dart';
+import 'media_library/manual_match/manual_match_page.dart';
 import 'media_player/media_player_page.dart';
 import 'media_library/media_models.dart';
 import 'package:media_client/source_library/sources_home_page.dart';
@@ -96,6 +97,30 @@ final appRouter = GoRouter(
                   final extraItem = state.extra as HomeCardItem?;
                   return MediaDetailPage(mediaId: id, previewItem: extraItem);
                 },
+                routes: [
+                  GoRoute(
+                    path: 'manual-match',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) {
+                      final idStr = state.pathParameters['id']!;
+                      final id = int.tryParse(idStr) ?? 0;
+                      final snapshot = state.extra as MediaDetail?;
+                      final seasonIndex = int.tryParse(
+                              state.uri.queryParameters['seasonIndex'] ?? '') ??
+                          0;
+                      final versionIndex = int.tryParse(
+                              state.uri.queryParameters['versionIndex'] ??
+                                  '') ??
+                          0;
+                      return ManualMatchPage(
+                        mediaId: id,
+                        snapshot: snapshot,
+                        seasonIndex: seasonIndex,
+                        versionIndex: versionIndex,
+                      );
+                    },
+                  ),
+                ],
               ),
               // 移除旧的分类列表页，统一使用卡片页
             ],

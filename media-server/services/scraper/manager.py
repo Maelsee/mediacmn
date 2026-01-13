@@ -81,9 +81,11 @@ class ScraperManager:
         self._op_lock: asyncio.Lock = asyncio.Lock()
         self._inflight: Dict[Tuple[Any, ...], asyncio.Task] = {}
         self._inflight_lock: asyncio.Lock = asyncio.Lock()
-        self._timeout_seconds: float = 10.0
-
         settings = get_settings()
+        self._timeout_seconds: float = float(getattr(settings, "SCRAPER_OP_TIMEOUT_SECONDS", 10.0))
+        self._plugin_test_timeout_seconds: float = float(getattr(settings, "SCRAPER_PLUGIN_TEST_TIMEOUT_SECONDS", 15.0))
+        self._plugin_startup_timeout_seconds: float = float(getattr(settings, "SCRAPER_PLUGIN_STARTUP_TIMEOUT_SECONDS", 20.0))
+
         self._detail_cache = _LocalDetailCache(
             maxsize=getattr(settings, "SCRAPER_DETAIL_CACHE_LOCAL_MAXSIZE", 2048),
             ttl_seconds=getattr(settings, "SCRAPER_DETAIL_CACHE_TTL_SECONDS", 86400),
@@ -227,7 +229,7 @@ class ScraperManager:
                     self.enable_plugin(name)
                     # 执行插件内部的异步初始化（如 aiohttp session）
                     try:
-                        await self._plugins[name].startup()
+                        await asyncio.wait_for(self._plugins[name].startup(), timeout=self._plugin_startup_timeout_seconds)
                     except Exception as e:
                         logger.error(f"插件 {name} 启动钩子执行失败: {e}")
             else:
@@ -489,12 +491,18 @@ class ScraperManager:
                     self._plugin_configs[name] = conf
                 
                 # 连接测试
-                if not await instance.test_connection():
-                    logger.warning(f"插件 {name} 连接测试未通过，将尝试继续加载")
+                try:
+                    ok = await asyncio.wait_for(instance.test_connection(), timeout=self._plugin_test_timeout_seconds)
+                    if not ok:
+                        logger.warning(f"插件 {name} 连接测试未通过，将尝试继续加载")
+                except asyncio.TimeoutError:
+                    logger.warning(f"插件 {name} 连接测试超时，将尝试继续加载")
+                except Exception as e:
+                    logger.warning(f"插件 {name} 连接测试异常，将尝试继续加载: {e}")
 
                 # 如果管理器已在运行，立即触发插件的热启动
                 if self._started:
-                    await instance.startup()
+                    await asyncio.wait_for(instance.startup(), timeout=self._plugin_startup_timeout_seconds)
 
                 self._plugins[name] = instance
                 logger.info(f"加载插件实例: {name}")

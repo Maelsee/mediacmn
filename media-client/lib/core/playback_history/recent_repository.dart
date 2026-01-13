@@ -22,19 +22,24 @@ class RecentRepository {
 
   /// 获取最近观看（用于首页区块）。
   ///
-  /// 规则：
-  /// - 本地优先，若本地为空再请求远端。
-  /// - 若请求远端成功，会回填本地进度与索引。
   Future<List<RecentCardItem>> getRecent({int limit = 20}) async {
-    final localRecords = await local.getRecentProgressRecords(limit: limit);
-    if (localRecords.isNotEmpty) {
-      return localRecords.map(_recordToRecentItem).toList();
+    if (!api.isLoggedIn) return const [];
+
+    final remoteItems = await api.getRecent(limit: limit, sort: 'updated_desc');
+
+    final merged = <RecentCardItem>[];
+    for (final item in remoteItems) {
+      final fid = item.fileId;
+      if (fid == null) {
+        merged.add(item);
+        continue;
+      }
+      final record = await local.getProgress(fid);
+      merged.add(record == null ? item : _mergeItemWithLocal(item, record));
     }
 
-    if (!api.isLoggedIn) return const [];
-    final remoteItems = await api.getRecent(limit: limit);
-    await _mergeRemoteRecentIntoLocal(remoteItems);
-    return await _loadRecentFromLocal(limit: limit, fallback: remoteItems);
+    await _mergeRemoteRecentIntoLocal(merged);
+    return merged;
   }
 
   /// 拉取最近观看分页（用于最近列表页）。
@@ -69,28 +74,6 @@ class RecentRepository {
     return merged;
   }
 
-  Future<List<RecentCardItem>> _loadRecentFromLocal({
-    required int limit,
-    required List<RecentCardItem> fallback,
-  }) async {
-    final localRecords = await local.getRecentProgressRecords(limit: limit);
-    if (localRecords.isEmpty) return fallback;
-    return localRecords.map(_recordToRecentItem).toList();
-  }
-
-  RecentCardItem _recordToRecentItem(PlaybackProgressRecord record) {
-    final id = record.coreId ?? record.fileId;
-    return RecentCardItem(
-      id: id,
-      name: record.title ?? '未命名',
-      coverUrl: record.coverUrl,
-      mediaType: record.mediaType ?? 'movie',
-      positionMs: record.positionMs,
-      durationMs: record.durationMs,
-      fileId: record.fileId,
-    );
-  }
-
   RecentCardItem _mergeItemWithLocal(
       RecentCardItem remoteItem, PlaybackProgressRecord localRecord) {
     final remotePos = remoteItem.positionMs ?? 0;
@@ -112,9 +95,12 @@ class RecentRepository {
   Future<void> _mergeRemoteRecentIntoLocal(
       List<RecentCardItem> remoteItems) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    for (final item in remoteItems) {
+    for (var i = 0; i < remoteItems.length; i++) {
+      final item = remoteItems[i];
       final fid = item.fileId;
       if (fid == null) continue;
+
+      final stamp = nowMs - i;
 
       final existing = await local.getProgress(fid);
       final remotePos = item.positionMs ?? 0;
@@ -127,8 +113,14 @@ class RecentRepository {
         positionMs:
             _choosePositionMs(existing: existing, remotePositionMs: remotePos),
         durationMs: existing?.durationMs ?? remoteDur,
-        updatedAtMs: existing?.updatedAtMs ?? nowMs,
-        lastPlayedAtMs: existing?.lastPlayedAtMs ?? nowMs,
+        updatedAtMs: existing == null
+            ? stamp
+            : (existing.updatedAtMs >= stamp ? existing.updatedAtMs : stamp),
+        lastPlayedAtMs: existing == null
+            ? stamp
+            : (existing.lastPlayedAtMs >= stamp
+                ? existing.lastPlayedAtMs
+                : stamp),
         lastReportedAtMs: existing?.lastReportedAtMs,
         dirty: existing?.dirty ?? false,
         title: existing?.title ?? item.name,

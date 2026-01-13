@@ -7,7 +7,7 @@ from datetime import datetime
 from re import L
 from typing import Optional, Dict, Any, List
 
-from sqlmodel import Session, select,update,func
+from sqlmodel import Session, select, update, func
 from sqlalchemy.dialects.postgresql import insert # <-- 关键导入
 
 from models.media_models import (
@@ -86,6 +86,68 @@ class MetadataPersistenceService:
             return obj.get(key, default)
         else:
             return getattr(obj, key, default)
+
+    def _cleanup_orphan_versions_after_rebind(
+        self,
+        session: Session,
+        user_id: int,
+        old_version_id: Optional[int],
+        new_version_id: Optional[int],
+        old_season_version_id: Optional[int],
+        new_season_version_id: Optional[int],
+    ) -> None:
+        if old_version_id and old_version_id != new_version_id:
+            cnt = session.exec(
+                select(func.count(FileAsset.id)).where(
+                    FileAsset.user_id == user_id,
+                    FileAsset.version_id == old_version_id,
+                )
+            ).one()
+            if int(cnt or 0) == 0:
+                v = session.get(MediaVersion, old_version_id)
+                if v and getattr(v, "user_id", None) == user_id:
+                    session.delete(v)
+
+        if old_season_version_id and old_season_version_id != new_season_version_id:
+            season_cnt = session.exec(
+                select(func.count(FileAsset.id)).where(
+                    FileAsset.user_id == user_id,
+                    FileAsset.season_version_id == old_season_version_id,
+                )
+            ).one()
+            if int(season_cnt or 0) == 0:
+                children = session.exec(
+                    select(MediaVersion).where(
+                        MediaVersion.user_id == user_id,
+                        MediaVersion.parent_version_id == old_season_version_id,
+                    )
+                ).all()
+                for child in children or []:
+                    child_id = getattr(child, "id", None)
+                    if not child_id:
+                        continue
+                    child_cnt = session.exec(
+                        select(func.count(FileAsset.id)).where(
+                            FileAsset.user_id == user_id,
+                            FileAsset.version_id == child_id,
+                        )
+                    ).one()
+                    if int(child_cnt or 0) == 0:
+                        session.delete(child)
+
+                if hasattr(session, "flush"):
+                    session.flush()
+
+                remaining_children = session.exec(
+                    select(func.count(MediaVersion.id)).where(
+                        MediaVersion.user_id == user_id,
+                        MediaVersion.parent_version_id == old_season_version_id,
+                    )
+                ).one()
+                if int(remaining_children or 0) == 0:
+                    sv = session.get(MediaVersion, old_season_version_id)
+                    if sv and getattr(sv, "user_id", None) == user_id:
+                        session.delete(sv)
 
     # ==================== 版本管理核心辅助方法 ====================   
     def _parse_dt(self, v) -> tuple[Optional[datetime],Optional[int]]:
@@ -1373,9 +1435,7 @@ class MetadataPersistenceService:
             air_date,year_val = self._parse_dt(getattr(metadata, "air_date", None))
             tmdb_id = str(getattr(metadata, "episode_id", None)) if getattr(metadata, "provider", None) == "tmdb" and getattr(metadata, "episode_id", None) else None
             still_path_url = getattr(metadata, "still_path", None)
-            # if still_path_url and getattr(metadata, "provider", None) == "tmdb":
-            #     if not isinstance(still_path_url, str) or not still_path_url.startswith("http"):
-            #         still_path_url = "https://image.tmdb.org/t/p/w500" + str(still_path_url)
+           
             # 1. 首先安全地获取或创建 series_core 和 season_core
             # 这些函数已经被改造为并发安全
             series_core = None
@@ -1422,6 +1482,7 @@ class MetadataPersistenceService:
 
             result = session.execute(stmt_core)
             episode_core_id = result.scalar_one()
+            logger.debug(f"旧ID：{media_file.core_id} 新核心ID: {episode_core_id}")
             media_file.core_id = episode_core_id
 
             # --- 3. 原子化 Upsert EpisodeExt ---
@@ -1443,16 +1504,16 @@ class MetadataPersistenceService:
             ).on_conflict_do_update(
                 index_elements=['user_id', 'series_core_id', 'season_number', 'episode_number'],  # 与数据库唯一约束匹配
                 set_={
-                    # 'core_id': episode_core_id,  # 确保关联到最新的 core_id
-                    # 'season_core_id': season_core.id if season_core else EpisodeExt.season_core_id,
-                    # 'title': title_val,
+                    'core_id': episode_core_id,  # 确保关联到最新的 core_id
+                    'season_core_id': season_core.id if season_core else EpisodeExt.season_core_id,
+                    'title': title_val,
                     'overview': getattr(metadata, "overview", None),
-                    # 'runtime': getattr(metadata, "runtime", None),
-                    # 'rating': getattr(metadata, "vote_average", None),
-                    # 'vote_count': getattr(metadata, "vote_count", None),
-                    # 'still_path': still_path_url,
-                    # 'episode_type': getattr(metadata, "episode_type", None),
-                    # 'aired_date': air_date
+                    'runtime': getattr(metadata, "runtime", None),
+                    'rating': getattr(metadata, "vote_average", None),
+                    'vote_count': getattr(metadata, "vote_count", None),
+                    'still_path': still_path_url,
+                    'episode_type': getattr(metadata, "episode_type", None),
+                    'aired_date': air_date
                 }
             )
             session.execute(stmt_ext)
@@ -1552,6 +1613,9 @@ class MetadataPersistenceService:
 
         core = None
         try:
+            old_version_id = getattr(media_file, "version_id", None)
+            old_season_version_id = getattr(media_file, "season_version_id", None)
+
             # 2. 架构优化：使用分发器调用具体处理函数
             if metadata_type == "series":
                 # series 的处理函数签名不同，需要特殊处理
@@ -1574,6 +1638,16 @@ class MetadataPersistenceService:
 
             # session.flush() 确保当前事务中的所有更改都发送到数据库，
             # 使得后续可能依赖新ID的操作能够成功。
+            session.flush()
+
+            self._cleanup_orphan_versions_after_rebind(
+                session=session,
+                user_id=media_file.user_id,
+                old_version_id=old_version_id,
+                new_version_id=getattr(media_file, "version_id", None),
+                old_season_version_id=old_season_version_id,
+                new_season_version_id=getattr(media_file, "season_version_id", None),
+            )
             session.flush()
             return True
 

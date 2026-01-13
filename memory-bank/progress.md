@@ -50,3 +50,80 @@
   - 解析器：在 `MediaParser._preprocess_name` 与 `parse` 后处理逻辑中，新增对“第N期”中文期号与“上/中/下”和 `PartN` 文本的识别，将“第3期上”归一为 `episode=3, part=1`，并保证综艺目录下的“第N期中/下”分别映射到 `part=2/3`，统一交由解析器输出 `episode/part` 字段。
   - 丰富器：在 `MetadataEnricher` 组级装配逻辑中，仅消费 `path_info` 中的 `episode/part` 字段：按 `episode` 精确匹配季详情中的单集条目，并在返回的 `contract_payload` 中透传 `part` 字段，避免在业务层重复解析文件名，明确“解析器负责命名解析、丰富器负责刮削与组装”的职责分工。
   - 测试：扩展 `tests/test_media_parser.py` 新增综艺样例用例，覆盖“第3期上”路径的季、集与分段解析；后端 `pytest` 全量 16 项测试全部通过，保证改动稳定性。
+
+- 2026-01-06 手动匹配（文件 ↔ TMDB 剧集/季/集）方案设计：
+  - 产出：在 `media-server/DEVELOPMENT.md` 追加前端页面、交互流程、后端处理与 API/数据结构设计。
+
+- 2026-01-06 手动匹配：TMDB 代理查询接口实现：
+  - 新增 `/api/tmdb/search/tv`、`/api/tmdb/tv/{series_tmdb_id}`、`/api/tmdb/tv/{series_tmdb_id}/season/{season_number}` 三个接口，统一要求 Bearer 鉴权。
+  - 新增 `services/tmdb_proxy_service.py`、`schemas/tmdb_proxy.py`，并补充 `tests/test_tmdb_proxy_routes.py` 回归测试。
+  - 同步更新 `media-server/DEVELOPMENT.md` 对应接口说明。
+
+- 2026-01-06 手动匹配：TMDB 代理电影搜索接口：
+  - 新增 `/api/tmdb/search/movie`，请求/响应结构与系列搜索一致（page/total/items）。
+  - 更新 `media-server/DEVELOPMENT.md` 增加电影搜索接口文档段落。
+  - 补充 `tests/test_tmdb_proxy_routes.py` 覆盖电影搜索成功与未配置场景。
+
+- 2026-01-07 手动匹配：提交手动绑定接口（manual-match）：
+    - 新增 `PUT /api/media/{media_id}/manual-match`，支持 TV(bind_episode) 与 Movie(bind_movie) 手动绑定请求。
+    - 接口内部直接基于前端提供的 TMDB ID/季集编号拉取详情契约并入队批量持久化任务（persist_batch），跳过名称解析。
+    - 新增 `tests/test_manual_match_routes.py` 覆盖 TV 成功入队与文件不存在错误场景。
+
+- 2026-01-10 依赖管理优化：
+    - 更新 `media-server/requirements.txt`，完整导出当前虚拟环境中的所有 Python 模块及其版本。
+
+- 2026-01-10 部署稳定性与测试方案优化：
+    - 修复 Docker 构建超时问题：在 `media-server/Dockerfile` 中切换为国内可访问的基础镜像源（`docker.1ms.run`），并更新 `DEPLOYMENT.md` 说明解决方法。
+    - 增强部署文档：在 `DEPLOYMENT.md` 中新增「测试与验证」章节，提供容器状态检查、API 健康检查、数据库/Redis 连通性验证等详细步骤。
+    - 验证部署配置：通过 `docker compose config` 验证了生产编排文件的语法与环境变量必填项约束。
+
+- 2026-01-10 TMDB 代理超时处理与网络兼容性增强：
+  - 问题：服务器环境通过 Vercel TMDB 代理访问时偶发卡住/超时，FastAPI 路由侧表现为 500（未能正确映射为超时或上游错误）。
+  - 解决：`TmdbProxyService` 引入请求级超时、连接超时与更细粒度的异常分类，超时统一映射为 504；并增加 `TMDB_FORCE_IPV4` 开关，在疑似 IPv6 路由异常的服务器环境中可强制使用 IPv4。
+  - 同步：`TmdbScraper` 的请求超时改为读取 `TMDB_TIMEOUT`，并在连通性探测中复用同样的超时/代理参数。
+  - 测试：扩展 `tests/test_tmdb_proxy_routes.py` 覆盖超时场景的 504 返回；全量 `pytest` 通过。
+
+- 2026-01-10 修复 Worker 刮削任务启动卡住：
+  - 现象：容器内 curl 可访问 TMDB 代理，但 metadata 刮削任务在“启动插件系统/自动发现插件”阶段卡住。
+  - 解决：为 `ScraperManager` 插件连接测试与 startup 钩子增加超时保护；`metadata_worker` 补救启动加入超时并明确报错；`TmdbScraper` 会话支持强制 IPv4 且所有请求统一走带超时的 `_get`；生产 worker 线程数调整为 1 以避免跨事件循环锁/任务问题。
+  - 测试：新增 `tests/test_scraper_manager_timeouts.py` 覆盖连接测试与启动超时不阻塞。
+
+- 2026-01-10 GuessIt 并发解析崩溃修复（rebulk list.remove）：
+  - 问题：Worker 并发解析时，GuessIt/Rebulk 偶发触发 `ValueError: list.remove(x): x not in list`，日志提示 `Please report at https://github.com/guessit-io/guessit/issues.`，并出现“解析失败”噪声。
+  - 复现：对同一字符串进行多线程高并发解析时可稳定复现；且不依赖自定义 options.json（说明根因不是配置语法冲突）。
+  - 解决：`MediaParser` 改为线程内复用独立的 `GuessItApi` 实例（thread-local），避免跨线程共享内部状态；并在单次失败时使用全新 `GuessItApi` 重试一次，进一步降低偶发失败概率。
+  - 配置：`options.json` 补充 `expected_title` 里的 `牧神记`，提升该标题的解析稳定性。
+  - 测试：新增并发回归测试；后端 `pytest`（29 通过）与前端 `flutter analyze` 均通过。
+
+- 2026-01-10 修复质量目录污染标题（4K SDR 被误判为 title）：
+  - 问题：如 `/电视剧/华语/大生意人（2025）/4K SDR/` 这类目录结构中，解析器会把 `4K SDR` 当作 title_hint，导致组级聚合标题错误、元数据搜索失败。
+  - 解决：增强 `_is_ignorable_segment()`，对目录分词后全部命中技术词集合（如 `4K SDR`）的分段直接忽略，继续向上回溯到真实剧名目录；并在 `options.json` 的 `common_words` 补充 `4K/4k/UHD/uhd` 降低技术词干扰。
+  - 文档：更新 `media-server/utils/name_parser.md` 补充该类失败样例与修复策略。
+  - 测试：新增回归用例覆盖 `大生意人（2025）/4K SDR/03 4K.mkv`；后端 `pytest`（30 通过）与前端 `flutter analyze` 均通过。
+
+- 2026-01-10 修复方括号标签污染剧名（入青云被误判为帧率版本）：
+  - 问题：目录形如 `入青云[60帧率版本][全36集][国语配音+中文字幕]...` 时，`_extract_title_hint()` 按“最长中文片段”抽取会把 `帧率版本` 当作 title_hint，导致组级聚合标题错误、元数据搜索失败。
+  - 解决：在 `_extract_title_hint()` 中新增“方括号/书名号标签剥离”规则，遇到 `[`/`【` 时优先取第一个括号前的头部片段作为剧名候选；并在 `options.json` `common_words` 补充 `帧率版本/60帧率版本/国语配音/中文字幕/60fps` 等标签词。
+  - 文档：更新 `media-server/utils/name_parser.md` 增补失败样例与修复策略。
+  - 测试：新增回归用例覆盖 `入青云[60帧率版本].../Love.in.the.Clouds.S01E03...mkv`；后端 `pytest` 通过。
+
+- 2026-01-10 修复站点宣传词污染剧名（掌心被误判为地址发布页）：
+  - 问题：目录形如 `掌心.2160p.60fps.电影港 地址发布页 www.dygang.me 收藏不迷路/` 时，`_extract_title_hint()` 会把 `地址发布页` 当作 title_hint，导致组级聚合标题错误、元数据搜索失败。
+  - 解决：在 `_extract_title_hint()` 中增加“点分隔技术段剥离”规则，命中 `2160p/fps` 或宣传词时优先取第一个点前的头部片段作为剧名候选；并在 `options.json` `common_words` 补充 `电影港/地址发布页/收藏不迷路/fps`。
+  - 文档：更新 `media-server/utils/name_parser.md` 增补失败样例与修复策略。
+  - 测试：新增回归用例覆盖 `掌心.2160p.60fps.../掌心.S01E01...mkv`；后端 `pytest` 通过。
+
+- 2026-01-12 扫描结果增加 all_file_ids（本次扫描命中的全部文件ID）：
+  - 需求：扫描结果除 `new_file_ids` 外，额外返回 `all_file_ids`，用于后续任务链做“全量候选文件”处理。
+  - 实现：`ScanResult` 新增 `all_file_ids` 字段；在处理器批量入库结果汇总阶段，累计新建/更新/未变化的 `file_id` 去重写入。
+  - 测试：扩展 `tests/test_scan_routes.py` 增加单测覆盖 `all_file_ids` 聚合逻辑；后端 `pytest` 通过。
+
+- 2026-01-12 生产环境 Docker 容器资源限制优化：
+  - 需求：针对 2 Core 2G RAM 的目标服务器，限制容器资源使用，防止内存爆炸（OOM）。
+  - 实现：在 `docker-compose.prod.yml` 中为 `postgres` (512M)、`redis_queue` (128M)、`api` (384M)、`worker` (512M) 和 `caddy` (128M) 配置了 `deploy.resources.limits` 和 `reservations`。
+  - 策略：总预留 CPU 约 0.4 Cores，总限制 CPU 1.9 Cores；总预留内存约 0.6G，总限制内存约 1.6G，预留约 400M 给宿主机操作系统。
+
+- 2026-01-11 修复手动匹配后详情页出现旧版本空数据：
+  - 问题：手动匹配后文件已指向新 `MediaVersion.id`，但旧版本记录仍保留，详情页返回旧版本但无 assets。
+  - 解决：在元数据持久化完成后，检测 `FileAsset.version_id/season_version_id` 是否发生变更；若旧版本已无任何文件引用，则自动删除旧版本（含 season_group 下无引用的子版本）。
+  - 测试：新增 `test_metadata_persistence_cleanup_versions.py` 覆盖旧版本与旧季版本清理逻辑；后端 `pytest` 通过。

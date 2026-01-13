@@ -72,6 +72,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         body: SafeArea(
           top: false,
           bottom: false,
+          left: false,
+          right: false,
           child: CommonPlayerLayout(
             state: s,
             controller: service.videoController,
@@ -107,6 +109,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         body: SafeArea(
           top: false,
           bottom: false,
+          left: false,
+          right: false,
           child: CommonPlayerLayout(
             state: s,
             controller: service.videoController,

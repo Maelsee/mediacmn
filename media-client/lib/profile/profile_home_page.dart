@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_client/source_library/tasks/task_provider.dart';
+import 'package:media_client/core/playback_history/providers.dart';
+import 'package:media_client/media_library/recent_provider.dart';
 
 class ProfileHomePage extends ConsumerWidget {
   const ProfileHomePage({super.key});
@@ -142,6 +144,10 @@ class ProfileHomePage extends ConsumerWidget {
                             const SnackBar(content: Text('已退出登录')));
                         ref.invalidate(apiClientProvider);
                         ref.invalidate(authUserProvider);
+                        ref.invalidate(localPlaybackStoreProvider);
+                        ref.invalidate(playbackProgressRepositoryProvider);
+                        ref.invalidate(recentRepositoryProvider);
+                        ref.invalidate(recentProvider);
                       }));
             },
           );

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, HTTPException, Path
+from fastapi import APIRouter, Depends, Query, HTTPException, Path, Body
 from pydantic import BaseModel, conint, Field
 from sqlmodel import Session, select, and_
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -14,6 +14,7 @@ from models.storage_models import StorageConfig, WebdavStorageConfig
 import base64
 from core.config import get_settings
 import time
+from datetime import datetime
 from schemas.media_serialization import HomeCardsResponse, FilterCardsResponse, MediaDetailResponse
 import logging
 
@@ -345,3 +346,271 @@ async def refresh_play_url(
     if not info or not info.get("playurl"):
         raise HTTPException(status_code=400, detail={"code": "compose_playurl_failed", "message": "无法生成播放链接"})
     return info
+
+
+class ManualMatchTarget(BaseModel):
+    local_media_id: int = Field(..., ge=1, le=2147483647)
+    local_media_version_id: Optional[int] = Field(default=None, ge=1, le=2147483647)
+    type: Literal["tv", "movie"]
+    provider: Literal["tmdb"]
+
+    tmdb_tv_id: Optional[int] = Field(default=None, ge=1, le=2147483647)
+    season_number: Optional[int] = Field(default=None, ge=0, le=1000)
+    tmdb_season_id: Optional[int] = Field(default=None, ge=1, le=2147483647)
+
+    tmdb_movie_id: Optional[int] = Field(default=None, ge=1, le=2147483647)
+
+
+class ManualMatchItem(BaseModel):
+    file_id: int = Field(..., ge=1, le=2147483647)
+    action: Literal["bind_episode", "bind_movie", "keep", "other"]
+    tmdb: Optional[Dict[str, Any]] = None
+
+
+class ManualMatchRequest(BaseModel):
+    target: ManualMatchTarget
+    items: List[ManualMatchItem] = Field(default_factory=list)
+    client_request_id: Optional[str] = None
+
+
+class ManualMatchError(BaseModel):
+    file_id: int
+    code: str
+    message: str
+
+
+class ManualMatchResponse(BaseModel):
+    success: bool
+    effective_media_id: int
+    task_id: Optional[str] = None
+    accepted: int
+    updated: int
+    skipped: int
+    errors: List[ManualMatchError] = Field(default_factory=list)
+
+
+def _file_matches_target(file: FileAsset, target: ManualMatchTarget) -> bool:
+    if not target.local_media_version_id:
+        return True
+    if target.type == "tv":
+        return int(getattr(file, "season_version_id", 0) or 0) == int(target.local_media_version_id)
+    if target.type == "movie":
+        if int(getattr(file, "version_id", 0) or 0) == int(target.local_media_version_id):
+            return True
+        return int(getattr(file, "core_id", 0) or 0) == int(target.local_media_id)
+    return False
+
+
+@router.put("/{media_id}/manual-match", response_model=ManualMatchResponse)
+async def manual_match(
+    media_id: int = Path(..., ge=1, le=2147483647),
+    body: ManualMatchRequest = Body(...),
+    current_subject: str = Depends(get_current_subject),
+    db: AsyncSession = Depends(get_async_session),
+):
+    user_id = int(current_subject)
+    logger.info(f"手动匹配请求 media_id={media_id}, target={body.target}, items={body.items}")
+    # if body.target.local_media_id != media_id:
+    #     raise HTTPException(
+    #         status_code=400,
+    #         detail={"code": "media_id_mismatch", "message": "路径 media_id 与请求体 local_media_id 不一致"},
+    #     )
+    media = (
+        await db.exec(
+            select(MediaCore).where(MediaCore.id == media_id, MediaCore.user_id == user_id)
+        )
+    ).first()
+    if not media:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "media_not_found", "message": "媒体不存在或无权限"},
+        )
+
+    from services.scraper.base import MediaType, ScraperSearchResult
+    from services.scraper import scraper_manager
+    from services.task.producer import create_persist_batch_task
+
+    accepted = len(body.items or [])
+    updated = 0
+    errors: List[ManualMatchError] = []
+    persist_items: List[Dict[str, Any]] = []
+    task_id: Optional[str] = None
+
+    for it in body.items or []:
+        file_asset = (
+            await db.exec(
+                select(FileAsset).where(
+                    FileAsset.id == it.file_id,
+                    FileAsset.user_id == user_id,
+                )
+            )
+        ).first()
+        if not file_asset:
+            errors.append(
+                ManualMatchError(
+                    file_id=it.file_id,
+                    code="file_not_found",
+                    message="文件不存在或无权限",
+                )
+            )
+            continue
+        if not _file_matches_target(file_asset, body.target):
+            errors.append(
+                ManualMatchError(
+                    file_id=it.file_id,
+                    code="file_not_in_media",
+                    message="文件不属于该媒体",
+                )
+            )
+            continue
+        if it.action in {"keep", "other"}:
+            continue
+
+        if it.action == "bind_movie":
+            if body.target.type != "movie":
+                errors.append(
+                    ManualMatchError(
+                        file_id=it.file_id,
+                        code="invalid_action",
+                        message="当前 target 不支持该 action",
+                    )
+                )
+                continue
+            tmdb_movie_id = None
+            if isinstance(it.tmdb, dict):
+                tmdb_movie_id = it.tmdb.get("tmdb_movie_id")
+            if not isinstance(tmdb_movie_id, int):
+                tmdb_movie_id = body.target.tmdb_movie_id
+            if not isinstance(tmdb_movie_id, int):
+                errors.append(
+                    ManualMatchError(
+                        file_id=it.file_id,
+                        code="missing_tmdb_id",
+                        message="缺少 tmdb_movie_id",
+                    )
+                )
+                continue
+            best_match = ScraperSearchResult(
+                id=tmdb_movie_id,
+                title="manual_match",
+                provider="tmdb",
+                media_type=MediaType.MOVIE.value,
+            )
+            contract_type, details_obj = await scraper_manager.get_detail(
+                best_match=best_match,
+                media_type=MediaType.MOVIE,
+                language="zh-CN",
+            )
+            if contract_type != "movie" or not details_obj:
+                errors.append(
+                    ManualMatchError(
+                        file_id=it.file_id,
+                        code="tmdb_detail_not_found",
+                        message="无法获取 TMDB 电影详情",
+                    )
+                )
+                continue
+            persist_items.append(
+                {
+                    "file_id": it.file_id,
+                    "contract_type": "movie",
+                    "contract_payload": details_obj.model_dump(),
+                    "path_info": {},
+                }
+            )
+            updated += 1
+            continue
+
+        if it.action == "bind_episode":
+            if body.target.type != "tv":
+                errors.append(
+                    ManualMatchError(
+                        file_id=it.file_id,
+                        code="invalid_action",
+                        message="当前 target 不支持该 action",
+                    )
+                )
+                continue
+            tmdb_tv_id = body.target.tmdb_tv_id
+            season_number = body.target.season_number
+            episode_number = None
+            if isinstance(it.tmdb, dict):
+                if isinstance(it.tmdb.get("tmdb_tv_id"), int):
+                    tmdb_tv_id = it.tmdb.get("tmdb_tv_id")
+                if isinstance(it.tmdb.get("season_number"), int):
+                    season_number = it.tmdb.get("season_number")
+                episode_number = it.tmdb.get("episode_number")
+            if not isinstance(tmdb_tv_id, int) or not isinstance(season_number, int):
+                errors.append(
+                    ManualMatchError(
+                        file_id=it.file_id,
+                        code="missing_tmdb_id",
+                        message="缺少 tmdb_tv_id 或 season_number",
+                    )
+                )
+                continue
+            if not isinstance(episode_number, int):
+                errors.append(
+                    ManualMatchError(
+                        file_id=it.file_id,
+                        code="missing_episode_number",
+                        message="缺少 episode_number",
+                    )
+                )
+                continue
+            best_match = ScraperSearchResult(
+                id=tmdb_tv_id,
+                title="manual_match",
+                provider="tmdb",
+                media_type=MediaType.TV_SERIES.value,
+            )
+            contract_type, details_obj = await scraper_manager.get_detail(
+                best_match=best_match,
+                media_type=MediaType.TV_EPISODE,
+                season=season_number,
+                episode=episode_number,
+                language="zh-CN",
+            )
+            if contract_type != "episode" or not details_obj:
+                errors.append(
+                    ManualMatchError(
+                        file_id=it.file_id,
+                        code="tmdb_detail_not_found",
+                        message="无法获取 TMDB 单集详情",
+                    )
+                )
+                continue
+            persist_items.append(
+                {
+                    "file_id": it.file_id,
+                    "contract_type": "episode",
+                    "contract_payload": details_obj.model_dump(),
+                    "path_info": {},
+                }
+            )
+            updated += 1
+            continue
+
+    if persist_items:
+        logger.info(f"手动匹配入队 {len(persist_items)} 项")
+        idempotency_key = f"persist_batch:{user_id}:{body.client_request_id}"
+        task_id = await create_persist_batch_task(
+            user_id=user_id,
+            items=persist_items,
+            idempotency_key=idempotency_key,
+        )
+        logger.info(f"手动匹配入队任务 {task_id}")
+
+    skipped = accepted - updated - len(errors)
+    if skipped < 0:
+        skipped = 0
+
+    return ManualMatchResponse(
+        success=True,
+        effective_media_id=media_id,
+        task_id=task_id,
+        accepted=accepted,
+        updated=updated,
+        skipped=skipped,
+        errors=errors,
+    )

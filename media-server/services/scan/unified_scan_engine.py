@@ -44,6 +44,8 @@ class ScanResult(BaseModel):
     encountered_media_paths: List[str] = Field(default_factory=list)
     # ID 与 详情记录
     new_file_ids: List[int] = Field(default_factory=list)
+    # 本次扫描命中的所有媒体文件 ID（包含新建/更新/未变化）
+    all_file_ids: List[int] = Field(default_factory=list)
     to_delete_ids: List[int] = Field(default_factory=list)
     error_details: List[Dict[str, Any]] = Field(default_factory=list)
 
@@ -364,6 +366,7 @@ class UnifiedScanEngine:
                                 progress_cb: Optional[Callable]):
         """处理协程：负责逻辑汇总、攒批入库、进度回调"""
         batch: List[StorageEntry] = []
+        all_file_ids_seen: Set[int] = set()
 
         async def flush():
             nonlocal batch
@@ -383,6 +386,11 @@ class UnifiedScanEngine:
                     media_paths.add(entry.path)
 
             for r in batch_results:
+                file_id = r.get("file_id")
+                if isinstance(file_id, int) and file_id not in all_file_ids_seen:
+                    all_file_ids_seen.add(file_id)
+                    result.all_file_ids.append(file_id)
+
                 status = r.get("status")
                 if status == "new":
                     result.new_files += 1

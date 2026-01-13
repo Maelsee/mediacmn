@@ -47,7 +47,32 @@ git rm --cached -r services/storage/__pycache__/
 2. 在部署前应用迁移：
    alembic upgrade head
 
-Alembic 错误信息的中文解释和解决方案：
+## TMDB 代理配置
+
+如果由于网络原因无法访问 TMDB 官方接口，可以使用代理服务器或 Vercel 无服务器代理。
+
+### 1. 使用 HTTP 代理
+在 `.env` 中配置 `TMDB_PROXY`：
+```bash
+TMDB_PROXY=http://your-proxy-ip:port
+```
+
+### 2. 使用反向代理域名 (推荐)
+可以使用如 [tmdb-proxy](https://github.com/imaliang/tmdb-proxy) 部署的代理域名。
+
+在 `.env` 中配置以下环境变量：
+```bash
+# TMDB API 代理地址 (例如使用 Vercel 代理)
+TMDB_API_BASE_URL=https://tmdb.maelsea.top/3
+# TMDB 图片代理地址
+TMDB_IMAGE_BASE_URL=https://tmdb.maelsea.top/t/p
+```
+
+**验证方法：**
+- 官方接口：`https://api.themoviedb.org/3/configuration?api_key=your_api_key`
+- 代理接口：`https://tmdb.maelsea.top/3/configuration?api_key=your_api_key`
+
+## Alembic 错误信息的中文解释和解决方案：
 
 
 问题解释
@@ -4588,3 +4613,447 @@ if batch_items:
                 logger.info(f"✅ 元数据任务 {task_id} 已创建批量持久化任务：items={persist_task_count}")
             except Exception as e:
                 logger.error(f"❌ 创建批量持久化任务失败：{e}", exc_info=True)
+
+
+---
+
+# 手动匹配（文件 ↔ TMDB 剧集/季/集）功能设计方案
+
+## 目标与背景
+
+### 业务问题
+- 综艺/番剧等场景中，文件名经常不包含可靠的季/集编号（例如缺少“第 1 期/第 01 集”等），自动解析与自动匹配在多数情况下无法保证正确性。
+- 即便文件名包含“第一期”等信息，解析器也只能在有限条件下进行命中；当缺少编号时基本不可能稳定匹配。
+
+### 目标
+- 在媒体详情页提供“手动匹配”能力：用户从 TMDB 选择正确的「系列」与「季」，然后为每个视频文件手工选择对应的「集」。
+- 点击保存后，将绑定信息上传到后端；后端基于 TMDB ID + 季/集号获取完整元数据并持久化到数据库，同时将 FileAsset 绑定到正确的季版本/单集版本。
+- 返回详情页后重新拉取详情数据，展示更新后的季/集列表与标题，完成修复闭环。
+
+### 设计约束
+- 前端搜索数据源为TMDB，但不在客户端直接使用 TMDB Key（避免泄露与限流不可控），推荐由后端提供 TMDB 代理接口。
+- 绑定请求只上传：`file_id` + TMDB ID（系列/季/集）+ `season_number` + `episode_number`（与需求一致）。
+- 后端收到后负责“丰富化 + 持久化”，前端不做元数据拼装。
+
+---
+
+## 前端设计（media-client）
+
+### 入口与导航
+- 入口：详情页右上角“三点”按钮（`MediaDetailPage`）。
+- 行为：点击后弹出菜单，增加入口项：`手动匹配`。
+- 导航：进入新的页面 `ManualMatchPage`（全屏页面，支持返回）。
+
+### 页面结构（对齐提供的 UI 图）
+
+#### 顶部信息区
+- 顶栏：返回按钮 + 标题“编辑信息”。
+- 次行：展示当前媒体目录信息（路径或目录名）+ “xx 等 N 个文件”（来自后端的文件列表统计）。
+
+#### 区块 1：搜索并匹配影片（TMDB）
+- 搜索输入框：placeholder “请输入完整的电影或电视剧名称”。
+- 行为：输入后点击“搜索”，展示搜索结果列表（ListView）。
+- 结果卡片展示字段：
+  - 海报缩略图
+  - 标题（中文/本地化标题）
+  - 首播日期/上映日期、国家/地区（如可得）
+  - 简介（单行/两行截断）
+- 选择：点击某一条搜索结果后，进入“匹配剧集”区块，并将该条结果设为“当前选择的系列”。
+
+#### 区块 2：匹配剧集（选择季）
+- 展示当前选择系列（海报 + 标题）。
+- “选择季”入口：右侧箭头，点击弹出底部选择器或新页面选择器。
+- 选择季后：
+  - 页面中部标题“选择季”右侧显示“第 X 季”。
+  - 拉取该季的集列表（TMDB），用于后续给文件选择。
+
+#### 区块 3：文件列表（逐文件选择集信息）
+- ListView 渲染所有视频文件条目（来自后端，按文件名排序/按扫描时间排序均可，默认按文件名升序）。
+- 每行展示：
+  - 主标题：文件名（filename）
+  - 次标题：当前匹配状态标签（badge）
+    - 已匹配：显示“第 N 集 标题…”（来自用户本次选择或后端现有绑定）
+    - 暂不改动：显示“暂不改动”
+    - 其他：显示“其他”
+    - 未设置：显示“请选择”
+- 交互：点击某文件条目，弹出底部弹窗“选择集”（对齐图示）。
+
+#### 底部弹窗：选择集（ActionSheet/BottomSheet）
+- 顶部：标题“选择集” + 关闭按钮。
+- 第一段：文件信息（显示该文件名）。
+- 选项：
+  - `暂不改动`：保持该文件当前绑定不变（不向后端提交或提交为 keep 动作）。
+  - `其他`：该文件归入“其他”（推荐后端创建一个本地“其他”占位集，便于在详情页仍可见）。
+  - TMDB 集列表：按 episode_number 升序显示“第 N 集 标题”。
+- 单选：radio 风格，选中即更新该文件的本地选择状态，关闭弹窗。
+
+#### 保存按钮
+- 页面底部固定按钮：“完成”。
+- 启用条件：已选择系列 + 已选择季；文件列表中至少有 1 个文件被设置为“集/其他/暂不改动”。
+- 点击后：
+  - 显示 loading
+  - 调用后端绑定 API
+  - 成功：返回详情页并触发详情数据刷新（invalidate provider 或重新 push 同一路由）。
+  - 失败：展示错误提示（Toast/SnackBar）并保留页面状态以便重试。
+
+### 状态与交互流程（建议）
+
+#### 关键状态
+- `selectedSeries`：TMDB 系列（tv_id + title + poster）。
+- `selectedSeasonNumber`：季号。
+- `seasonEpisodes`：该季的 TMDB 集列表（episode_number、name、episode_id 等）。
+- `files`：后端返回的视频文件列表（file_id、filename、full_path?、size_text?、existing_binding?）。
+- `fileSelections`：Map<file_id, Selection>（Selection 可能为 keep/other/episode）。
+
+#### 推荐时序（简化）
+1. 从详情页进入手动匹配页，立即请求“文件上下文/文件列表”。
+2. 用户搜索 TMDB 系列并选择。
+3. 用户选择季号，拉取该季集列表。
+4. 用户逐文件选择集。
+5. 用户点击“完成”，提交绑定。
+6. 返回详情页，刷新详情。
+
+### 异常与边界处理
+- TMDB 搜索无结果：展示空状态文案“仅搜索影片名，暂不支持搜索演员”。
+- TMDB 季为 0（特别篇）：允许选择“第 0 季”。
+- 文件列表为空：提示“当前目录未发现视频文件”。
+- 部分文件未选择：允许提交（未选择则视为 keep）。
+- 后端返回合并到另一个媒体 ID：前端用 `context.go('/detail/{effective_media_id}')` 替换返回目标。
+
+---
+
+## 后端设计（media-server）
+
+### 总体思路
+- 后端提供两类能力：
+  1) TMDB 查询代理：搜索系列、查询季列表、查询某季集列表（用于前端选择）。
+  2) 手动绑定写入：接收前端绑定结果，使用 TMDB 拉取详情并调用既有持久化逻辑（`MetadataPersistenceService`）更新 `MediaCore/SeasonExt/EpisodeExt/MediaVersion/FileAsset`。
+
+### 复用现有模块
+- TMDB 数据获取：优先复用 TMDB 刮削器（`services/scraper/scraper_plugins/tmdb_scraper.py`）的调用与缓存策略。
+- 持久化：复用 `services/media/metadata_persistence_service.py` 的 `apply_metadata`（已支持 episode 写入与 FileAsset 绑定）。
+- 详情刷新：前端仍调用现有详情接口 `GET /api/media/{id}/detail`（由 `MediaService._get_series_detail2` 组装）。
+
+---
+
+## API 设计（建议）
+
+### 1) 获取手动匹配上下文（文件列表）
+
+用于在手动匹配页展示“视频文件条目”。核心目标是：不依赖现有季/集绑定，也能稳定拿到同一目录下的文件列表。
+
+- GET `/api/media/manual-match/context`
+  - Query：
+    - `anchor_file_id`: int（详情页当前选中资源的 file_id，用于推导目录范围）
+  - Res：
+    ```json
+    {
+      "anchor_file_id": 123,
+      "storage_id": 10,
+      "directory": "/综艺/极限挑战/第一季",
+      "total": 13,
+      "files": [
+        {
+          "file_id": 1001,
+          "filename": "第01期 六男神上演极限追击.mp4",
+          "full_path": "/.../第01期 六男神上演极限追击.mp4",
+          "size": 123,
+          "size_text": "1.2 GB",
+          "existing": {
+            "series_tmdb_id": 12345,
+            "season_number": 1,
+            "episode_number": 1,
+            "episode_title": "时间战争"
+          }
+        }
+      ]
+    }
+    ```
+  - 说明：
+    - `directory` 的定义：`dirname(full_path)`（同一 storage_id 下目录完全一致的文件集合）。
+    - `existing` 用于 UI 初始填充（可选，若无则为 null）。
+
+### 2) TMDB 代理：搜索系列
+
+- GET `/api/tmdb/search/tv`
+  - Query：
+    - `q`: string
+    - `page`: int（默认 1）
+    - `language`: string（默认 `zh-CN`）
+  - 鉴权：需要 Bearer 令牌（与其他媒体接口一致），避免被滥用。
+  - 说明：`poster_path/backdrop_path` 为 TMDB 原始路径（如 `/xxx.jpg`），前端自行拼接 `https://image.tmdb.org/t/p/w500` 等规格。
+  - Res：
+    ```json
+    {
+      "page": 1,
+      "total_pages": 3,
+      "total_results": 50,
+      "items": [
+        {
+          "tmdb_id": 12345,
+          "name": "极限挑战",
+          "original_name": "Go Fighting",
+          "first_air_date": "2015-06-14",
+          "origin_country": ["CN"],
+          "overview": "...",
+          "poster_path": "/xxx.jpg",
+          "backdrop_path": "/yyy.jpg"
+        }
+      ]
+    }
+    ```
+
+### 2.1) TMDB 代理：搜索电影
+
+- GET `/api/tmdb/search/movie`
+  - Query：
+    - `q`: string
+    - `page`: int（默认 1）
+    - `language`: string（默认 `zh-CN`）
+  - 鉴权：需要 Bearer 令牌（与其他媒体接口一致），避免被滥用。
+  - 说明：`poster_path/backdrop_path` 为 TMDB 原始路径（如 `/xxx.jpg`），前端自行拼接 `https://image.tmdb.org/t/p/w500` 等规格。
+  - Res：
+    ```json
+    {
+      "page": 1,
+      "total_pages": 3,
+      "total_results": 50,
+      "items": [
+        {
+          "tmdb_id": 550,
+          "title": "Fight Club",
+          "original_title": "Fight Club",
+          "release_date": "1999-10-15",
+          "overview": "...",
+          "poster_path": "/xxx.jpg",
+          "backdrop_path": "/yyy.jpg"
+        }
+      ]
+    }
+    ```
+
+### 3) TMDB 代理：查询季列表
+
+- GET `/api/tmdb/tv/{series_tmdb_id}`
+  - Query：`language`（默认 `zh-CN`）
+  - 鉴权：需要 Bearer 令牌。
+  - 说明：`poster_path` 为 TMDB 原始路径（如 `/s1.jpg`）。
+  - Res：
+    ```json
+    {
+      "tmdb_id": 12345,
+      "name": "极限挑战",
+      "seasons": [
+        {
+          "season_number": 1,
+          "name": "第 1 季",
+          "episode_count": 12,
+          "air_date": "2015-06-14",
+          "poster_path": "/s1.jpg"
+        }
+      ]
+    }
+    ```
+
+### 4) TMDB 代理：查询某季的集列表
+
+- GET `/api/tmdb/tv/{series_tmdb_id}/season/{season_number}`
+  - Query：`language`（默认 `zh-CN`）
+  - 鉴权：需要 Bearer 令牌。
+  - 说明：`still_path` 为 TMDB 原始路径（如 `/e1.jpg`）。
+  - Res：
+    ```json
+    {
+      "series_tmdb_id": 12345,
+      "season_number": 1,
+      "episodes": [
+        {
+          "episode_number": 1,
+          "episode_tmdb_id": 90001,
+          "name": "时间战争",
+          "air_date": "2015-06-14",
+          "overview": "...",
+          "still_path": "/e1.jpg",
+          "runtime": 90
+        }
+      ]
+    }
+    ```
+
+### 5) 提交手动绑定（核心写入）
+
+接口：
+
+- `PUT /api/media/{media_id}/manual-match`
+
+请求体（统一 TV/Movie）：
+
+```json
+{
+  "target": {
+    "local_media_id": 567,  // 所选季 id (TV) 或 电影 id (Movie)
+    "local_media_version_id": 12345, // 所选版本 id
+    "type": "tv",
+    "provider": "tmdb",
+    "tmdb_tv_id": 123,
+    "season_number": 1,
+    "tmdb_season_id": 1001
+  },
+  "items": [
+    {
+      "file_id": 301,
+      "action": "bind_episode",
+      "tmdb": {
+        "tmdb_tv_id": 123,
+        "tmdb_season_id": 1001,
+        "tmdb_episode_id": 90001,
+        "season_number": 1,
+        "episode_number": 1
+      }
+    },
+    {"file_id": 302, "action": "keep"},
+    {"file_id": 303, "action": "other"}
+  ],
+  "client_request_id": "a3b0f2f8-2d3a-4f6a-9f4f-5f0e6a9e2e3b"
+}
+```
+
+Movie 场景示例：
+
+```json
+{
+  "target": {
+    "local_media_id": 567,  // 电影 id
+    "local_media_version_id": 12345, // 版本 id
+    "type": "movie",
+    "provider": "tmdb",
+    "tmdb_movie_id": 550
+  },
+  "items": [
+    {"file_id": 401, "action": "bind_movie", "tmdb": {"tmdb_movie_id": 550}},
+    {"file_id": 402, "action": "other"}
+  ]
+}
+```
+
+返回体：
+
+```json
+{
+  "success": true,
+  "effective_media_id": 567,
+  "accepted": 3,
+  "updated": 2,
+  "skipped": 1,
+  "errors": [
+    {"file_id": 999, "code": "file_not_in_media", "message": "文件不属于该媒体"}
+  ]
+}
+```
+  - 说明：
+    - `items` 满足“上传 file ID + TMDB ID（系列/季/集）+ season_number + episode_number”的要求。
+    - `keep/other` 是对齐 UI 交互的可选字段；若不提供，默认未出现在 `items` 的文件视为 keep。
+
+---
+
+## 后端处理流程（Bind Episodes）
+
+### 1) 权限与输入校验
+- 校验 `local_media_id` 属于当前用户。
+- 校验所有 `file_id` 均属于当前用户，且 `file_id` 位于 `anchor_file_id` 推导出的目录范围内（防止跨目录误绑）。
+- 校验 `season_number` 合法（>=0）。
+
+### 2) 解决“TMDB series 已存在”的合并问题
+数据库对 `MediaCore(user_id, kind, tmdb_id)` 有唯一约束。
+
+建议策略：
+- 查找是否已存在 `kind='series' && tmdb_id==series_tmdb_id` 的记录：
+  - 若存在且 id != local_media_id：将其作为 `effective_media_id`（合并到既有系列）。
+  - 若不存在：允许将 `local_media_id` 对应的 series core 更新为新的 `tmdb_id`（并刷新其标题/海报等展示字段）。
+- 响应中返回 `effective_media_id`，前端以此决定返回后的详情页目标。
+
+### 3) 获取 TMDB 季详情（一次请求，多文件复用）
+- 基于 `series_tmdb_id + season_number` 拉取该季详情，得到完整 `episodes[]`。
+- 将 `episode_number -> episode_detail` 建立映射，供后续批量处理。
+
+### 4) 批量写入策略
+对每个 `items[]`：
+- 从映射中取出对应 episode_detail。
+- 构造 `contract_type='episode'`，并使用 TMDB 的 episode_detail 作为 `contract_payload`（与现有持久化服务契约保持一致）。
+- 调用 `MetadataPersistenceService.apply_metadata(session, media_file, contract_payload, 'episode', path_info={})`。
+  - 该步骤会：
+    - upsert Series/Season/Episode 的 `MediaCore` 与扩展表（SeriesExt/SeasonExt/EpisodeExt）
+    - upsert `MediaVersion`（season_group / episode_child）
+    - 将 `FileAsset.version_id/season_version_id` 绑定到正确版本
+
+### 5) “其他”文件处理（推荐）
+为保证“其他”文件在详情页仍可被看到，建议：
+- 在 `effective_media_id + season_number` 下创建一个本地占位“其他集”：
+  - `EpisodeExt.episode_number = 0`
+  - `EpisodeExt.title = '其他'`
+  - 不写入 TMDB external id
+- 将 `other[]` 中的文件绑定到该占位集对应的 episode 版本。
+
+### 6) 事务与幂等性
+- 以“同一次保存”为事务边界，整体使用单事务提交；任一文件写入失败可选择：
+  - 全部回滚（强一致，推荐默认）
+  - 部分成功并返回失败列表（弱一致，需 UI 支持）
+- 幂等：
+  - 允许前端传 `client_request_id`，后端用 Redis/DB 记录最近一次处理结果，避免重复提交导致重复写入。
+
+---
+
+## 前后端交互数据结构（建议类型）
+
+### FileAssetSummary（后端 → 前端）
+```json
+{
+  "file_id": 1001,
+  "filename": "第01期 ....mp4",
+  "full_path": "/.../第01期 ....mp4",
+  "size": 0,
+  "size_text": "1.2 GB",
+  "existing": {
+    "series_tmdb_id": 12345,
+    "season_number": 1,
+    "episode_number": 1,
+    "episode_title": "..."
+  }
+}
+```
+
+### TmdbEpisodeItem（后端 → 前端）
+```json
+{
+  "episode_number": 1,
+  "episode_tmdb_id": 90001,
+  "name": "时间战争",
+  "air_date": "2015-06-14",
+  "still_path": "/...jpg",
+  "overview": "...",
+  "runtime": 90
+}
+```
+
+### ManualBindItem（前端 → 后端）
+```json
+{
+  "file_id": 1001,
+  "season_tmdb_id": 70001,
+  "episode_tmdb_id": 90001,
+  "episode_number": 1
+}
+```
+
+---
+
+## 可观测性与日志（后端）
+- 关键日志字段：`user_id、local_media_id、effective_media_id、series_tmdb_id、season_number、file_id、episode_number`。
+- 统计：成功绑定数量、keep 数量、other 数量、失败数量与失败原因。
+
+---
+
+## 风险与后续演进
+- 若同一 TMDB 系列已在库中存在，合并可能导致“详情页 ID 变化”，前端需支持跳转到 `effective_media_id`。
+- 手动绑定会产生旧数据（旧 episode core/version）孤儿记录：可在后续引入清理任务（按无引用的 core/version/file 关系清理）。
+- 若后端 TMDB 代理接口需要通用化，可与现有刮削插件路由整合（当前 `routes_scraper.py` 为注释状态）。

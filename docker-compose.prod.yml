@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: docker.1ms.run/postgres:16-alpine
     container_name: mediacmn_postgres
     restart: unless-stopped
     environment:
@@ -11,14 +11,22 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
+      interval: 30s
       timeout: 3s
       retries: 30
     networks:
       - internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.10'
+          memory: 256M
 
   redis_queue:
-    image: redis:7-alpine
+    image: docker.1ms.run/redis:7-alpine
     container_name: mediacmn_redis_queue
     restart: unless-stopped
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "--appendonly", "yes"]
@@ -26,33 +34,19 @@ services:
       - redis_queue_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 5s
+      interval: 30s
       timeout: 3s
       retries: 30
     networks:
       - internal
-
-  redis_cache:
-    image: redis:7-alpine
-    container_name: mediacmn_redis_cache
-    restart: unless-stopped
-    command:
-      [
-        "redis-server",
-        "--requirepass",
-        "${REDIS_CACHE_PASSWORD:?REDIS_CACHE_PASSWORD is required}",
-        "--maxmemory",
-        "1gb",
-        "--maxmemory-policy",
-        "allkeys-lru"
-      ]
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_CACHE_PASSWORD}", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    networks:
-      - internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.10'
+          memory: 256M
 
   api:
     build:
@@ -66,8 +60,8 @@ services:
         condition: service_healthy
       redis_queue:
         condition: service_healthy
-      redis_cache:
-        condition: service_healthy
+      # redis_cache:
+      #   condition: service_healthy
     command:
       [
         "sh",
@@ -84,14 +78,21 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=2).read()"
         ]
-      interval: 10s
-      timeout: 3s
-      retries: 15
-      start_period: 30s
+      interval: 60s
+      timeout: 5s
+      retries: 3
     volumes:
       - api_logs:/app/logs
     networks:
       - internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 384M
+        reservations:
+          cpus: '0.10'
+          memory: 128M
 
   worker:
     build:
@@ -103,18 +104,26 @@ services:
     depends_on:
       redis_queue:
         condition: service_healthy
-      redis_cache:
-        condition: service_healthy
+      # redis_cache:
+      #   condition: service_healthy
       postgres:
         condition: service_healthy
-    command: ["dramatiq", "services.task.consumers", "--processes", "2", "--threads", "2"]
+    command: ["dramatiq", "services.task.consumers", "--processes", "2", "--threads", "1"]
     volumes:
       - api_logs:/app/logs
     networks:
       - internal
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.10'
+          memory: 256M
 
   caddy:
-    image: caddy:2
+    image: docker.1ms.run/caddy:2
     container_name: mediacmn_caddy
     restart: unless-stopped
     depends_on:
@@ -133,6 +142,14 @@ services:
     networks:
       - internal
       - public
+    deploy:
+      resources:
+        limits:
+          cpus: '0.20'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
 
 volumes:
   postgres_data:

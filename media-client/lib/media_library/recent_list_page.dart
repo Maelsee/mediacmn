@@ -102,49 +102,62 @@ class _RecentListPageState extends ConsumerState<RecentListPage> {
             ? const Center(child: CircularProgressIndicator())
             : _error != null && _items.isEmpty
                 ? Center(child: Text(_error!))
-                : GridView.builder(
-                    controller: _controller,
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 300, // 限制最大宽度，使大屏下能显示多列，小屏显示1-2列
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      mainAxisExtent: 170, // 减小高度，去除多余垂直间隙 (适配 240x180 比例)
-                    ),
-                    itemBuilder: (ctx, i) {
-                      final it = _items[i];
-                      return Stack(
-                        children: [
-                          Center(
-                            // 居中显示，宽度自适应但受限于卡片内部最大宽度或容器
-                            child: RecentMediaCard(
-                              item: it,
-                              onPlayReturn: () {
-                                _onRefresh();
-                              },
-                            ),
-                          ),
-                          if (_editing)
-                            Positioned(
-                              right: 8,
-                              top: 8,
-                              child: IconButton(
-                                icon: const Icon(Icons.close,
-                                    color: Colors.white),
-                                style: ButtonStyle(
-                                  backgroundColor:
-                                      WidgetStateProperty.all(Colors.black45),
-                                  padding: WidgetStateProperty.all(
-                                      const EdgeInsets.all(4)),
-                                ),
-                                onPressed: () => _remove(it),
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final width = constraints.maxWidth;
+                      const padding = 12.0;
+                      const spacing = 12.0;
+                      const maxCrossAxisExtent = 300.0;
+                      final crossAxisCount =
+                          (width / maxCrossAxisExtent).ceil().clamp(1, 10);
+                      final totalSpacing =
+                          (crossAxisCount - 1) * spacing + padding * 2;
+                      final itemWidth = (width - totalSpacing) / crossAxisCount;
+                      // Image(16:9) + Spacing(8) + Text(~24) = ~32px extra
+                      final itemHeight = itemWidth * 9 / 16 + 32;
+                      final childAspectRatio = itemWidth / itemHeight;
+
+                      return GridView.builder(
+                        controller: _controller,
+                        padding: const EdgeInsets.all(padding),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          mainAxisSpacing: spacing,
+                          crossAxisSpacing: spacing,
+                          childAspectRatio: childAspectRatio,
+                        ),
+                        itemBuilder: (ctx, i) {
+                          final it = _items[i];
+                          return Stack(
+                            children: [
+                              RecentMediaCard(
+                                item: it,
+                                onPlayReturn: () {
+                                  _onRefresh();
+                                },
                               ),
-                            ),
-                        ],
+                              if (_editing)
+                                Positioned(
+                                  right: 8,
+                                  top: 8,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.close,
+                                        color: Colors.white),
+                                    style: ButtonStyle(
+                                      backgroundColor: WidgetStateProperty.all(
+                                          Colors.black45),
+                                      padding: WidgetStateProperty.all(
+                                          const EdgeInsets.all(4)),
+                                    ),
+                                    onPressed: () => _remove(it),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                        itemCount: _items.length,
                       );
                     },
-                    itemCount: _items.length,
                   ),
       ),
     );

@@ -102,6 +102,15 @@ class LocalPlaybackStore {
     return records;
   }
 
+  Stream<List<PlaybackProgressRecord>> watchRecentProgressRecords(
+      {required int limit}) async* {
+    yield await getRecentProgressRecords(limit: limit);
+    final indexBox = await _getRecentIndexBox();
+    await for (final _ in indexBox.watch()) {
+      yield await getRecentProgressRecords(limit: limit);
+    }
+  }
+
   /// 将上报任务加入 outbox。
   Future<void> enqueueReportTask(ProgressReportTask task) async {
     final box = await _getOutboxBox();
@@ -138,5 +147,26 @@ class LocalPlaybackStore {
   Future<void> deleteReportTask(String id) async {
     final box = await _getOutboxBox();
     await box.delete(id);
+  }
+
+  static Future<void> clearAll() async {
+    await _clearBox(progressBoxName);
+    await _clearBox(recentIndexBoxName);
+    await _clearBox(outboxBoxName);
+  }
+
+  static Future<void> _clearBox(String name) async {
+    if (Hive.isBoxOpen(name)) {
+      final box = Hive.box(name);
+      await box.clear();
+      await box.close();
+    }
+
+    final exists = await Hive.boxExists(name);
+    if (!exists) return;
+
+    try {
+      await Hive.deleteBoxFromDisk(name);
+    } catch (_) {}
   }
 }

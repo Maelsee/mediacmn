@@ -22,7 +22,8 @@ class _RecentWatchSectionState extends ConsumerState<RecentWatchSection> {
     super.initState();
     // 仅在初始化时加载一次
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(recentProvider.notifier).load(limit: 5);
+      final notifier = ref.read(recentProvider.notifier);
+      notifier.load(limit: 5);
     });
   }
 
@@ -75,11 +76,14 @@ class _RecentWatchSectionState extends ConsumerState<RecentWatchSection> {
                 const SizedBox(width: 12), // 显式间距
             itemBuilder: (context, index) {
               final item = recentState.items[index];
-              return RecentMediaCard(
-                item: item,
-                onPlayReturn: () {
-                  ref.read(recentProvider.notifier).load(limit: 5);
-                },
+              return SizedBox(
+                width: 240,
+                child: RecentMediaCard(
+                  item: item,
+                  onPlayReturn: () {
+                    ref.read(recentProvider.notifier).load(limit: 5);
+                  },
+                ),
               );
             },
           ),
