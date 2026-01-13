@@ -551,6 +551,16 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     }
   }
 
+  Future<void> reload({
+    required String coreId,
+    required Object? extra,
+  }) async {
+    _shutdown();
+    _initialized = false;
+    state = const PlaybackState();
+    await initialize(coreId: coreId, extra: extra);
+  }
+
   /// 解析路由参数中的选集列表。
   ///
   /// 兼容两种输入：
@@ -610,6 +620,26 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     // 锁屏状态下不允许隐藏控制层，避免误触导致无法解锁。
     if (state.isLocked) return;
     state = state.copyWith(controlsVisible: !state.controlsVisible);
+  }
+
+  void showControls() {
+    if (state.isLocked) return;
+    if (state.controlsVisible) return;
+    state = state.copyWith(controlsVisible: true);
+  }
+
+  void hideControls() {
+    if (state.isLocked) return;
+    if (!state.controlsVisible) return;
+    state = state.copyWith(controlsVisible: false);
+  }
+
+  void showError(String message) {
+    state = state.copyWith(
+      loading: false,
+      error: message,
+      controlsVisible: true,
+    );
   }
 
   void toggleLock() {

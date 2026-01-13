@@ -22,11 +22,54 @@ graph TD
     
     B --> K
 ```
+
+### 1.1 桌面端独立播放器窗口（多窗口/单实例）
+
+桌面端进入播放页时，不在主窗口内直接播放，而是拉起独立播放器窗口，并立即返回主路由；重复进入时复用已存在的播放器窗口。
+
+```mermaid
+graph TD
+  A[主窗口 PlayerPage] -->|检测桌面平台| B[DesktopPlayerWindowService.open]
+  B -->|找到已存在窗口| C[WindowController.invokeMethod(open)]
+  B -->|不存在| D[WindowController.create(arguments)]
+  D --> E[新引擎 main() 解析 arguments]
+  E --> F[DesktopPlayerWindowApp]
+  F --> G[DesktopPlayerWindowPage]
+  G -->|reload(coreId, extra)| H[PlaybackNotifier]
+  H --> I[DesktopPlayerWindowLayout]
+  I --> J[Video + 侧边栏 + 悬浮面板]
+```
+
+关键点：
+
+- 参数传递：通过 `WindowConfiguration(arguments: json)` 传入 `{ type: 'player', payload: { coreId, extra } }`，新引擎启动后在 `main()` 中解析并选择运行 `DesktopPlayerWindowApp`。
+- 单实例策略：创建窗口前先遍历 `WindowController.getAll()`，按 `arguments.type == 'player'` 查找已存在窗口，存在则 `focus/open` 下发新的播放 payload。
+- payload 可序列化：`extra` 可能包含 `MediaDetail/EpisodeDetail/AssetItem` 等模型对象，创建窗口前需要将其转换成 `Map/List/num/bool/String`，避免新引擎无法反序列化导致白屏。
+- PiP 兼容：`floating` 插件在桌面端没有实现，桌面端播放入口不初始化 PiP 轮询逻辑，从而避免 `MissingPluginException`。
+
+### 1.2 多窗口下 Hive 文件锁冲突（auth.lock）
+
+现象：桌面端打开独立播放器窗口后，窗口白屏且日志出现 `PathAccessException: lock failed / Cannot delete file ... auth.lock`。
+
+原因：`desktop_multi_window` 会启动新的 Flutter 引擎；Hive 的 box 在桌面端通过锁文件（例如 `auth.lock`）实现进程级互斥。多个引擎如果使用同一个 Hive 目录并同时打开同名 box（如 `auth`），就会在 Windows 上触发锁冲突，导致新引擎初始化失败（表现为白屏）。
+
+解决方案：
+
+- 新窗口使用独立 Hive 子目录：在桌面播放器窗口入口的 `main()` 中使用 `Hive.initFlutter('player_window')`，避免与主窗口共享默认目录。
+- 新窗口不再打开 `auth` box：主窗口在创建播放器窗口时，将 token/refresh_token/token_type/expires_in 通过窗口 arguments 透传；新窗口使用透传的登录态初始化 `ApiClient`，从而不需要再去抢占 `auth.lock`。
 ## 二、目录结构（简单明了）
 ```
 lib/
 └── media_player/
     ├── media_player_page.dart        # 播放器模块入口（路由承载/对外暴露）
+    ├── desktop_window/               # 桌面端独立播放器窗口（多窗口）
+    │   ├── desktop_player_window_service.dart
+    │   ├── desktop_player_window_app.dart
+    │   ├── desktop_player_window_page.dart
+    │   ├── desktop_player_window_layout.dart
+    │   ├── desktop_player_side_panel.dart
+    │   ├── desktop_player_overlay_panels.dart
+    │   └── desktop_player_side_panel_handle.dart
     ├── core/
     │   ├── player/
     │   │   ├── player_service.dart   # 播放器服务（含抽象接口，便于测试替换）

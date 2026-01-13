@@ -123,6 +123,20 @@
   - 实现：在 `docker-compose.prod.yml` 中为 `postgres` (512M)、`redis_queue` (128M)、`api` (384M)、`worker` (512M) 和 `caddy` (128M) 配置了 `deploy.resources.limits` 和 `reservations`。
   - 策略：总预留 CPU 约 0.4 Cores，总限制 CPU 1.9 Cores；总预留内存约 0.6G，总限制内存约 1.6G，预留约 400M 给宿主机操作系统。
 
+- 2026-01-13 桌面端独立播放器窗口（多窗口/单实例）与选集侧边栏：
+  - 新增桌面播放器独立窗口入口：桌面平台进入播放页时自动拉起独立播放器窗口并返回主路由。
+  - 单实例策略：重复打开时复用已存在的播放器窗口，并通过窗口方法通道下发新的播放 payload。
+  - UI：实现右侧选集侧边栏（遮罩 + 选中态 + 自动滚动到当前集）与字幕/倍速/设置悬浮面板；桌面端视频播放补齐字幕样式配置。
+  - 状态：为 `PlaybackNotifier` 增加 `reload/showControls/hideControls/showError`，支持同一窗口内切换打开新媒体。
+  - 测试：补充 `DesktopPlayerSidePanel` 的基础 Widget Test；`flutter analyze` 与 `flutter test` 通过。
+
+- 2026-01-13 修复桌面端播放器稳定性问题：
+  - 修复：桌面端不再触发 `floating` 插件的 PiP 轮询，避免 `MissingPluginException(pipAvailable)` 循环报错。
+  - 修复：创建桌面播放器新窗口时，对 `extra` 参数做可序列化编码，避免新引擎解析失败导致白屏。
+  - 修复：桌面端多窗口启动时，Hive `auth` box 文件锁（auth.lock）会在 Windows 上冲突；新窗口改用独立 Hive 目录且透传登录态避免抢锁。
+  - 文档：更新 `media-client/lib/media_player/design.md` 补充桌面端多窗口/单实例设计与落地实现。
+  - 验证：`flutter analyze` 与 `flutter test` 通过。
+
 - 2026-01-11 修复手动匹配后详情页出现旧版本空数据：
   - 问题：手动匹配后文件已指向新 `MediaVersion.id`，但旧版本记录仍保留，详情页返回旧版本但无 assets。
   - 解决：在元数据持久化完成后，检测 `FileAsset.version_id/season_version_id` 是否发生变更；若旧版本已无任何文件引用，则自动删除旧版本（含 season_group 下无引用的子版本）。
