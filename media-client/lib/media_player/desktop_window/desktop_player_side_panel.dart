@@ -48,8 +48,10 @@ class _DesktopPlayerSidePanelState extends State<DesktopPlayerSidePanel> {
     if (idx == null) return;
     if (!_scrollController.hasClients) return;
 
-    const itemExtent = 56.0;
-    final offset = (idx * itemExtent) - 3 * itemExtent;
+    // 估算高度：Header(110) + Item(80) * idx
+    // 简单滚动
+    const itemExtent = 84.0;
+    final offset = (idx * itemExtent) - itemExtent;
     final target =
         offset.clamp(0.0, _scrollController.position.maxScrollExtent);
     _scrollController.animateTo(
@@ -61,169 +63,222 @@ class _DesktopPlayerSidePanelState extends State<DesktopPlayerSidePanel> {
 
   @override
   Widget build(BuildContext context) {
+    // 仅在 visible 为 true 时显示内容，外部通过 Row/Expanded 控制布局变化
+    // 这里只负责显示侧边栏本体，不负责遮罩或动画位置（交由 Layout 处理）
+    if (!widget.visible) return const SizedBox.shrink();
+
     final episodes = widget.state.episodes;
     final currentIdx = _currentEpisodeIndex(widget.state);
 
-    return Positioned.fill(
-      child: Stack(
+    return Container(
+      width: kDesktopSidePanelWidth,
+      color: const Color(0xFF141414),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              ignoring: !widget.visible,
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 180),
-                opacity: widget.visible ? 1 : 0,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: widget.onClose,
-                  child: Container(color: Colors.black.withValues(alpha: 0.35)),
-                ),
+          // 顶部标题 "选集"
+          Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            alignment: Alignment.centerLeft,
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0xFF2A2A2A), width: 1),
+              ),
+            ),
+            child: const Text(
+              '选集',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOut,
-            top: 0,
-            bottom: 0,
-            right: widget.visible ? 0 : -kDesktopSidePanelWidth,
-            width: kDesktopSidePanelWidth,
-            child: Material(
-              color: const Color(0xFF141414),
-              child: Column(
-                children: [
-                  _SidePanelHeader(
-                    title: _buildHeaderTitle(widget.state),
-                    onClose: widget.onClose,
+
+          // 选集标题栏 (S02 | 全部)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                const Text(
+                  'S02', // 占位：实际应从 state 获取季信息
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const Divider(height: 1, color: Color(0xFF2A2A2A)),
-                  Expanded(
-                    child: Builder(
-                      builder: (context) {
-                        if (widget.state.episodesLoading) {
-                          return const Center(
-                            child: SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          );
-                        }
-                        if (widget.state.episodesError != null &&
-                            episodes.isEmpty) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Text(
-                                widget.state.episodesError!,
-                                style: const TextStyle(
-                                    color: Colors.white70, fontSize: 12),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          );
-                        }
-                        if (episodes.isEmpty) {
-                          return const Center(
-                            child: Text('暂无选集',
-                                style: TextStyle(color: Colors.white70)),
-                          );
-                        }
+                ),
+                const Spacer(),
+                InkWell(
+                  onTap: () {},
+                  child: const Row(
+                    children: [
+                      Text('全部',
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 13)),
+                      Icon(Icons.arrow_drop_down,
+                          color: Colors.white70, size: 18),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
 
-                        return ListView.builder(
-                          controller: _scrollController,
-                          itemCount: episodes.length,
-                          itemExtent: 56,
-                          itemBuilder: (context, index) {
-                            final ep = episodes[index];
-                            final selected = currentIdx == index;
-                            final title = _formatEpisodeTitle(ep);
-                            final subtitle = ep.runtimeText;
-
-                            return InkWell(
-                              onTap: () async {
-                                await widget.onEpisodeTap(index);
-                                if (mounted) widget.onClose();
-                              },
-                              child: Container(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 14),
-                                decoration: BoxDecoration(
-                                  color: selected
-                                      ? const Color(0xFF1F2A3A)
-                                      : Colors.transparent,
-                                  border: const Border(
-                                    bottom: BorderSide(
-                                        color: Color(0xFF202020), width: 1),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 6,
-                                      height: 6,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: selected
-                                            ? const Color(0xFFFFD700)
-                                            : const Color(0xFF5A5A5A),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: selected
-                                                  ? Colors.white
-                                                  : Colors.white70,
-                                              fontSize: 13,
-                                              fontWeight: selected
-                                                  ? FontWeight.w600
-                                                  : FontWeight.normal,
-                                            ),
-                                          ),
-                                          if (subtitle != null &&
-                                              subtitle.isNotEmpty)
-                                            Text(
-                                              subtitle,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: selected
-                                                    ? Colors.white70
-                                                    : Colors.white38,
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (selected)
-                                      const Icon(Icons.play_arrow,
-                                          color: Color(0xFFFFD700), size: 18),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
+          // 列表区域
+          Expanded(
+            child: Builder(
+              builder: (context) {
+                if (widget.state.episodesLoading) {
+                  return const Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     ),
-                  ),
-                ],
-              ),
+                  );
+                }
+                if (episodes.isEmpty) {
+                  return const Center(
+                    child:
+                        Text('暂无选集', style: TextStyle(color: Colors.white70)),
+                  );
+                }
+
+                return ListView.builder(
+                  controller: _scrollController,
+                  itemCount: episodes.length,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemBuilder: (context, index) {
+                    final ep = episodes[index];
+                    final selected = currentIdx == index;
+                    return _buildEpisodeItem(ep, selected, index);
+                  },
+                );
+              },
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEpisodeItem(EpisodeDetail ep, bool selected, int index) {
+    // 模拟缩略图：实际项目中应使用 ep.stillPath 加载图片
+    // 这里使用带颜色的 Container 占位
+    final hasImage = ep.stillPath != null && ep.stillPath!.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: () async {
+          await widget.onEpisodeTap(index);
+          // 点击后不自动关闭，方便连续选集
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          height: 72,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF1F2A3A) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: selected
+                ? Border.all(
+                    color: const Color(0xFF1F7AE0).withValues(alpha: 0.5))
+                : null,
+          ),
+          child: Row(
+            children: [
+              // 缩略图区域
+              Container(
+                width: 128,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: Colors.white10,
+                  borderRadius: BorderRadius.circular(8),
+                  image: hasImage
+                      ? DecorationImage(
+                          image: NetworkImage(ep.stillPath!), // 需配合图片加载库
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                ),
+                child: Stack(
+                  children: [
+                    if (!hasImage)
+                      const Center(
+                          child: Icon(Icons.movie,
+                              color: Colors.white24, size: 24)),
+                    // 播放中遮罩
+                    if (selected)
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.play_arrow,
+                              color: Colors.white, size: 24),
+                        ),
+                      ),
+                    // 时长/进度标签
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: Text(
+                          ep.runtimeText ?? '00:00',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 10),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              // 标题区域
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      ep.title.isEmpty
+                          ? '第${ep.episodeNumber}集'
+                          : '第${ep.episodeNumber}集 ${ep.title}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color:
+                            selected ? const Color(0xFF1F7AE0) : Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '未观看', // 占位状态
+                      style: TextStyle(
+                        color: selected
+                            ? const Color(0xFF1F7AE0).withValues(alpha: 0.7)
+                            : Colors.white38,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -239,62 +294,9 @@ class _DesktopPlayerSidePanelState extends State<DesktopPlayerSidePanel> {
     }
     return null;
   }
-
-  String _buildHeaderTitle(PlaybackState s) {
-    final base = (s.detail?.title ?? s.title ?? '').trim();
-    if (base.isNotEmpty) return base;
-    return '选集';
-  }
-
-  String _formatEpisodeTitle(EpisodeDetail ep) {
-    final num = ep.episodeNumber;
-    final title = ep.title.trim();
-    if (num > 0 && title.isNotEmpty) return '第$num集  $title';
-    if (num > 0) return '第$num集';
-    if (title.isNotEmpty) return title;
-    return '未命名';
-  }
 }
 
-class _SidePanelHeader extends StatelessWidget {
-  final String title;
-  final VoidCallback onClose;
-
-  const _SidePanelHeader({
-    required this.title,
-    required this.onClose,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 52,
-      child: Row(
-        children: [
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: '关闭',
-            onPressed: onClose,
-            icon: const Icon(Icons.close, color: Colors.white),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
+/// 侧边栏呼出/隐藏手柄
 class DesktopSidePanelHandle extends StatelessWidget {
   final bool visible;
   final bool expanded;
@@ -309,34 +311,32 @@ class DesktopSidePanelHandle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!visible) return const SizedBox.shrink();
+
+    // 垂直居中于播放区域右侧
+    // 由于 Handle 位于播放区域 Stack 内，且播放区域会随侧边栏挤压而缩小，
+    // 所以此处始终居右即可 (right: 0)
     return Positioned(
-      right: expanded ? kDesktopSidePanelWidth : 0,
+      right: 0,
       top: 0,
       bottom: 0,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 180),
-        opacity: visible ? 1 : 0,
-        child: IgnorePointer(
-          ignoring: !visible,
-          child: Center(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onToggle,
-              child: Container(
-                width: 22,
-                height: 68,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  borderRadius: const BorderRadius.horizontal(
-                    left: Radius.circular(10),
-                  ),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: Icon(
-                  expanded ? Icons.chevron_right : Icons.chevron_left,
-                  color: Colors.white70,
-                ),
+      child: Center(
+        child: InkWell(
+          onTap: onToggle,
+          child: Container(
+            width: 24,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.6),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                bottomLeft: Radius.circular(8),
               ),
+            ),
+            child: Icon(
+              expanded ? Icons.chevron_right : Icons.chevron_left,
+              color: Colors.white70,
+              size: 20,
             ),
           ),
         ),
