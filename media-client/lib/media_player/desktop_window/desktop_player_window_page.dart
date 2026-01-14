@@ -90,7 +90,9 @@ class _DesktopPlayerWindowPageState
       return;
     }
 
-    await ref.read(playbackProvider.notifier).reload(coreId: coreId, extra: extraMap);
+    await ref
+        .read(playbackProvider.notifier)
+        .reload(coreId: coreId, extra: extraMap);
   }
 
   @override
@@ -101,4 +103,3 @@ class _DesktopPlayerWindowPageState
     );
   }
 }
-

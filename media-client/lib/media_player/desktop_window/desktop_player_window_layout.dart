@@ -460,7 +460,7 @@ class _BottomBar extends StatelessWidget {
               const SizedBox(width: 4),
               _TextActionButton(label: '倍速', onPressed: onToggleSpeed),
               const SizedBox(width: 4),
-              _TextActionButton(label: '至臻画质', onPressed: onToggleQuality),
+              _TextActionButton(label: '画质', onPressed: onToggleQuality),
               const SizedBox(width: 4),
               IconButton(
                 tooltip: '音量',
