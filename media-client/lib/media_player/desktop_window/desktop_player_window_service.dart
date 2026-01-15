@@ -40,9 +40,6 @@ class DesktopPlayerWindowService {
     if (existing != null) {
       await existing.show();
       try {
-        await existing.invokeMethod('focus');
-      } catch (_) {}
-      try {
         await existing.invokeMethod('open', payload);
       } catch (_) {}
       return;

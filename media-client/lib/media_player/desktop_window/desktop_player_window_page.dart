@@ -42,20 +42,24 @@ class _DesktopPlayerWindowPageState
   }
 
   Future<void> _initWindow() async {
-    await windowManager.ensureInitialized();
-    await windowManager.waitUntilReadyToShow(
-      const WindowOptions(
-        size: Size(980, 620),
-        minimumSize: Size(720, 420),
-        center: true,
-        backgroundColor: Colors.black,
-        title: 'Media Player',
-      ),
-      () async {
-        await windowManager.show();
-        await windowManager.focus();
-      },
-    );
+    try {
+      await windowManager.ensureInitialized();
+      await windowManager.waitUntilReadyToShow(
+        const WindowOptions(
+          size: Size(980, 620),
+          minimumSize: Size(720, 420),
+          backgroundColor: Colors.black,
+          title: 'Media Player',
+        ),
+        () async {
+          await windowManager.show();
+          await windowManager.focus();
+        },
+      );
+    } catch (e) {
+      ref.read(playbackProvider.notifier).showError('窗口初始化失败：$e');
+      return;
+    }
 
     try {
       _window = await WindowController.fromCurrentEngine();

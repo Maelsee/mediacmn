@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:floating/floating.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
+import 'package:go_router/go_router.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/state/playback_state.dart';
@@ -51,7 +52,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             .catchError((_) {})
             .whenComplete(() {
           if (!mounted) return;
-          Navigator.of(context).maybePop();
+          final router = GoRouter.of(context);
+          // if (router.canPop()) {
+          //   router.pop();
+          //   return;
+          // }
+          router.go('/media');
         });
         return;
       }

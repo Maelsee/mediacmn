@@ -15,6 +15,7 @@ echo "开始同步文件到 Windows..."
 # -z: 压缩传输
 # --delete: 删除目标目录中源目录不存在的文件
 rsync -avz --delete "$SOURCE_DIR/lib/" "$TARGET_DIR/lib/"
+# rsync -avz --delete "$SOURCE_DIR/windows/" "$TARGET_DIR/windows/"
 
 # 同步 pubspec.yaml
 rsync -avz "$SOURCE_DIR/pubspec.yaml" "$TARGET_DIR/pubspec.yaml"

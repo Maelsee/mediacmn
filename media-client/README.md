@@ -130,6 +130,36 @@ A new Flutter project.
 4.  **Bug 修复**：
     *   修复 `Video` 组件在无约束布局下尺寸异常导致无画面的问题（引入 `LayoutBuilder`）。
     *   修复控制栏按钮在小屏设备上的溢出问题。
+
+### 桌面端多窗口播放器插件注册修复与架构文档重写 (2026-01-14)
+
+**目标**：桌面端点击播放后打开独立播放窗口，确保窗口内可正常调用 `window_manager` 与 `media_kit_video`；同时完善多窗口架构设计，规避插件注册、Hive 锁冲突、窗口互相阻塞等常见坑。
+
+**问题与原因**：
+1.  **新窗口无法播放（MissingPluginException）**：
+    *   现象：子窗口报 `window_manager.ensureInitialized` 与 `media_kit_video` 的 `VideoOutputManager.Create` 缺少实现。
+    *   根因：`desktop_multi_window` 创建的每个窗口都是新的 Flutter 引擎；插件注册是“每引擎一次”，只注册主窗口引擎不影响子窗口引擎。
+2.  **Windows 构建失败（.plugin_symlinks 缺失）**：
+    *   现象：CMake 报 `flutter/ephemeral/.plugin_symlinks/<plugin>/windows` 目录不存在。
+    *   根因：Windows 环境下插件链接目录生成失败（常见于开发者模式未开启、权限/安全策略或路径问题）。
+3.  **打开播放窗口后主窗口“不可操作”**：
+    *   现象：播放窗口可播放，但主窗口看似无法点击/操作。
+    *   根因：叠加了两类问题：1) go_router `go` 进入播放页无返回栈，导致启动页遮罩未退出；2) Windows 下子窗口若被当作“模态/拥有者窗口”处理，主窗口可能被禁用而不接收输入。
+
+**改动**：
+1.  **补齐新引擎插件注册回调**：
+    *   Windows：在 Runner 初始化处设置 desktop_multi_window 的新窗口回调，确保每个新引擎都会执行 `RegisterPlugins`。
+    *   Linux：注册 `desktop_multi_window_plugin_set_window_created_callback`，在回调中调用 `fl_register_plugins`。
+    *   macOS：设置 `FlutterMultiWindowPlugin.setOnWindowCreatedCallback`，对新控制器执行 `RegisterGeneratedPlugins`。
+2.  **完善播放器多窗口设计文档**：
+    *   统一阐述通信协议、初始化顺序、Hive 目录隔离与阻塞规避策略。
+3.  **修复桌面端启动后路由回退**：
+    *   优先使用 go_router 的 `pop` 返回；无法返回时回退到 `/media`，避免启动页遮罩阻塞主窗口交互。
+4.  **修复 Windows 主窗口禁用兜底**：
+    *   在 desktop_multi_window 新窗口创建回调中解除新窗口 owner 关系，并检测主窗口是否被禁用，必要时重新启用，避免主窗口无法交互。
+
+**验证**：
+*   执行 `flutter analyze / dart format . / flutter test`（当前 Flutter 版本无 `flutter format` 命令）。
 ## 3. 功能方案设计
 
 ### 3.1 选集列表方案

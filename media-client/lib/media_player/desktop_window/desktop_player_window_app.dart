@@ -25,4 +25,3 @@ class DesktopPlayerWindowApp extends StatelessWidget {
     );
   }
 }
-

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 from fastapi.routing import APIRouter
 from starlette.middleware.cors import CORSMiddleware
@@ -51,12 +52,23 @@ def create_app() -> FastAPI:
     # 2. 实例化 FastAPI 并传入 lifespan 参数
     # ---------------------------------------------------------
     app = FastAPI(
-        title=settings.APP_NAME, 
+        title=settings.APP_NAME,
         version="0.1.0",
         lifespan=lifespan,
         openapi_url="/api/openapi.json",
         docs_url="/api/docs",
         redoc_url="/api/redoc",
+        openapi_tags=[
+            {"name": "health", "description": "健康检查与就绪探测"},
+            {"name": "auth", "description": "认证与令牌管理"},
+            {"name": "media", "description": "媒体详情、字幕与选集"},
+            {"name": "playback", "description": "播放记录与资源访问"},
+            {"name": "tmdb", "description": "TMDB 代理查询接口"},
+            {"name": "storage-config", "description": "存储配置管理"},
+            {"name": "storage-server", "description": "存储服务直链与工具"},
+            {"name": "scan", "description": "扫描与队列任务"},
+            {"name": "tasks", "description": "统一任务创建与状态查询"},
+        ],
     )
 
     # 配置 CORS 中间件
@@ -101,6 +113,35 @@ def create_app() -> FastAPI:
     api_router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])  # 任务生产者API
     # api_router.include_router(scraper_router, prefix="/scraper", tags=["scraper"])
     app.include_router(api_router, prefix="/api")
+
+    def custom_openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=settings.APP_NAME,
+            version="0.1.0",
+            description="MediaCMN 后端 API 文档。所有受保护接口使用 Bearer JWT 进行鉴权。",
+            routes=app.routes,
+        )
+        info = schema.setdefault("info", {})
+        info["contact"] = {
+            "name": "MediaCMN",
+            "url": "https://example.com",
+            "email": "support@example.com",
+        }
+        info["license"] = {"name": "MIT"}
+        components = schema.setdefault("components", {})
+        security_schemes = components.setdefault("securitySchemes", {})
+        security_schemes["BearerAuth"] = {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+        }
+        schema["security"] = [{"BearerAuth": []}]
+        app.openapi_schema = schema
+        return app.openapi_schema
+
+    app.openapi = custom_openapi
 
     # 初始化数据库（在开发环境自动创建表，生产环境建议使用 Alembic 迁移）
     try:

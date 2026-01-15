@@ -137,6 +137,14 @@
   - 文档：更新 `media-client/lib/media_player/design.md` 补充桌面端多窗口/单实例设计与落地实现。
   - 验证：`flutter analyze` 与 `flutter test` 通过。
 
+- 2026-01-14 OpenAPI/Swagger 文档增强（FastAPI 后端）：
+  - 配置：在 `media-server/main.py` 中完善 OpenAPI 元信息与 tags 描述，并显式注入 Bearer JWT 鉴权方案（`BearerAuth`），便于前端对接与代码生成。
+  - 端点：统一使用 `/api/openapi.json`、`/api/docs`、`/api/redoc` 暴露文档。
+  - 测试：新增 `tests/test_openapi_docs.py` 覆盖 OpenAPI JSON 与 Docs 页面可用性。
+
+- 2026-01-14 新增 Markdown 版 API 文档：
+  - 新增 `media-server/docs/API_REFERENCE.md`，系统性整理 `auth/media/playback/storage-server/storage-config/scan/tasks/tmdb/health` 全部接口的请求/响应示例与错误约定，中文编写，便于前端对接与第三方集成。
+
 - 2026-01-11 修复手动匹配后详情页出现旧版本空数据：
   - 问题：手动匹配后文件已指向新 `MediaVersion.id`，但旧版本记录仍保留，详情页返回旧版本但无 assets。
   - 解决：在元数据持久化完成后，检测 `FileAsset.version_id/season_version_id` 是否发生变更；若旧版本已无任何文件引用，则自动删除旧版本（含 season_group 下无引用的子版本）。

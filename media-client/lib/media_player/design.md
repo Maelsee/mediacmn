@@ -23,40 +23,146 @@ graph TD
     B --> K
 ```
 
-### 1.1 桌面端独立播放器窗口（多窗口/单实例）
+### 1.1 桌面端独立播放器窗口（多窗口/单实例）重新设计
 
-桌面端进入播放页时，不在主窗口内直接播放，而是拉起独立播放器窗口，并立即返回主路由；重复进入时复用已存在的播放器窗口。
+目标：桌面端点击播放后，拉起独立播放器窗口播放；主窗口立即返回业务路由；两者在 UI 与状态层尽量解耦，但在“命令/事件”层保持可控通信，避免出现插件未注册、窗口互相阻塞、资源泄漏、存储锁冲突等问题。
+
+设计原则：
+
+- 主窗口与播放窗口隔离：播放窗口使用独立 Flutter 引擎，拥有独立 Widget 树与状态容器，主窗口不依赖播放窗口内部实现。
+- 命令化通信：主窗口仅发送“播放命令”（open/focus/close），播放窗口仅回传“状态事件”（ready/error/playing/position）用于主窗口展示或埋点。
+- 单实例复用：同类型播放窗口只保留一个实例；新播放请求在同一窗口内切换媒体源。
+- 强约束的 payload：跨引擎参数只允许 JSON 可序列化类型，严禁传递复杂对象实例。
 
 ```mermaid
-graph TD
-  A[主窗口 PlayerPage] -->|检测桌面平台| B[DesktopPlayerWindowService.open]
-  B -->|找到已存在窗口| C[WindowController.invokeMethod(open)]
-  B -->|不存在| D[WindowController.create(arguments)]
-  D --> E[新引擎 main() 解析 arguments]
-  E --> F[DesktopPlayerWindowApp]
-  F --> G[DesktopPlayerWindowPage]
-  G -->|reload(coreId, extra)| H[PlaybackNotifier]
-  H --> I[DesktopPlayerWindowLayout]
-  I --> J[Video + 侧边栏 + 悬浮面板]
+sequenceDiagram
+  participant Main as 主窗口(业务App)
+  participant Svc as DesktopPlayerWindowService
+  participant MW as desktop_multi_window(新引擎)
+  participant Player as 播放窗口(独立App)
+
+  Main->>Svc: open(coreId, extraJson)
+  Svc->>Svc: 查找已存在 player 窗口
+  alt 已存在
+    Svc->>Player: invokeMethod("focus")
+    Svc->>Player: invokeMethod("open", payload)
+  else 不存在
+    Svc->>MW: create(arguments: {type:"player", payload})
+    MW->>Player: main() 解析 arguments
+    Player-->>Main: (可选) 通过事件通道回传 ready/error
+  end
 ```
 
-关键点：
+落地对应代码：
 
-- 参数传递：通过 `WindowConfiguration(arguments: json)` 传入 `{ type: 'player', payload: { coreId, extra } }`，新引擎启动后在 `main()` 中解析并选择运行 `DesktopPlayerWindowApp`。
-- 单实例策略：创建窗口前先遍历 `WindowController.getAll()`，按 `arguments.type == 'player'` 查找已存在窗口，存在则 `focus/open` 下发新的播放 payload。
-- payload 可序列化：`extra` 可能包含 `MediaDetail/EpisodeDetail/AssetItem` 等模型对象，创建窗口前需要将其转换成 `Map/List/num/bool/String`，避免新引擎无法反序列化导致白屏。
-- PiP 兼容：`floating` 插件在桌面端没有实现，桌面端播放入口不初始化 PiP 轮询逻辑，从而避免 `MissingPluginException`。
+- 主窗口创建/复用播放器窗口：[desktop_player_window_service.dart](desktop_window/desktop_player_window_service.dart)
+- 子窗口入口分流（同一个 main，根据 arguments 选择运行主 App 或 Player App）：[main.dart](../main.dart)
+- 子窗口页面初始化与接收 open/focus 命令：[desktop_player_window_page.dart](desktop_window/desktop_player_window_page.dart)
 
-### 1.2 多窗口下 Hive 文件锁冲突（auth.lock）
+### 1.2 多窗口下插件注册与初始化顺序（最常见致命坑）
+
+现象：播放窗口能显示但无法播放，并出现：
+
+- `MissingPluginException(No implementation found for method ensureInitialized on channel window_manager)`
+- `MissingPluginException(No implementation found for method VideoOutputManager.Create on channel com.alexmercerind/media_kit_video)`
+
+根因：`desktop_multi_window` 创建的新窗口是“新的 Flutter 引擎”。插件注册是“每引擎一次”的：只给主窗口引擎注册插件并不会自动让子窗口引擎也拥有插件实现，因此子窗口内任何 MethodChannel 调用都会 MissingPluginException。
+
+解决策略（必须同时满足）：
+
+- 原生 Runner 层注册“新窗口创建回调”，在每个新引擎创建时执行 `RegisterGeneratedPlugins / fl_register_plugins`。
+- Dart 层初始化顺序必须先 `WidgetsFlutterBinding.ensureInitialized()`，再进行 `window_manager.ensureInitialized()`、`MediaKit.ensureInitialized()` 等初始化。
+
+平台落地位置：
+
+- Windows：[windows/runner/flutter_window.cpp](../../windows/runner/flutter_window.cpp)
+- Linux：[linux/runner/my_application.cc](../../linux/runner/my_application.cc)
+- macOS：[macos/Runner/MainFlutterWindow.swift](../../macos/Runner/MainFlutterWindow.swift)
+
+### 1.3 多窗口下 Hive 文件锁冲突（auth.lock）
 
 现象：桌面端打开独立播放器窗口后，窗口白屏且日志出现 `PathAccessException: lock failed / Cannot delete file ... auth.lock`。
 
-原因：`desktop_multi_window` 会启动新的 Flutter 引擎；Hive 的 box 在桌面端通过锁文件（例如 `auth.lock`）实现进程级互斥。多个引擎如果使用同一个 Hive 目录并同时打开同名 box（如 `auth`），就会在 Windows 上触发锁冲突，导致新引擎初始化失败（表现为白屏）。
+原因：多个引擎若使用同一个 Hive 目录并同时打开同名 box（例如 `auth`），会在桌面端触发锁文件互斥，导致新引擎初始化失败（表现为白屏或卡死）。
 
 解决方案：
 
-- 新窗口使用独立 Hive 子目录：在桌面播放器窗口入口的 `main()` 中使用 `Hive.initFlutter('player_window')`，避免与主窗口共享默认目录。
-- 新窗口不再打开 `auth` box：主窗口在创建播放器窗口时，将 token/refresh_token/token_type/expires_in 通过窗口 arguments 透传；新窗口使用透传的登录态初始化 `ApiClient`，从而不需要再去抢占 `auth.lock`。
+- 播放窗口使用独立 Hive 子目录：在播放器窗口入口的 `main()` 中使用 `Hive.initFlutter('player_window')`，避免与主窗口共享默认目录。
+- 播放窗口尽量不打开业务侧的 Box：主窗口创建播放器窗口时，把必要的登录态快照通过 arguments 透传；播放窗口用快照初始化网络层，避免抢占 `auth.lock`。
+
+### 1.4 避免播放窗口“阻塞”主窗口的策略
+
+- 禁止在主窗口打开播放前执行同步耗时操作：主窗口只做轻量参数准备与窗口创建，网络请求与解码初始化在播放窗口内完成。
+- 禁止跨窗口共享单例做 IO：同进程多引擎下，静态单例仍是进程级共享的资源入口，容易造成锁/线程争用；建议播放窗口内部维护自己的 service 实例。
+- 命令通道只传“小消息”：避免大 payload（尤其是巨大的 Base64、整段字幕内容等）在 MethodChannel 里传输导致卡顿。
+- 路由回退必须可靠：若播放器页通过 go_router 的 `go` 进入，则不存在返回栈；打开播放窗口后应优先 `pop`，无法 `pop` 时回到一个安全页面（例如 `/media`），避免启动页遮罩导致主窗口看似不可操作。
+- 窗口位置避免重叠：桌面端播放器窗口若默认居中，往往会大面积覆盖主窗口，容易让人误判为“主窗口不可操作”；建议默认不强制居中，或将播放器窗口放到主窗口旁边。
+
+### 1.5 通信协议建议（主窗口 ↔ 播放窗口）
+
+建议将跨窗口通信收敛为两类：
+
+- 主 → 播放：命令（focus/open/close）
+- 播放 → 主：事件（ready/error/playing/position）
+
+建议 payload 统一封装为“信封”结构，方便扩展与版本兼容：
+
+- `schema`: 协议版本号（例如 `1`）
+- `type`: 消息类型（例如 `open` / `event`）
+- `id`: 请求 ID（用于主窗口侧的超时与重试）
+- `ts`: 时间戳
+- `data`: 业务数据（必须 JSON 可序列化）
+
+### 1.6 关闭策略与资源释放
+
+桌面端常见的“关闭”需求有两类：
+
+- 关闭窗口：释放播放资源并退出该引擎（适合一次性弹窗）
+- 隐藏窗口：保留播放器实例，便于快速回到播放（适合播放器常驻）
+
+建议默认“关闭=隐藏”，并在以下场景真正释放：
+
+- 用户选择“退出播放器”
+- 播放结束且无后续播放
+- 播放窗口长时间后台且无音频输出（可选策略）
+
+资源释放清单（播放窗口内）：
+
+- `Player` / `VideoController` / `AudioTrack` 相关资源全部 dispose
+- 停止定时器与心跳上报（播放进度/播放状态）
+- 取消所有 Stream 订阅与监听器
+
+### 1.7 Windows 构建常见问题：.plugin_symlinks 缺失导致 CMake 失败
+
+现象：Windows 构建阶段报错 `add_subdirectory ... flutter/ephemeral/.plugin_symlinks/<plugin>/windows is not an existing directory`。
+
+根因：Windows 上 Flutter 需要在 `windows/flutter/ephemeral/.plugin_symlinks` 下创建到 pub-cache 的链接目录；若链接创建失败（系统权限/开发者模式/安全策略/路径问题），就会导致 CMake 找不到插件工程目录。
+
+处理建议（按顺序尝试）：
+
+- 确认 Windows 已开启“开发者模式”（允许创建符号链接）
+- 关闭占用工程目录的杀毒/安全软件拦截后重试
+- 执行 `flutter clean` 后再执行 `flutter pub get`
+- 删除 `build/` 以及 `windows/flutter/ephemeral/` 后重试生成
+- 将工程放在更短、更“本地”的路径（避免过深路径或同步盘目录）
+
+### 1.8 Windows 运行时常见问题：打开播放窗口后主窗口不可交互
+
+现象：播放窗口可播放，但主窗口虽然可见并已回到媒体页，却无法点击/操作（表现类似被“置灰禁用”）。
+
+原因（Windows 侧特性）：若子窗口被当作“模态/拥有者窗口”处理，主窗口可能会被 Win32 禁用（`EnableWindow(hwnd, false)`），从而不接收鼠标/键盘输入。
+
+处理策略：
+
+- 首选：确保多窗口插件创建的播放窗口为“非模态”。
+- 兜底：在 Windows Runner 的新窗口创建回调里：
+  - 解除新窗口的 owner 关系（`SetWindowLongPtr(GWLP_HWNDPARENT, 0)`），避免主窗口被当作 owner 而自动禁用
+  - 检测主窗口是否被禁用，若被禁用则重新启用（`EnableWindow(hwnd, true)`）。
+
+诊断方法（建议先做一次）：
+
+- 启动后控制台会打印 `[multi_window]` 前缀日志，包含本进程所有顶层窗口的 HWND、类名、可见/启用状态、样式与坐标。
+- 复现“主窗口出现双箭头且不可点击”时，重点关注是否存在一个 rect 覆盖主窗口区域、且 `vis=1` 的额外窗口；该窗口通常会导致鼠标命中其边框（出现横/竖双箭头）。
 ## 二、目录结构（简单明了）
 ```
 lib/

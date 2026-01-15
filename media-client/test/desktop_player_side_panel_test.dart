@@ -62,4 +62,3 @@ void main() {
     expect(tapped, 1);
   });
 }
-
