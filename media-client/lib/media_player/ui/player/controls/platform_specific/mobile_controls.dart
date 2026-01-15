@@ -206,9 +206,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         DeviceOrientation.landscapeRight,
       ]);
     } else {
-      _setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-      ]);
+      _setPreferredOrientations([DeviceOrientation.portraitUp]);
     }
   }
 
@@ -246,10 +244,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                 color: Color(0xFF1E1E1E),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
               ),
-              child: SafeArea(
-                top: false,
-                child: builder(state, notifier),
-              ),
+              child: SafeArea(top: false, child: builder(state, notifier)),
             );
           },
         ),
@@ -660,7 +655,10 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
                 final nextScale = (_startScale * details.scale).clamp(0.5, 3.0);
                 final rawOffset = _scaleOffset + details.focalPointDelta;
                 final nextOffset = _clampVideoOffset(
-                    size: size, scale: nextScale, offset: rawOffset);
+                  size: size,
+                  scale: nextScale,
+                  offset: rawOffset,
+                );
 
                 _scaleOffset = nextOffset;
 
@@ -677,7 +675,8 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
 
               // 先根据手势方向选择模式，避免刚按下就触发调整。
               if (_dragMode == 0) {
-                if ((dx.abs() + dy.abs()) < 6) return;
+                // 降低防抖阈值（6 -> 2），提升微小滑动的识别灵敏度。
+                if ((dx.abs() + dy.abs()) < 2) return;
                 if (dx.abs() > dy.abs() * 1.2) {
                   _dragMode = 3;
                 } else {
@@ -691,8 +690,9 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
                 final newValue = (_startValue + delta).clamp(0.0, 1.0);
                 _startValue = newValue;
                 try {
-                  await ScreenBrightness()
-                      .setApplicationScreenBrightness(newValue);
+                  await ScreenBrightness().setApplicationScreenBrightness(
+                    newValue,
+                  );
                 } catch (_) {}
                 setState(() {
                   _overlayText = '亮度: ${(newValue * 100).toInt()}%';
@@ -755,8 +755,10 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
             child: IgnorePointer(
               child: Center(
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black54,
                     borderRadius: BorderRadius.circular(8),

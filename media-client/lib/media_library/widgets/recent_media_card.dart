@@ -36,18 +36,25 @@ class RecentMediaCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () async {
-        await GoRouter.of(context).push('/player/${item.id}', extra: {
-          'fileId': item.fileId,
-          'detail': {
-            'id': item.id,
-            'media_type': item.mediaType,
-            'name': item.name,
-            'poster_path': item.coverUrl,
+        await GoRouter.of(context).push(
+          '/player/${item.id}',
+          extra: {
+            'fileId': item.fileId,
+            'detail': {
+              'id': item.id,
+              'media_type': item.mediaType,
+              'name': item.name,
+              'poster_path': item.coverUrl,
+              if (item.seriesName != null) 'series_name': item.seriesName,
+              if (item.seasonIndex != null) 'season_index': item.seasonIndex,
+              if (item.episodeIndex != null) 'episode_index': item.episodeIndex,
+              if (item.episodeTitle != null) 'episode_title': item.episodeTitle,
+            },
+            'asset': null,
+            'candidates': const <dynamic>[],
+            'start': item.positionMs, // 传递播放进度
           },
-          'asset': null,
-          'candidates': const <dynamic>[],
-          'start': item.positionMs, // 传递播放进度
-        });
+        );
         if (onPlayReturn != null) {
           onPlayReturn!();
         }
@@ -104,8 +111,11 @@ class RecentMediaCard extends StatelessWidget {
                         shape: BoxShape.circle,
                       ),
                       padding: const EdgeInsets.all(8),
-                      child: const Icon(Icons.play_arrow_rounded,
-                          color: Colors.white, size: 32),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 32,
+                      ),
                     ),
                   ),
 
@@ -119,7 +129,8 @@ class RecentMediaCard extends StatelessWidget {
                         value: progressValue,
                         backgroundColor: Colors.white24,
                         valueColor: const AlwaysStoppedAnimation<Color>(
-                            Colors.redAccent),
+                          Colors.redAccent,
+                        ),
                         minHeight: 3,
                       ),
                     ),
@@ -149,10 +160,9 @@ class RecentMediaCard extends StatelessWidget {
             displayTitle,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(fontWeight: FontWeight.bold),
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
         ],
       ),

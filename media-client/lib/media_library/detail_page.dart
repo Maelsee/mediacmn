@@ -31,8 +31,9 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   /// - 使用 `Stack` 在最上层覆盖透明 `AppBar`，保留返回与操作按钮
   /// - `Scaffold.backgroundColor` 取自背景图提取的主色，保证“无限向下延伸”
   Widget build(BuildContext context) {
-    final AsyncValue<MediaDetail> detail =
-        ref.watch(mediaDetailProvider(widget.mediaId));
+    final AsyncValue<MediaDetail> detail = ref.watch(
+      mediaDetailProvider(widget.mediaId),
+    );
 
     return Scaffold(
       backgroundColor:
@@ -61,8 +62,10 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
             if (_selectedVersionIndex == null &&
                 d.seasons != null &&
                 d.seasons!.isNotEmpty) {
-              final s0 = d.seasons![
-                  (_selectedSeasonIndex ?? 0).clamp(0, d.seasons!.length - 1)];
+              final s0 = d.seasons![(_selectedSeasonIndex ?? 0).clamp(
+                0,
+                d.seasons!.length - 1,
+              )];
               if ((s0.versions ?? []).isNotEmpty) {
                 _selectedVersionIndex = 0;
               }
@@ -202,8 +205,10 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                   ),
                   actions: [
                     IconButton(
-                      icon: const Icon(Icons.download_for_offline_outlined,
-                          color: Colors.white),
+                      icon: const Icon(
+                        Icons.download_for_offline_outlined,
+                        color: Colors.white,
+                      ),
                       onPressed: () {},
                     ),
                     PopupMenuButton<String>(

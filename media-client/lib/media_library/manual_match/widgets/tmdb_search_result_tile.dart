@@ -37,10 +37,9 @@ class TmdbSearchResultTile extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
           color: isSelected
-              ? Theme.of(context)
-                  .colorScheme
-                  .primaryContainer
-                  .withValues(alpha: 0.2)
+              ? Theme.of(
+                  context,
+                ).colorScheme.primaryContainer.withValues(alpha: 0.2)
               : Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(8),
           border: isSelected
@@ -85,7 +84,9 @@ class TmdbSearchResultTile extends StatelessWidget {
                     if (item.type.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 2),
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
                         margin: const EdgeInsets.only(bottom: 4),
                         decoration: BoxDecoration(
                           color: item.type == 'movie'
@@ -96,16 +97,17 @@ class TmdbSearchResultTile extends StatelessWidget {
                         child: Text(
                           item.type == 'movie' ? '电影' : '剧集',
                           style: const TextStyle(
-                              fontSize: 10, color: Colors.white),
+                            fontSize: 10,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     // 标题
                     Text(
                       item.title,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -113,9 +115,9 @@ class TmdbSearchResultTile extends StatelessWidget {
                     // 日期 | 地区
                     Text(
                       '${item.releaseDate ?? '日期未知'} | ${item.originCountry.join('/')}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.grey),
                     ),
                     const SizedBox(height: 8),
                     // 简介

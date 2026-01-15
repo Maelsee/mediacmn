@@ -35,20 +35,26 @@ class GenresPage extends ConsumerWidget {
           return GestureDetector(
             onTap: () {
               GoRouter.of(context).push(
-                  '/media/cards?title=${Uri.encodeComponent(c.name)}&genres=${Uri.encodeComponent(c.name)}');
+                '/media/cards?title=${Uri.encodeComponent(c.name)}&genres=${Uri.encodeComponent(c.name)}',
+              );
             },
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                gradient: LinearGradient(colors: [
-                  Colors.primaries[i % Colors.primaries.length].shade300,
-                  Colors.primaries[(i + 2) % Colors.primaries.length].shade200,
-                ]),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.primaries[i % Colors.primaries.length].shade300,
+                    Colors
+                        .primaries[(i + 2) % Colors.primaries.length].shade200,
+                  ],
+                ),
               ),
               padding: const EdgeInsets.all(16),
               alignment: Alignment.centerLeft,
-              child:
-                  Text(c.name, style: Theme.of(context).textTheme.titleMedium),
+              child: Text(
+                c.name,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
             ),
           );
         },

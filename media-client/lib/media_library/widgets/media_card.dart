@@ -24,8 +24,9 @@ class MediaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap ??
-          () => GoRouter.of(context)
-              .push('/media/detail/${item.id}', extra: item),
+          () => GoRouter.of(
+                context,
+              ).push('/media/detail/${item.id}', extra: item),
       child: Container(
         width: width,
         height: height,
@@ -42,17 +43,19 @@ class MediaCard extends StatelessWidget {
                   child: Stack(
                     children: [
                       Positioned.fill(
-                        child: Builder(builder: (ctx) {
-                          final p = item.coverUrl;
-                          if (p == null || p.isEmpty) {
-                            return Container(color: Colors.grey.shade300);
-                          }
-                          final url = (p.startsWith('http://') ||
-                                  p.startsWith('https://'))
-                              ? p
-                              : '${AppConfig.baseUrl}$p';
-                          return Image.network(url, fit: BoxFit.cover);
-                        }),
+                        child: Builder(
+                          builder: (ctx) {
+                            final p = item.coverUrl;
+                            if (p == null || p.isEmpty) {
+                              return Container(color: Colors.grey.shade300);
+                            }
+                            final url = (p.startsWith('http://') ||
+                                    p.startsWith('https://'))
+                                ? p
+                                : '${AppConfig.baseUrl}$p';
+                            return Image.network(url, fit: BoxFit.cover);
+                          },
+                        ),
                       ),
                       if (showRating && item.rating != null)
                         Positioned(
@@ -60,13 +63,20 @@ class MediaCard extends StatelessWidget {
                           top: 6,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
-                                color: Colors.black87,
-                                borderRadius: BorderRadius.circular(6)),
-                            child: Text(item.rating!.toStringAsFixed(1),
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 12)),
+                              color: Colors.black87,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              item.rating!.toStringAsFixed(1),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
                           ),
                         ),
                     ],

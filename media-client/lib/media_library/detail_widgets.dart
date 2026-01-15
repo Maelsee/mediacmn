@@ -36,8 +36,10 @@ class _DetailBackgroundState extends State<DetailBackground> {
       imageUrl = widget.detail.backdropPath;
     } else {
       final seasons = widget.detail.seasons ?? [];
-      final index =
-          (widget.selectedSeasonIndex ?? 0).clamp(0, seasons.length - 1);
+      final index = (widget.selectedSeasonIndex ?? 0).clamp(
+        0,
+        seasons.length - 1,
+      );
       if (seasons.isNotEmpty) {
         imageUrl = seasons[index].cover;
       }
@@ -196,11 +198,7 @@ class DetailInfo extends StatelessWidget {
   final MediaDetail detail;
   final int? selectedSeasonIndex;
 
-  const DetailInfo({
-    super.key,
-    required this.detail,
-    this.selectedSeasonIndex,
-  });
+  const DetailInfo({super.key, required this.detail, this.selectedSeasonIndex});
 
   @override
 
@@ -237,9 +235,9 @@ class DetailInfo extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Text(
         parts.join('  |  '),
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.white70,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
       ),
     );
   }
@@ -274,8 +272,10 @@ class _DetailOverviewState extends State<DetailOverview> {
       overview = widget.detail.overview;
     } else {
       final seasons = widget.detail.seasons ?? [];
-      final index =
-          (widget.selectedSeasonIndex ?? 0).clamp(0, seasons.length - 1);
+      final index = (widget.selectedSeasonIndex ?? 0).clamp(
+        0,
+        seasons.length - 1,
+      );
       if (seasons.isNotEmpty) {
         overview = seasons[index].overview;
       }
@@ -324,10 +324,9 @@ class _DetailOverviewState extends State<DetailOverview> {
             },
             child: Text(
               overview,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Colors.white70),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
               maxLines: _isExpanded ? null : 4,
               overflow:
                   _isExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
@@ -344,11 +343,7 @@ class DetailCast extends StatelessWidget {
   final MediaDetail detail;
   final int? selectedSeasonIndex;
 
-  const DetailCast({
-    super.key,
-    required this.detail,
-    this.selectedSeasonIndex,
-  });
+  const DetailCast({super.key, required this.detail, this.selectedSeasonIndex});
 
   @override
 
@@ -410,10 +405,9 @@ class DetailCast extends StatelessWidget {
                     width: 72,
                     child: Text(
                       c.name,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.white),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.white),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
@@ -424,10 +418,10 @@ class DetailCast extends StatelessWidget {
                       width: 72,
                       child: Text(
                         c.character!,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.white54, fontSize: 10),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.white54,
+                              fontSize: 10,
+                            ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
@@ -471,8 +465,10 @@ class DetailPath extends StatelessWidget {
     if (detail.mediaType == 'movie') {
       final versions = detail.versions;
       if (versions != null && versions.isNotEmpty) {
-        final vIndex =
-            (selectedVersionIndex ?? 0).clamp(0, versions.length - 1);
+        final vIndex = (selectedVersionIndex ?? 0).clamp(
+          0,
+          versions.length - 1,
+        );
         final assets = versions[vIndex].assets;
         if (assets.isNotEmpty) {
           pathInfo = assets.first.path;
@@ -489,11 +485,15 @@ class DetailPath extends StatelessWidget {
       final sIndex = (selectedSeasonIndex ?? 0).clamp(0, seasons.length - 1);
       if (seasons.isNotEmpty) {
         final versions = seasons[sIndex].versions ?? [];
-        final vIndex =
-            (selectedVersionIndex ?? 0).clamp(0, versions.length - 1);
+        final vIndex = (selectedVersionIndex ?? 0).clamp(
+          0,
+          versions.length - 1,
+        );
         final episodes = versions[vIndex].episodes;
-        final eIndex =
-            (selectedEpisodeIndex ?? 0).clamp(0, episodes.length - 1);
+        final eIndex = (selectedEpisodeIndex ?? 0).clamp(
+          0,
+          episodes.length - 1,
+        );
         if (episodes.isNotEmpty) {
           final assets = episodes[eIndex].assets;
           if (assets.isNotEmpty) {
@@ -515,8 +515,9 @@ class DetailPath extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Text(
         '$storageName: $pathInfo',
-        style:
-            Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: Colors.grey),
       ),
     );
   }
@@ -565,6 +566,9 @@ class DetailPlayButton extends StatelessWidget {
             // 当前选择的季版本 ID（用于播放器侧做关联展示/缓存）。
             int? seasonVersionId;
 
+            int? seasonNumberHint;
+            int? episodeNumberHint;
+
             if (detail.mediaType == 'movie') {
               if (detail.versions != null && detail.versions!.isNotEmpty) {
                 final version = detail
@@ -578,6 +582,7 @@ class DetailPlayButton extends StatelessWidget {
               final seasons = detail.seasons ?? [];
               if (seasons.isNotEmpty) {
                 final season = seasons[sIndex.clamp(0, seasons.length - 1)];
+                seasonNumberHint = season.seasonNumber;
                 final versions = season.versions ?? [];
                 if (versions.isNotEmpty) {
                   final version =
@@ -587,6 +592,7 @@ class DetailPlayButton extends StatelessWidget {
                   if (version.episodes.isNotEmpty) {
                     final episode = version
                         .episodes[eIndex.clamp(0, version.episodes.length - 1)];
+                    episodeNumberHint = episode.episodeNumber;
                     if (episode.assets.isNotEmpty) {
                       asset = episode.assets.first;
                       candidates = episode.assets;
@@ -596,13 +602,19 @@ class DetailPlayButton extends StatelessWidget {
               }
             }
 
-            context.push('/player/${detail.id}', extra: {
-              'detail': detail,
-              'asset': asset,
-              'candidates': candidates,
-              if (episodes.isNotEmpty) 'episodes': episodes,
-              if (seasonVersionId != null) 'seasonVersionId': seasonVersionId,
-            });
+            context.push(
+              '/player/${detail.id}',
+              extra: {
+                'detail': detail,
+                'asset': asset,
+                'candidates': candidates,
+                if (episodes.isNotEmpty) 'episodes': episodes,
+                if (seasonVersionId != null) 'seasonVersionId': seasonVersionId,
+                if (seasonNumberHint != null) 'seasonIndex': seasonNumberHint,
+                if (episodeNumberHint != null)
+                  'episodeIndex': episodeNumberHint,
+              },
+            );
           },
           icon: const Icon(Icons.play_arrow),
           label: const Text('播放'),
@@ -829,32 +841,41 @@ class DetailSeasonsEpisodes extends StatelessWidget {
                                   const Text(
                                     '文件源',
                                     style: TextStyle(
-                                        color: Colors.black54, fontSize: 12),
+                                      color: Colors.black54,
+                                      fontSize: 12,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
-                                  Text(src,
-                                      style:
-                                          const TextStyle(color: Colors.black)),
+                                  Text(
+                                    src,
+                                    style: const TextStyle(color: Colors.black),
+                                  ),
                                   const SizedBox(height: 8),
                                   const Text(
                                     '文件夹',
                                     style: TextStyle(
-                                        color: Colors.black54, fontSize: 12),
+                                      color: Colors.black54,
+                                      fontSize: 12,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
-                                  Text(folder,
-                                      style:
-                                          const TextStyle(color: Colors.black)),
+                                  Text(
+                                    folder,
+                                    style: const TextStyle(color: Colors.black),
+                                  ),
                                   const SizedBox(height: 8),
                                   const Text(
                                     '匹配集数',
                                     style: TextStyle(
-                                        color: Colors.black54, fontSize: 12),
+                                      color: Colors.black54,
+                                      fontSize: 12,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
-                                  Text(count != null ? '$count' : '未知',
-                                      style:
-                                          const TextStyle(color: Colors.black)),
+                                  Text(
+                                    count != null ? '$count' : '未知',
+                                    style: const TextStyle(color: Colors.black),
+                                  ),
                                 ],
                               ),
                             ),
@@ -905,14 +926,17 @@ class DetailSeasonsEpisodes extends StatelessWidget {
                         useSafeArea: true,
                         backgroundColor: Colors.white,
                         shape: const RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.vertical(top: Radius.circular(12)),
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(12),
+                          ),
                         ),
                         builder: (ctx) => seasonVersionSheet(
                           seasonNumber: s.seasonNumber,
                           versions: vlist,
-                          selectedIndex:
-                              selectedVersionIndex.clamp(0, vlist.length - 1),
+                          selectedIndex: selectedVersionIndex.clamp(
+                            0,
+                            vlist.length - 1,
+                          ),
                         ),
                       );
                       if (picked != null) {
@@ -989,8 +1013,11 @@ class DetailSeasonsEpisodes extends StatelessWidget {
                           ),
                           child: fullStillUrl == null
                               ? const Center(
-                                  child:
-                                      Icon(Icons.movie, color: Colors.white54))
+                                  child: Icon(
+                                    Icons.movie,
+                                    color: Colors.white54,
+                                  ),
+                                )
                               : null,
                         ),
                       ),
@@ -998,10 +1025,11 @@ class DetailSeasonsEpisodes extends StatelessWidget {
                       Text(
                         '${ep.episodeNumber}. ${ep.title}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: isSelected ? Colors.white : Colors.white70,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal),
+                              color: isSelected ? Colors.white : Colors.white70,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

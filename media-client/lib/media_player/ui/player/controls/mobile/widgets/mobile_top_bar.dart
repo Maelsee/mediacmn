@@ -22,10 +22,7 @@ class MobileTopBar extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            Colors.black.withValues(alpha: 0.8),
-            Colors.transparent,
-          ],
+          colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
         ),
       ),
       child: SafeArea(
@@ -49,8 +46,10 @@ class MobileTopBar extends StatelessWidget {
               ),
             ),
             IconButton(
-              icon:
-                  const Icon(Icons.picture_in_picture_alt, color: Colors.white),
+              icon: const Icon(
+                Icons.picture_in_picture_alt,
+                color: Colors.white,
+              ),
               onPressed: onPip,
               tooltip: '小窗播放',
             ),

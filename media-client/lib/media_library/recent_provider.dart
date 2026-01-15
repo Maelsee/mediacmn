@@ -37,8 +37,9 @@ class RecentNotifier extends StateNotifier<RecentState> {
   }
 }
 
-final recentProvider =
-    StateNotifierProvider<RecentNotifier, RecentState>((ref) {
+final recentProvider = StateNotifierProvider<RecentNotifier, RecentState>((
+  ref,
+) {
   final repo = ref.watch(recentRepositoryProvider);
   return RecentNotifier(repo);
 });

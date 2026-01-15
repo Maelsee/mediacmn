@@ -50,31 +50,31 @@ class MediaHomeNotifier extends StateNotifier<MediaHomeState> {
       try {
         // 将简化后的结构写入缓存，降低解析成本
         final map = {
-          'genres': fresh.genres
-              .map((c) => {
-                    'id': c.id,
-                    'name': c.name,
-                  })
-              .toList(),
+          'genres':
+              fresh.genres.map((c) => {'id': c.id, 'name': c.name}).toList(),
           'movie': fresh.movie
-              .map((m) => {
-                    'id': m.id,
-                    'name': m.name,
-                    'cover_url': m.coverUrl,
-                    'rating': m.rating,
-                    'release_date': m.releaseDate,
-                    'media_type': m.mediaType,
-                  })
+              .map(
+                (m) => {
+                  'id': m.id,
+                  'name': m.name,
+                  'cover_url': m.coverUrl,
+                  'rating': m.rating,
+                  'release_date': m.releaseDate,
+                  'media_type': m.mediaType,
+                },
+              )
               .toList(),
           'tv': fresh.tv
-              .map((m) => {
-                    'id': m.id,
-                    'name': m.name,
-                    'cover_url': m.coverUrl,
-                    'rating': m.rating,
-                    'release_date': m.releaseDate,
-                    'media_type': m.mediaType,
-                  })
+              .map(
+                (m) => {
+                  'id': m.id,
+                  'name': m.name,
+                  'cover_url': m.coverUrl,
+                  'rating': m.rating,
+                  'release_date': m.releaseDate,
+                  'media_type': m.mediaType,
+                },
+              )
               .toList(),
         };
         await box.put('home_cache_v2', jsonEncode(map));

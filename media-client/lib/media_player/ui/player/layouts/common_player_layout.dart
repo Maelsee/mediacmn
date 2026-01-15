@@ -148,18 +148,44 @@ class CommonPlayerLayout extends ConsumerWidget {
                 color: Colors.black,
                 child: controller == null
                     ? const SizedBox.expand()
-                    : Transform.translate(
-                        offset: state.videoOffset,
-                        child: Transform.scale(
-                          scale: state.videoScale,
-                          alignment: Alignment.center,
-                          child: Video(
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          // 获取视频实际尺寸
+                          final width = controller!.player.state.width;
+                          final height = controller!.player.state.height;
+                          final hasSize = width != null &&
+                              height != null &&
+                              width > 0 &&
+                              height > 0;
+
+                          // 如果是 Contain 模式且能获取到尺寸，则使用 AspectRatio 包裹 Video 组件，
+                          // 使 Video 组件的大小严格贴合视频画面。
+                          // 这样 media_kit_video 渲染的字幕就会相对于画面位置显示，而不是固定在屏幕底部。
+                          Widget videoWidget = Video(
                             controller: controller!,
                             fit: state.fit,
                             controls: NoVideoControls,
                             subtitleViewConfiguration: subtitleConfig,
-                          ),
-                        ),
+                          );
+
+                          if (state.fit == BoxFit.contain && hasSize) {
+                            videoWidget = Center(
+                              child: AspectRatio(
+                                aspectRatio: width / height,
+                                child: videoWidget,
+                              ),
+                            );
+                          }
+
+                          return Transform.translate(
+                            offset: state.videoOffset,
+                            child: Transform.scale(
+                              scale: state.videoScale,
+                              alignment: Alignment.center,
+                              child: videoWidget,
+                            ),
+                          );
+                        },
                       ),
               ),
             ),
@@ -179,8 +205,12 @@ class CommonPlayerLayout extends ConsumerWidget {
               Positioned.fill(child: ErrorOverlay(message: state.error!)),
             if (showControls || state.isLocked)
               Positioned.fill(
-                child: _buildControlsLayer(context, ref,
-                    isMobile: isMobile, isDesktop: isDesktop),
+                child: _buildControlsLayer(
+                  context,
+                  ref,
+                  isMobile: isMobile,
+                  isDesktop: isDesktop,
+                ),
               ),
           ],
         );
@@ -218,8 +248,12 @@ class CommonPlayerLayout extends ConsumerWidget {
     );
   }
 
-  Widget _buildControlsLayer(BuildContext context, WidgetRef ref,
-      {required bool isMobile, required bool isDesktop}) {
+  Widget _buildControlsLayer(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool isMobile,
+    required bool isDesktop,
+  }) {
     final notifier = ref.read(playbackProvider.notifier);
 
     final common = CommonControls(

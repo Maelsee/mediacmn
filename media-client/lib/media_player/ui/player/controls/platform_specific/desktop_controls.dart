@@ -38,9 +38,10 @@ class DesktopPlayerControls extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600),
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
@@ -50,12 +51,7 @@ class DesktopPlayerControls extends StatelessWidget {
               ],
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: common,
-          ),
+          Positioned(left: 0, right: 0, bottom: 0, child: common),
         ],
       ),
     );
@@ -81,30 +77,33 @@ class DesktopShortcutListener extends StatelessWidget {
     return Shortcuts(
       shortcuts: {
         LogicalKeySet(LogicalKeyboardKey.space): const ActivateIntent(),
-        LogicalKeySet(LogicalKeyboardKey.arrowLeft):
-            const _SeekIntent(backward: true),
-        LogicalKeySet(LogicalKeyboardKey.arrowRight):
-            const _SeekIntent(backward: false),
+        LogicalKeySet(LogicalKeyboardKey.arrowLeft): const _SeekIntent(
+          backward: true,
+        ),
+        LogicalKeySet(LogicalKeyboardKey.arrowRight): const _SeekIntent(
+          backward: false,
+        ),
       },
       child: Actions(
         actions: {
-          ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) {
-            onPlayPause();
-            return null;
-          }),
-          _SeekIntent: CallbackAction<_SeekIntent>(onInvoke: (intent) {
-            if (intent.backward) {
-              onSeekBackward();
-            } else {
-              onSeekForward();
-            }
-            return null;
-          }),
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              onPlayPause();
+              return null;
+            },
+          ),
+          _SeekIntent: CallbackAction<_SeekIntent>(
+            onInvoke: (intent) {
+              if (intent.backward) {
+                onSeekBackward();
+              } else {
+                onSeekForward();
+              }
+              return null;
+            },
+          ),
         },
-        child: Focus(
-          autofocus: true,
-          child: child,
-        ),
+        child: Focus(autofocus: true, child: child),
       ),
     );
   }

@@ -84,8 +84,9 @@ class LocalPlaybackStore {
   }
 
   /// 获取最近观看的进度记录列表。
-  Future<List<PlaybackProgressRecord>> getRecentProgressRecords(
-      {required int limit}) async {
+  Future<List<PlaybackProgressRecord>> getRecentProgressRecords({
+    required int limit,
+  }) async {
     final fileIds = await getRecentFileIds(limit: limit);
     if (fileIds.isEmpty) return const [];
 
@@ -94,16 +95,18 @@ class LocalPlaybackStore {
     for (final fileId in fileIds) {
       final raw = progressBox.get(fileId);
       if (raw is Map) {
-        records
-            .add(PlaybackProgressRecord.fromJson(raw.cast<String, dynamic>()));
+        records.add(
+          PlaybackProgressRecord.fromJson(raw.cast<String, dynamic>()),
+        );
       }
     }
     records.sort((a, b) => b.lastPlayedAtMs.compareTo(a.lastPlayedAtMs));
     return records;
   }
 
-  Stream<List<PlaybackProgressRecord>> watchRecentProgressRecords(
-      {required int limit}) async* {
+  Stream<List<PlaybackProgressRecord>> watchRecentProgressRecords({
+    required int limit,
+  }) async* {
     yield await getRecentProgressRecords(limit: limit);
     final indexBox = await _getRecentIndexBox();
     await for (final _ in indexBox.watch()) {

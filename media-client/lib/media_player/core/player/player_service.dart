@@ -134,7 +134,10 @@ class PlayerService implements PlayerServiceBase {
     player.setVolume(config.initialVolume);
     player.setRate(config.initialSpeed);
     return PlayerService._(
-        player: player, videoController: controller, config: config);
+      player: player,
+      videoController: controller,
+      config: config,
+    );
   }
 
   /// 直接暴露底层 Player，供极少数需要读取底层状态的地方使用。
@@ -245,8 +248,10 @@ class PlayerService implements PlayerServiceBase {
 
     bool didReset = false;
     try {
-      didReset =
-          await completer.future.timeout(watchWindow, onTimeout: () => false);
+      didReset = await completer.future.timeout(
+        watchWindow,
+        onTimeout: () => false,
+      );
     } finally {
       await sub.cancel();
     }
@@ -278,10 +283,12 @@ class PlayerService implements PlayerServiceBase {
       }
       req.headers['Range'] = 'bytes=0-0';
 
-      final res = await client.send(req).timeout(const Duration(seconds: 3),
-          onTimeout: () {
-        throw TimeoutException('range probe timeout');
-      });
+      final res = await client.send(req).timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {
+          throw TimeoutException('range probe timeout');
+        },
+      );
 
       // 只取一小段，避免服务端忽略 Range 返回整文件导致大量下载。
       await res.stream.take(1).drain<void>();

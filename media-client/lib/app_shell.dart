@@ -33,9 +33,13 @@ class _AppShellState extends State<AppShell> {
         selectedIndex: widget.navigationShell.currentIndex,
         destinations: const [
           NavigationDestination(
-              icon: Icon(Icons.video_library_outlined), label: '媒体库'),
+            icon: Icon(Icons.video_library_outlined),
+            label: '媒体库',
+          ),
           NavigationDestination(
-              icon: Icon(Icons.folder_outlined), label: '资源库'),
+            icon: Icon(Icons.folder_outlined),
+            label: '资源库',
+          ),
           NavigationDestination(icon: Icon(Icons.person_outline), label: '我的'),
         ],
         onDestinationSelected: (i) =>
@@ -74,18 +78,22 @@ class _MediaLibraryPageState extends ConsumerState<MediaLibraryPage> {
     return Scaffold(
       appBar: !ready
           ? null
-          : AppBar(title: const Text('媒体库'), actions: [
-              IconButton(
+          : AppBar(
+              title: const Text('媒体库'),
+              actions: [
+                IconButton(
                   onPressed: () {
                     GoRouter.of(context).push('/media/search');
                   },
-                  icon: const Icon(Icons.search)),
-              IconButton(
+                  icon: const Icon(Icons.search),
+                ),
+                IconButton(
                   onPressed: () {
                     GoRouter.of(context).push('/profile/settings');
                   },
-                  icon: const Icon(Icons.tune)),
-              IconButton(
+                  icon: const Icon(Icons.tune),
+                ),
+                IconButton(
                   onPressed: isScanning
                       ? null
                       : () async {
@@ -93,13 +101,17 @@ class _MediaLibraryPageState extends ConsumerState<MediaLibraryPage> {
                               .read(tasksProvider.notifier)
                               .triggerGlobalScan();
                         },
-                  icon: const Icon(Icons.refresh)),
-            ]),
-      body: Column(children: [
-        if (tasks.currentGroup != null && tasks.showTray && ready)
-          const TaskTray(),
-        const Expanded(child: MediaLibraryHomePage()),
-      ]),
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+      body: Column(
+        children: [
+          if (tasks.currentGroup != null && tasks.showTray && ready)
+            const TaskTray(),
+          const Expanded(child: MediaLibraryHomePage()),
+        ],
+      ),
     );
   }
 }

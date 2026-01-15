@@ -39,16 +39,17 @@ class CommonControls extends StatelessWidget {
     return Align(
       alignment: Alignment.bottomCenter,
       child: Container(
-        padding:
-            const EdgeInsets.only(left: 12, right: 12, top: 10, bottom: 16),
+        padding: const EdgeInsets.only(
+          left: 12,
+          right: 12,
+          top: 10,
+          bottom: 16,
+        ),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.bottomCenter,
             end: Alignment.topCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.75),
-              Colors.transparent,
-            ],
+            colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
           ),
         ),
         child: Column(
@@ -67,10 +68,7 @@ class CommonControls extends StatelessWidget {
                   onPressed: onPrev == null ? null : () => onPrev!(),
                   icon: const Icon(Icons.skip_previous, color: Colors.white),
                 ),
-                PlayPauseButton(
-                  playing: state.playing,
-                  onPressed: onPlayPause,
-                ),
+                PlayPauseButton(playing: state.playing, onPressed: onPlayPause),
                 IconButton(
                   onPressed: onNext == null ? null : () => onNext!(),
                   icon: const Icon(Icons.skip_next, color: Colors.white),
@@ -82,7 +80,9 @@ class CommonControls extends StatelessWidget {
                       Text(
                         '${formatDuration(state.position)} / ${formatDuration(state.duration)}',
                         style: const TextStyle(
-                            color: Colors.white70, fontSize: 12),
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
                       ),
                       const Spacer(),
                       _SpeedButton(speed: state.speed, onSpeed: onSpeed),
@@ -318,8 +318,10 @@ class FullscreenButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return IconButton(
       onPressed: onPressed,
-      icon: Icon(fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
-          color: Colors.white),
+      icon: Icon(
+        fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+        color: Colors.white,
+      ),
     );
   }
 }
@@ -359,8 +361,10 @@ class _SpeedButton extends StatelessWidget {
           color: Colors.white.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text('${speed.toStringAsFixed(speed == 1.0 ? 0 : 2)}x',
-            style: const TextStyle(color: Colors.white, fontSize: 12)),
+        child: Text(
+          '${speed.toStringAsFixed(speed == 1.0 ? 0 : 2)}x',
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+        ),
       ),
     );
   }
@@ -450,8 +454,10 @@ class _CandidateButton extends StatelessWidget {
           color: Colors.white.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(20),
         ),
-        child: const Text('来源',
-            style: TextStyle(color: Colors.white, fontSize: 12)),
+        child: const Text(
+          '来源',
+          style: TextStyle(color: Colors.white, fontSize: 12),
+        ),
       ),
     );
   }
@@ -489,16 +495,21 @@ class _PlaybackSettingsPanelState extends State<PlaybackSettingsPanel> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('播放设置',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600)),
+            const Text(
+              '播放设置',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 12),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title:
-                  const Text('自动跳过片头片尾', style: TextStyle(color: Colors.white)),
+              title: const Text(
+                '自动跳过片头片尾',
+                style: TextStyle(color: Colors.white),
+              ),
               value: _s.skipIntroOutro,
               onChanged: (v) =>
                   setState(() => _s = _s.copyWith(skipIntroOutro: v)),
@@ -516,11 +527,14 @@ class _PlaybackSettingsPanelState extends State<PlaybackSettingsPanel> {
               ),
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('同步应用到同系列所有剧集',
-                    style: TextStyle(color: Colors.white)),
+                title: const Text(
+                  '同步应用到同系列所有剧集',
+                  style: TextStyle(color: Colors.white),
+                ),
                 value: _s.applyToAllEpisodes,
                 onChanged: (v) => setState(
-                    () => _s = _s.copyWith(applyToAllEpisodes: v ?? false)),
+                  () => _s = _s.copyWith(applyToAllEpisodes: v ?? false),
+                ),
               ),
             ],
             const SizedBox(height: 12),
@@ -549,21 +563,28 @@ class _TimeRow extends StatelessWidget {
   final Duration value;
   final ValueChanged<Duration> onPick;
 
-  const _TimeRow(
-      {required this.label, required this.value, required this.onPick});
+  const _TimeRow({
+    required this.label,
+    required this.value,
+    required this.onPick,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(label, style: const TextStyle(color: Colors.white)),
-      trailing: Text(formatDuration(value),
-          style: const TextStyle(color: Colors.white70)),
+      trailing: Text(
+        formatDuration(value),
+        style: const TextStyle(color: Colors.white70),
+      ),
       onTap: () async {
         final picked = await showTimePicker(
           context: context,
-          initialTime:
-              TimeOfDay(hour: value.inHours, minute: (value.inMinutes % 60)),
+          initialTime: TimeOfDay(
+            hour: value.inHours,
+            minute: (value.inMinutes % 60),
+          ),
         );
         if (picked == null) return;
         onPick(Duration(hours: picked.hour, minutes: picked.minute));

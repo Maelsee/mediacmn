@@ -18,16 +18,21 @@ class SourcesHomePage extends ConsumerWidget {
     return Scaffold(
       appBar: !ready
           ? null
-          : AppBar(title: const Text('资源库'), actions: [
-              IconButton(
+          : AppBar(
+              title: const Text('资源库'),
+              actions: [
+                IconButton(
                   onPressed: () => ref.read(sourcesProvider.notifier).load(),
-                  icon: const Icon(Icons.refresh)),
-              IconButton(
+                  icon: const Icon(Icons.refresh),
+                ),
+                IconButton(
                   onPressed: () {
                     GoRouter.of(context).push('/sources/add');
                   },
-                  icon: const Icon(Icons.add)),
-            ]),
+                  icon: const Icon(Icons.add),
+                ),
+              ],
+            ),
       body: s.loading
           ? const Center(child: CircularProgressIndicator())
           : (!ready
@@ -74,19 +79,25 @@ class SourcesHomePage extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.play_circle_outline,
-                size: 72, color: Theme.of(context).colorScheme.primary),
+            Icon(
+              Icons.play_circle_outline,
+              size: 72,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             const SizedBox(height: 16),
-            const Text('还没有资源哦',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const Text(
+              '还没有资源哦',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             const Text('添加视频资源后即可打造私人影视库，随时随地观看', textAlign: TextAlign.center),
             const SizedBox(height: 20),
             FilledButton(
-                onPressed: () {
-                  GoRouter.of(context).push('/sources/add');
-                },
-                child: const Text('添加资源')),
+              onPressed: () {
+                GoRouter.of(context).push('/sources/add');
+              },
+              child: const Text('添加资源'),
+            ),
           ],
         ),
       ),
@@ -120,20 +131,25 @@ class _SourceCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
         leading: Icon(_iconForType(item.type)),
-        title: Row(children: [
-          Expanded(child: Text(item.name)),
-          Builder(builder: (context) {
-            final st = item.status.toLowerCase();
-            final connected = st == 'connected';
-            return connected
-                ? const Icon(Icons.link, color: Colors.green)
-                : const Icon(Icons.link_off, color: Colors.orange);
-          }),
-        ]),
+        title: Row(
+          children: [
+            Expanded(child: Text(item.name)),
+            Builder(
+              builder: (context) {
+                final st = item.status.toLowerCase();
+                final connected = st == 'connected';
+                return connected
+                    ? const Icon(Icons.link, color: Colors.green)
+                    : const Icon(Icons.link_off, color: Colors.orange);
+              },
+            ),
+          ],
+        ),
         onTap: () {
           final id = int.tryParse(item.id) ?? 0;
-          GoRouter.of(context).push(
-              '/sources/browse/$id?title=${Uri.encodeComponent(item.name)}');
+          GoRouter.of(
+            context,
+          ).push('/sources/browse/$id?title=${Uri.encodeComponent(item.name)}');
         },
         trailing: IconButton(
           icon: const Icon(Icons.more_vert),
@@ -170,13 +186,15 @@ class _SourceCard extends StatelessWidget {
                     try {
                       await api.startScan(storageId: id);
                       messenger.showSnackBar(
-                          const SnackBar(content: Text('扫描任务已开始')));
+                        const SnackBar(content: Text('扫描任务已开始')),
+                      );
 
                       // Show task tray
                       ref.read(tasksProvider.notifier).showTray();
                     } catch (e) {
-                      messenger
-                          .showSnackBar(SnackBar(content: Text('扫描失败: $e')));
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('扫描失败: $e')),
+                      );
                     }
                   },
                 ),
@@ -205,15 +223,17 @@ class _SourceCard extends StatelessWidget {
                           'root_path': detail['root_path'] as String,
                       };
                       final uri = Uri(
-                          path: '/sources/${item.id}/edit',
-                          queryParameters: params);
+                        path: '/sources/${item.id}/edit',
+                        queryParameters: params,
+                      );
                       final changed = await router.push(uri.toString());
                       if (changed == true) {
                         await ref.read(sourcesProvider.notifier).load();
                       }
                     } else {
-                      final changed =
-                          await router.push('/sources/${item.id}/edit');
+                      final changed = await router.push(
+                        '/sources/${item.id}/edit',
+                      );
                       if (changed == true) {
                         await ref.read(sourcesProvider.notifier).load();
                       }
@@ -226,28 +246,33 @@ class _SourceCard extends StatelessWidget {
                   onTap: () async {
                     Navigator.pop(context);
                     showDialog(
-                        context: context,
-                        builder: (ctx) =>
-                            SimpleDialog(title: const Text('选择操作'), children: [
-                              SimpleDialogOption(
-                                  child: const Text('启用'),
-                                  onPressed: () async {
-                                    Navigator.pop(ctx);
-                                    await ref
-                                        .read(apiClientProvider)
-                                        .enableStorage(id);
-                                    ref.read(sourcesProvider.notifier).load();
-                                  }),
-                              SimpleDialogOption(
-                                  child: const Text('停用'),
-                                  onPressed: () async {
-                                    Navigator.pop(ctx);
-                                    await ref
-                                        .read(apiClientProvider)
-                                        .disableStorage(id);
-                                    ref.read(sourcesProvider.notifier).load();
-                                  }),
-                            ]));
+                      context: context,
+                      builder: (ctx) => SimpleDialog(
+                        title: const Text('选择操作'),
+                        children: [
+                          SimpleDialogOption(
+                            child: const Text('启用'),
+                            onPressed: () async {
+                              Navigator.pop(ctx);
+                              await ref
+                                  .read(apiClientProvider)
+                                  .enableStorage(id);
+                              ref.read(sourcesProvider.notifier).load();
+                            },
+                          ),
+                          SimpleDialogOption(
+                            child: const Text('停用'),
+                            onPressed: () async {
+                              Navigator.pop(ctx);
+                              await ref
+                                  .read(apiClientProvider)
+                                  .disableStorage(id);
+                              ref.read(sourcesProvider.notifier).load();
+                            },
+                          ),
+                        ],
+                      ),
+                    );
                   },
                 ),
                 ListTile(
@@ -268,7 +293,8 @@ class _SourceCard extends StatelessWidget {
                         await ref.read(apiClientProvider).testConnection(id);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(ok ? '连接正常' : '连接失败')));
+                        SnackBar(content: Text(ok ? '连接正常' : '连接失败')),
+                      );
                     }
                   },
                 ),

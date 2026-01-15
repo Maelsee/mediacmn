@@ -46,7 +46,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     '动漫',
     '综艺',
     '演唱会',
-    '纪录片'
+    '纪录片',
   ];
   final List<String> _sorts = const ['最新更新', '最新上映', '影片评分'];
   final List<String> _genres = const [
@@ -70,7 +70,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     '音乐',
     '歌舞',
     '西部',
-    '纪录片'
+    '纪录片',
   ];
   final List<String> _regions = const [
     '全部',
@@ -83,7 +83,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     '韩国',
     '泰国',
     '印度',
-    '其他'
+    '其他',
   ];
   final List<String> _years = const [
     '全部',
@@ -101,7 +101,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     '2000年代',
     '90年代',
     '80年代',
-    '更早'
+    '更早',
   ];
 
   @override
@@ -249,8 +249,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                       horizontal: 16,
                     ),
                     filled: true,
-                    fillColor:
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
                       borderSide: BorderSide.none,
@@ -260,10 +261,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 ),
               ),
               const SizedBox(width: 8),
-              TextButton(
-                onPressed: _search,
-                child: const Text('搜索'),
-              ),
+              TextButton(onPressed: _search, child: const Text('搜索')),
             ],
           ),
         ),
@@ -382,8 +380,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               borderRadius: BorderRadius.circular(16),
               onTap: () => onSelected(option),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? Theme.of(context).colorScheme.primaryContainer
@@ -414,29 +414,24 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       return Center(
         child: Text(
           '加载更多...',
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: Colors.white70),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
         ),
       );
     }
     if (_loadError != null) {
       return Center(
-        child: TextButton(
-          onPressed: _loadMore,
-          child: const Text('点击重试'),
-        ),
+        child: TextButton(onPressed: _loadMore, child: const Text('点击重试')),
       );
     }
     if (!_hasMore) {
       return Center(
         child: Text(
           '没有更多内容了',
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: Colors.white54),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: Colors.white54),
         ),
       );
     }

@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 
 class ErrorOverlay extends StatelessWidget {
   final String message;
-  const ErrorOverlay({
-    super.key,
-    required this.message,
-  });
+  const ErrorOverlay({super.key, required this.message});
 
   @override
   Widget build(BuildContext context) {

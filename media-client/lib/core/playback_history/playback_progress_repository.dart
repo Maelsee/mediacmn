@@ -18,10 +18,7 @@ class PlaybackProgressRepository {
   /// 远端数据源。
   final RemotePlaybackDataSource remote;
 
-  const PlaybackProgressRepository({
-    required this.local,
-    required this.remote,
-  });
+  const PlaybackProgressRepository({required this.local, required this.remote});
 
   /// 统一的续播进度获取入口。
   ///
@@ -173,8 +170,10 @@ class PlaybackProgressRepository {
   /// - 当前实现为“尽力而为”同步，不抛出错误影响主流程。
   Future<void> syncOutbox({int batchSize = 20}) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final tasks =
-        await local.listDueReportTasks(nowMs: nowMs, limit: batchSize);
+    final tasks = await local.listDueReportTasks(
+      nowMs: nowMs,
+      limit: batchSize,
+    );
     if (tasks.isEmpty) return;
 
     for (final task in tasks) {
@@ -185,10 +184,12 @@ class PlaybackProgressRepository {
         final record = await local.getProgress(task.fileId);
         if (record != null) {
           final shouldClearDirty = record.updatedAtMs <= task.createdAtMs;
-          await local.putProgress(record.copyWith(
-            lastReportedAtMs: nowMs,
-            dirty: shouldClearDirty ? false : record.dirty,
-          ));
+          await local.putProgress(
+            record.copyWith(
+              lastReportedAtMs: nowMs,
+              dirty: shouldClearDirty ? false : record.dirty,
+            ),
+          );
         }
       } catch (_) {
         final next = _nextRetryAtMs(nowMs: nowMs, retryCount: task.retryCount);

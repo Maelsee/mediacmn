@@ -1,4 +1,4 @@
-# 基于 media_kit 的跨平台播放器设计方案
+# 基于 media_kit 的移动端播放器设计方案
 ## 一、整体架构设计
 ```mermaid
 graph TD
@@ -6,12 +6,8 @@ graph TD
     B --> C[CommonPlayerLayout]
     
     C --> D[MobilePlayerControls]
-    C --> E[DesktopPlayerControls]
-    C --> F[WebPlayerControls]
     
     D --> G[CommonControls]
-    E --> G
-    F --> G
     
     G --> H[PlayPauseButton]
     G --> I[ProgressBar]
@@ -22,140 +18,11 @@ graph TD
     
     B --> K
 ```
-
-### 1.1 桌面端独立播放器窗口（多窗口/单实例）重新设计
-
-目标：桌面端点击播放后，拉起独立播放器窗口播放；主窗口立即返回业务路由；两者在 UI 与状态层尽量解耦，但在“命令/事件”层保持可控通信，避免出现插件未注册、窗口互相阻塞、资源泄漏、存储锁冲突等问题。
-
-设计原则：
-
-- 主窗口与播放窗口隔离：播放窗口使用独立 Flutter 引擎，拥有独立 Widget 树与状态容器，主窗口不依赖播放窗口内部实现。
-- 命令化通信：主窗口仅发送“播放命令”（open/focus/close），播放窗口仅回传“状态事件”（ready/error/playing/position）用于主窗口展示或埋点。
-- 单实例复用：同类型播放窗口只保留一个实例；新播放请求在同一窗口内切换媒体源。
-- 强约束的 payload：跨引擎参数只允许 JSON 可序列化类型，严禁传递复杂对象实例。
-
-```mermaid
-sequenceDiagram
-  participant Main as 主窗口(业务App)
-  participant Svc as DesktopPlayerWindowService
-  participant MW as desktop_multi_window(新引擎)
-  participant Player as 播放窗口(独立App)
-
-  Main->>Svc: open(coreId, extraJson)
-  Svc->>Svc: 查找已存在 player 窗口
-  alt 已存在
-    Svc->>Player: invokeMethod("focus")
-    Svc->>Player: invokeMethod("open", payload)
-  else 不存在
-    Svc->>MW: create(arguments: {type:"player", payload})
-    MW->>Player: main() 解析 arguments
-    Player-->>Main: (可选) 通过事件通道回传 ready/error
-  end
-```
-
-落地对应代码：
-
-- 主窗口创建/复用播放器窗口：[desktop_player_window_service.dart](desktop_window/desktop_player_window_service.dart)
-- 子窗口入口分流（同一个 main，根据 arguments 选择运行主 App 或 Player App）：[main.dart](../main.dart)
-- 子窗口页面初始化与接收 open/focus 命令：[desktop_player_window_page.dart](desktop_window/desktop_player_window_page.dart)
-
-### 1.2 多窗口下插件注册与初始化顺序（最常见致命坑）
-
-现象：播放窗口能显示但无法播放，并出现：
-
-- `MissingPluginException(No implementation found for method ensureInitialized on channel window_manager)`
-- `MissingPluginException(No implementation found for method VideoOutputManager.Create on channel com.alexmercerind/media_kit_video)`
-
-根因：`desktop_multi_window` 创建的新窗口是“新的 Flutter 引擎”。插件注册是“每引擎一次”的：只给主窗口引擎注册插件并不会自动让子窗口引擎也拥有插件实现，因此子窗口内任何 MethodChannel 调用都会 MissingPluginException。
-
-解决策略（必须同时满足）：
-
-- 原生 Runner 层注册“新窗口创建回调”，在每个新引擎创建时执行 `RegisterGeneratedPlugins / fl_register_plugins`。
-- Dart 层初始化顺序必须先 `WidgetsFlutterBinding.ensureInitialized()`，再进行 `window_manager.ensureInitialized()`、`MediaKit.ensureInitialized()` 等初始化。
-
-平台落地位置：
-
-- Windows：[windows/runner/flutter_window.cpp](../../windows/runner/flutter_window.cpp)
-- Linux：[linux/runner/my_application.cc](../../linux/runner/my_application.cc)
-- macOS：[macos/Runner/MainFlutterWindow.swift](../../macos/Runner/MainFlutterWindow.swift)
-
-### 1.3 多窗口下 Hive 文件锁冲突（auth.lock）
-
-现象：桌面端打开独立播放器窗口后，窗口白屏且日志出现 `PathAccessException: lock failed / Cannot delete file ... auth.lock`。
-
-原因：多个引擎若使用同一个 Hive 目录并同时打开同名 box（例如 `auth`），会在桌面端触发锁文件互斥，导致新引擎初始化失败（表现为白屏或卡死）。
-
-解决方案：
-
-- 播放窗口使用独立 Hive 子目录：在播放器窗口入口的 `main()` 中使用 `Hive.initFlutter('player_window')`，避免与主窗口共享默认目录。
-- 播放窗口尽量不打开业务侧的 Box：主窗口创建播放器窗口时，把必要的登录态快照通过 arguments 透传；播放窗口用快照初始化网络层，避免抢占 `auth.lock`。
-
-### 1.4 避免播放窗口“阻塞”主窗口的策略
-
-- 禁止在主窗口打开播放前执行同步耗时操作：主窗口只做轻量参数准备与窗口创建，网络请求与解码初始化在播放窗口内完成。
-- 禁止跨窗口共享单例做 IO：同进程多引擎下，静态单例仍是进程级共享的资源入口，容易造成锁/线程争用；建议播放窗口内部维护自己的 service 实例。
-- 命令通道只传“小消息”：避免大 payload（尤其是巨大的 Base64、整段字幕内容等）在 MethodChannel 里传输导致卡顿。
-
-### 1.5 通信协议建议（主窗口 ↔ 播放窗口）
-
-建议将跨窗口通信收敛为两类：
-
-- 主 → 播放：命令（focus/open/close）
-- 播放 → 主：事件（ready/error/playing/position）
-
-建议 payload 统一封装为“信封”结构，方便扩展与版本兼容：
-
-- `schema`: 协议版本号（例如 `1`）
-- `type`: 消息类型（例如 `open` / `event`）
-- `id`: 请求 ID（用于主窗口侧的超时与重试）
-- `ts`: 时间戳
-- `data`: 业务数据（必须 JSON 可序列化）
-
-### 1.6 关闭策略与资源释放
-
-桌面端常见的“关闭”需求有两类：
-
-- 关闭窗口：释放播放资源并退出该引擎（适合一次性弹窗）
-- 隐藏窗口：保留播放器实例，便于快速回到播放（适合播放器常驻）
-
-建议默认“关闭=隐藏”，并在以下场景真正释放：
-
-- 用户选择“退出播放器”
-- 播放结束且无后续播放
-- 播放窗口长时间后台且无音频输出（可选策略）
-
-资源释放清单（播放窗口内）：
-
-- `Player` / `VideoController` / `AudioTrack` 相关资源全部 dispose
-- 停止定时器与心跳上报（播放进度/播放状态）
-- 取消所有 Stream 订阅与监听器
-
-### 1.7 Windows 构建常见问题：.plugin_symlinks 缺失导致 CMake 失败
-
-现象：Windows 构建阶段报错 `add_subdirectory ... flutter/ephemeral/.plugin_symlinks/<plugin>/windows is not an existing directory`。
-
-根因：Windows 上 Flutter 需要在 `windows/flutter/ephemeral/.plugin_symlinks` 下创建到 pub-cache 的链接目录；若链接创建失败（系统权限/开发者模式/安全策略/路径问题），就会导致 CMake 找不到插件工程目录。
-
-处理建议（按顺序尝试）：
-
-- 确认 Windows 已开启“开发者模式”（允许创建符号链接）
-- 关闭占用工程目录的杀毒/安全软件拦截后重试
-- 执行 `flutter clean` 后再执行 `flutter pub get`
-- 删除 `build/` 以及 `windows/flutter/ephemeral/` 后重试生成
-- 将工程放在更短、更“本地”的路径（避免过深路径或同步盘目录）
 ## 二、目录结构（简单明了）
 ```
 lib/
 └── media_player/
     ├── media_player_page.dart        # 播放器模块入口（路由承载/对外暴露）
-    ├── desktop_window/               # 桌面端独立播放器窗口（多窗口）
-    │   ├── desktop_player_window_service.dart
-    │   ├── desktop_player_window_app.dart
-    │   ├── desktop_player_window_page.dart
-    │   ├── desktop_player_window_layout.dart
-    │   ├── desktop_player_side_panel.dart
-    │   ├── desktop_player_overlay_panels.dart
-    │   └── desktop_player_side_panel_handle.dart
     ├── core/
     │   ├── player/
     │   │   ├── player_service.dart   # 播放器服务（含抽象接口，便于测试替换）
@@ -183,10 +50,6 @@ lib/
     │           │   └── volume_slider.dart
     │           └── platform_specific/
     │               ├── mobile_controls.dart
-    │               ├── desktop_controls.dart
-    │               ├── web_controls.dart
-    │               ├── web_download_stub.dart
-    │               └── web_download_web.dart
     └── utils/
         └── player_utils.dart
 ```
@@ -225,8 +88,6 @@ mindmap
       画中画
     平台特性
       移动手势
-      桌面快捷键
-      Web下载
 ```
 ### 3.2 PlayerService 核心接口
 ```dart
@@ -309,76 +170,6 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
 // - 位置：在 MobileGestureLayer 内部通过 Positioned(top: ... ) 控制（顶部居中，不遮挡画面中心）。
 // - 字号/内边距：在 TextStyle(fontSize: ...) 与 Container(padding: ...) 调整。
 ```
-#### 桌面端
-```dart
-// 桌面快捷键
-class DesktopShortcutListener extends StatelessWidget {
-  final Widget child;
-  
-  const DesktopShortcutListener({super.key, required this.child});
-  
-  @override
-  Widget build(BuildContext context) {
-    return Shortcuts(
-      shortcuts: {
-        LogicalKeySet(LogicalKeyboardKey.space): const _PlayPauseIntent(),
-      },
-      child: Actions(
-        actions: {
-          _PlayPauseIntent: CallbackAction(onInvoke: (_) => _playPause()),
-        },
-        child: child,
-      ),
-    );
-  }
-}
-```
-
-### 4.3 桌面端 UI 设计 (Desktop UI)
-针对桌面端（Windows/macOS/Linux）的大屏与鼠标交互场景，设计了独立的独立窗口播放器。
-
-#### 1) 窗口布局
-- **TopBar**: 标题、PiP（画中画）、最小化、最大化、关闭。
-- **BottomBar**:
-  - **进度条**: 位于底部栏最上方，支持鼠标悬停预览与拖动。
-  - **左侧控制**: 播放/暂停、下一集、当前时间/总时长。
-  - **右侧功能**: 字幕、音轨、选集、倍速、画质、音量、设置、全屏。
-- **SidePanel (选集)**:
-  - 右侧挤压式面板，只包含“选集”列表，移除其他不相关 Tabs。
-  - 展开时向左挤压视频区域（使用 Row 布局），避免遮挡视频内容。
-  - 选集列表展示缩略图、标题、观看进度。
-  - 支持通过底部“选集”按钮或右侧边缘手柄呼出。
-
-#### 2) 浮动面板 (Overlay Panels)
-- **音量面板**: 竖向滑块，位于音量图标上方，限制宽度避免过宽。
-- **倍速面板**: 竖向列表（0.5x - 5.0x），支持自定义，限制宽度。
-- **字幕面板**: 分组展示内嵌字幕、外挂字幕、AI字幕及字幕设置，限制宽度。
-- **音轨面板**: 列表选择音频轨道，风格与倍速面板一致。
-- **画质面板**: 列表选择视频清晰度，风格与倍速面板一致。
-- **设计规范**: 统一深色圆角卡片风格，最大高度限制，固定/限制宽度，不遮挡底部操作栏。悬浮面板在对应图标上方就近显示。
-
-#### Web端
-```dart
-// Web下载按钮
-class WebDownloadButton extends StatelessWidget {
-  final String videoUrl;
-  
-  const WebDownloadButton({super.key, required this.videoUrl});
-  
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.download),
-      onPressed: () => _downloadVideo(),
-    );
-  }
-  
-  void _downloadVideo() {
-    html.AnchorElement(href: videoUrl).download = 'video.mp4';
-    html.document.body?.append(html.AnchorElement(href: videoUrl)..click()..remove());
-  }
-}
-```
 ### 4.3 响应式布局
 ```dart
 class CommonPlayerLayout extends StatelessWidget {
@@ -395,7 +186,6 @@ class CommonPlayerLayout extends StatelessWidget {
         return Column(
           children: [
             Expanded(child: Video(controller: playerService.videoController)),
-            if (!isMobile) _buildDesktopControls(),
             if (isMobile) _buildMobileControls(),
           ],
         );
@@ -405,10 +195,6 @@ class CommonPlayerLayout extends StatelessWidget {
   
   Widget _buildMobileControls() {
     return MobileControlsBar(playerService: playerService);
-  }
-  
-  Widget _buildDesktopControls() {
-    return DesktopControlsBar(playerService: playerService);
   }
 }
 ```
@@ -453,14 +239,7 @@ Widget _buildControlsByPlatform(BuildContext context, PlayerService playerServic
     case TargetPlatform.android:
     case TargetPlatform.iOS:
       return MobileControlsBar(playerService: playerService);
-    case TargetPlatform.windows:
-    case TargetPlatform.macOS:
-    case TargetPlatform.linux:
-      return DesktopControlsBar(playerService: playerService);
     default:
-      if (kIsWeb) {
-        return WebControlsBar(playerService: playerService);
-      }
       return MobileControlsBar(playerService: playerService);
   }
 }
@@ -529,7 +308,7 @@ lib/media_player/ui/player/controls/mobile/
 | **字幕挂载** | 🔄 进行中 | 已实现 `PlayerService` 的 `setSubtitleTrack` 接口及面板列表选择。外挂字幕导入待实现。 | `subtitle_panel.dart`, `player_service.dart` |
 | **音轨切换** | ✅ 已完成 | 监听 `tracksStream` 获取音轨列表，面板仅展示真实轨道（过滤 `auto/no`），点击切换（调用 `setAudioTrack`）。无轨道则展示空态。 | `audio_panel.dart`, `mobile_controls.dart`, `mobile_bottom_bar.dart`, `playback_state.dart`, `player_service.dart` |
 | **画质切换** | ✅ 已完成 | 监听 `tracksStream`，在 `QualityPanel` 列出视频轨道并支持切换。 | `quality_panel.dart`, `playback_state.dart` |
-| **播放模式** | ✅ 已完成 | 明确三种播放模式（连续播放/单集循环/不循环），并将选择持久化；连续播放由上层在播放结束时切下一集。 | `settings_panel.dart`, `playback_state.dart`, `player_service.dart` |
+| **播放模式** | ✅ 已完成 | 支持单曲循环、列表循环、不循环，状态同步至 `media_kit`。 | `settings_panel.dart`, `player_service.dart` |
 | **手势控制** | ✅ 已完成 | `MobileGestureLayer` 支持左侧亮度、右侧音量；水平进度拖动改为按“总位移/屏宽”映射更大范围；双击热区为左25%/中50%/右25%。 | `mobile_controls.dart`, `common_player_layout.dart` |
 | **画面大小** | ✅ 已完成 | 设置面板支持一键切换 50%/75%/100%/125%，通过更新 `PlaybackState.videoScale` 生效。 | `settings_panel.dart`, `playback_state.dart`, `common_player_layout.dart` |
 
@@ -542,7 +321,7 @@ lib/media_player/ui/player/controls/mobile/
 #### 1. 数据来源 (Data Sources)
 - **选集 (Episodes)**: 
   - **来源 A：详情页传入（优先）**：在详情页点击播放时，将当前选择的“季版本 episodes 列表”通过路由 `extra` 传入播放器（字段：`episodes`、`seasonVersionId`）。
-  - **来源 B：后端接口拉取（兜底）**：若未传入 `episodes`，播放器会按当前播放 `fileId` 请求 `/api/media/file/{file_id}/episodes` 获取选集列表，并在本地根据该 `fileId` 反查所属剧集，用于计算上一集/下一集与连续播放。
+  - **来源 B：后端接口拉取（兜底）**：若未传入 `episodes`，播放器会按当前播放 `fileId` 请求 `/api/media/file/{file_id}/episodes` 获取选集列表。
 - **字幕 (Subtitles)**:
   - **内嵌字幕**: 播放器自动识别，通过 `tracksStream` 暴露。
   - **外挂字幕**: 通过后端 API `/api/media/file/{file_id}/subtitles` 获取列表，支持在线加载。
@@ -600,9 +379,7 @@ lib/media_player/ui/player/controls/mobile/
 #### 3) 选集列表加载策略
 - **初始化阶段**：播放器拿到 `fileId` 后，会异步触发一次选集加载：
   - 若路由已传入 `episodes`，直接使用，不再请求后端。
-  - 否则调用 `ApiClient.getEpisodes(fileId)` 拉取，并在本地执行两步处理：
-    1) 以 `EpisodeDetail` 列表作为统一的选集数据结构，写入 `PlaybackState.episodes`；
-    2) 若当前 `fileId` 不是某集的首个资源 fileId，则在该集的全部 `assets` 中查找匹配项，用于定位当前所属剧集索引，保证“最近观看”等入口也可以正确计算上一集/下一集与连续播放。
+  - 否则调用 `ApiClient.getEpisodes(fileId)` 拉取，按“每集首个资源 fileId”等键去重后写入 `PlaybackState.episodes`。
 
 #### 4) 面板 UI 与点击播放
 - **展示内容**：剧集标题（`EpisodeDetail.title`）、封面（`stillPath`）、资源文件名（取首个资源的 path）。
@@ -675,21 +452,5 @@ lib/media_player/ui/player/controls/mobile/
 - [ ] 10. 字幕名称映射
 - [x] 11. 双指缩放与画面位置调整
 
-### 9.4 优化记录（2026-01-15）
-针对移动端体验进行的细节优化：
-
-1.  **选集标题更新修复**:
-    - 修复了在无详情数据（直接播放文件）场景下，切换选集导致标题不断累加的问题。
-    - 优化 `_composeEpisodeTitle` 逻辑：当 `state.detail` 为空时，不再使用 `state.title` 作为基准，而是直接使用选集标题。
-2.  **连续播放逻辑修正**:
-    - 明确三种播放模式，并保证 UI 状态稳定（持久化到本地，重新打开播放器不再重置）。
-    - 连续播放的实现方式：UI 选择 `PlaylistMode.loop`，底层播放器实际设置为 `PlaylistMode.none`（避免单文件场景变成单集循环），由上层监听播放结束事件自动播放下一集。
-    - 播放模式定义：
-        - 连续播放：播放当前集 -> 结束 -> 自动播放下一集（若无下一集则停止）。
-        - 单集循环：播放当前集 -> 结束 -> 从头重新播放当前集。
-        - 不循环：播放当前集 -> 结束 -> 停止。
-3.  **手势控制灵敏度优化**:
-    - 降低 `MobileGestureLayer` 中单指滑动的识别阈值（从 6 降至 2），解决了小范围滑动无法触发亮度/音量/进度调节的问题。
-4.  **竖屏字幕位置调整**:
-    - 优化 `CommonPlayerLayout` 布局逻辑：当视频适配模式为 `BoxFit.contain` 且能获取到视频尺寸时，使用 `AspectRatio` 包裹 `Video` 组件。
-    - 效果：使 `Video` 组件的渲染区域严格贴合视频画面，从而让 `media_kit_video` 渲染的字幕相对于视频画面定位，而非固定在屏幕底部黑边区域。
+### 9.3 开发记录
+- 2026-01-03：修复沉浸式全屏（进入播放页即开启 immersiveSticky），字幕样式配置生效并增大字号（当前字幕字号为 34）；字幕切换增加去重与切换中保护；恢复长按 2 倍速手势；移动端控制层支持 3 秒自动隐藏，且 UI 显示时不会禁用手势；锁屏状态改为由 `PlaybackState.isLocked` 统一管理并强制显示解锁按钮；PiP 增加 Manifest 配置并复用 Floating 实例；系统音量隐藏音量条并对音量设置做节流。

@@ -15,10 +15,7 @@ class RecentRepository {
   /// 网络 API 客户端。
   final ApiClient api;
 
-  const RecentRepository({
-    required this.local,
-    required this.api,
-  });
+  const RecentRepository({required this.local, required this.api});
 
   /// 获取最近观看（用于首页区块）。
   ///
@@ -51,8 +48,11 @@ class RecentRepository {
     String sort = 'updated_desc',
   }) async {
     if (!api.isLoggedIn) return const [];
-    final raw =
-        await api.getRecentRaw(page: page, pageSize: pageSize, sort: sort);
+    final raw = await api.getRecentRaw(
+      page: page,
+      pageSize: pageSize,
+      sort: sort,
+    );
     final items = raw.map(RecentCardItem.fromApi).toList();
 
     final merged = <RecentCardItem>[];
@@ -75,7 +75,9 @@ class RecentRepository {
   }
 
   RecentCardItem _mergeItemWithLocal(
-      RecentCardItem remoteItem, PlaybackProgressRecord localRecord) {
+    RecentCardItem remoteItem,
+    PlaybackProgressRecord localRecord,
+  ) {
     final remotePos = remoteItem.positionMs ?? 0;
     final localPos = localRecord.positionMs;
     final shouldPreferLocal = localRecord.dirty || localPos >= remotePos;
@@ -89,11 +91,16 @@ class RecentRepository {
           ? (localRecord.durationMs ?? remoteItem.durationMs)
           : remoteItem.durationMs,
       fileId: remoteItem.fileId,
+      seriesName: remoteItem.seriesName,
+      seasonIndex: remoteItem.seasonIndex,
+      episodeIndex: remoteItem.episodeIndex,
+      episodeTitle: remoteItem.episodeTitle,
     );
   }
 
   Future<void> _mergeRemoteRecentIntoLocal(
-      List<RecentCardItem> remoteItems) async {
+    List<RecentCardItem> remoteItems,
+  ) async {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     for (var i = 0; i < remoteItems.length; i++) {
       final item = remoteItems[i];
@@ -110,8 +117,10 @@ class RecentRepository {
         fileId: fid,
         coreId: item.id,
         mediaType: item.mediaType,
-        positionMs:
-            _choosePositionMs(existing: existing, remotePositionMs: remotePos),
+        positionMs: _choosePositionMs(
+          existing: existing,
+          remotePositionMs: remotePos,
+        ),
         durationMs: existing?.durationMs ?? remoteDur,
         updatedAtMs: existing == null
             ? stamp

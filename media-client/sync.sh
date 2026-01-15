@@ -2,7 +2,7 @@
 
 # 定义源目录和目标目录
 SOURCE_DIR="/home/meal/mediacmn/media-client"
-TARGET_DIR="/mnt/d/FlutterApp/media-client"
+TARGET_DIR="/mnt/d/FlutterApp/test"
 
 # 确保目标目录存在
 mkdir -p "$TARGET_DIR"
@@ -18,6 +18,6 @@ rsync -avz --delete "$SOURCE_DIR/lib/" "$TARGET_DIR/lib/"
 # rsync -avz --delete "$SOURCE_DIR/windows/" "$TARGET_DIR/windows/"
 
 # 同步 pubspec.yaml
-rsync -avz "$SOURCE_DIR/pubspec.yaml" "$TARGET_DIR/pubspec.yaml"
+# rsync -avz "$SOURCE_DIR/pubspec.yaml" "$TARGET_DIR/pubspec.yaml"
 
 echo "同步完成！"

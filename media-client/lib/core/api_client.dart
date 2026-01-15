@@ -139,9 +139,11 @@ class ApiClient {
     if (rt == null || rt.isEmpty) {
       return;
     }
-    final res = await _client.post(_u('/api/auth/refresh'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'refresh_token': rt}));
+    final res = await _client.post(
+      _u('/api/auth/refresh'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'refresh_token': rt}),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final accessToken = data['access_token'] as String?;
@@ -217,9 +219,13 @@ class ApiClient {
   }
 
   Future<List<Map<String, dynamic>>> listDirectory(
-      int storageId, String path) async {
+    int storageId,
+    String path,
+  ) async {
     final res = await _client.get(
-      _u('/api/storage-server/$storageId/list?path=${Uri.encodeComponent(path)}'),
+      _u(
+        '/api/storage-server/$storageId/list?path=${Uri.encodeComponent(path)}',
+      ),
       headers: _headers(),
     );
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -231,9 +237,13 @@ class ApiClient {
   }
 
   Future<List<Map<String, dynamic>>> listOnlyDirectory(
-      int storageId, String path) async {
+    int storageId,
+    String path,
+  ) async {
     final res = await _client.get(
-      _u('/api/storage-server/$storageId/listdir?path=${Uri.encodeComponent(path)}'),
+      _u(
+        '/api/storage-server/$storageId/listdir?path=${Uri.encodeComponent(path)}',
+      ),
       headers: _headers(),
     );
     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -276,8 +286,10 @@ class ApiClient {
 
   /// 获取任务组状态
   Future<List<ScanTask>> getGroup(String groupId) async {
-    final res =
-        await _client.get(_u('/api/scan/groups/$groupId'), headers: _headers());
+    final res = await _client.get(
+      _u('/api/scan/groups/$groupId'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final items = (data['tasks'] as List).cast<Map<String, dynamic>>();
@@ -288,12 +300,15 @@ class ApiClient {
 
   /// 创建存储配置
   Future<SourceCreateResponse> createSource(
-      Map<String, dynamic> payload) async {
+    Map<String, dynamic> payload,
+  ) async {
     final normalized = _normalizeWebdavPayload(payload);
     // 307 Redirect fix: Add trailing slash
-    final res = await _client.post(_u('/api/storage-config/'),
-        headers: _headers(headers: {'Content-Type': 'application/json'}),
-        body: jsonEncode(normalized));
+    final res = await _client.post(
+      _u('/api/storage-config/'),
+      headers: _headers(headers: {'Content-Type': 'application/json'}),
+      body: jsonEncode(normalized),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return SourceCreateResponse.fromJson(data);
@@ -303,8 +318,10 @@ class ApiClient {
 
   /// 获取指定存储的任务列表
   Future<List<ScanTask>> getTasksBySource(String sourceId) async {
-    final res = await _client.get(_u('/api/tasks?sources=$sourceId'),
-        headers: _headers());
+    final res = await _client.get(
+      _u('/api/tasks?sources=$sourceId'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list.map(ScanTask.fromJson).toList();
@@ -314,8 +331,10 @@ class ApiClient {
 
   /// 获取扫描任务状态
   Future<Map<String, dynamic>> getScanTaskStatus(String taskId) async {
-    final res =
-        await _client.get(_u('/api/scan/status/$taskId'), headers: _headers());
+    final res = await _client.get(
+      _u('/api/scan/status/$taskId'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return data;
@@ -327,8 +346,10 @@ class ApiClient {
   ///
   /// 对应接口：`GET /api/tasks/{task_id}`
   Future<Map<String, dynamic>> getTaskStatus(String taskId) async {
-    final res =
-        await _client.get(_u('/api/tasks/$taskId'), headers: _headers());
+    final res = await _client.get(
+      _u('/api/tasks/$taskId'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return data;
@@ -338,8 +359,10 @@ class ApiClient {
 
   Future<bool> testStorageConnection(String storageId) async {
     final sid = int.tryParse(storageId) ?? storageId;
-    final res = await _client.get(_u('/api/storage-server/$sid/test'),
-        headers: _headers());
+    final res = await _client.get(
+      _u('/api/storage-server/$sid/test'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return (data['success'] as bool?) ?? true;
@@ -348,8 +371,10 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> getPlayUrl(int fileId) async {
-    final res =
-        await _client.get(_u('/api/media/play/$fileId'), headers: _headers());
+    final res = await _client.get(
+      _u('/api/media/play/$fileId'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return data;
@@ -358,9 +383,11 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> refreshPlayUrl(int fileId) async {
-    final res = await _client.post(_u('/api/media/play/refresh'),
-        headers: _headers(headers: {'Content-Type': 'application/json'}),
-        body: jsonEncode({'file_id': fileId}));
+    final res = await _client.post(
+      _u('/api/media/play/refresh'),
+      headers: _headers(headers: {'Content-Type': 'application/json'}),
+      body: jsonEncode({'file_id': fileId}),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return data;
@@ -374,8 +401,10 @@ class ApiClient {
   /// `{ "position_ms": 0, "duration_ms": null }`。
   /// 仅使用 `position_ms`，未记录或请求失败时返回 null。
   Future<int?> getPlaybackProgress(int fileId) async {
-    final res = await _client.get(_u('/api/playback/progress/$fileId'),
-        headers: _headers());
+    final res = await _client.get(
+      _u('/api/playback/progress/$fileId'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final v = (data['position_ms'] as num?)?.toInt();
@@ -423,13 +452,18 @@ class ApiClient {
     if (res.statusCode >= 200 && res.statusCode < 300) return;
   }
 
-  Future<List<RecentCardItem>> getRecent(
-      {int limit = 20, String? sort, String? dedup}) async {
+  Future<List<RecentCardItem>> getRecent({
+    int limit = 20,
+    String? sort,
+    String? dedup,
+  }) async {
     final qs = <String>['limit=$limit'];
     if (sort != null && sort.isNotEmpty) qs.add('sort=$sort');
     if (dedup != null && dedup.isNotEmpty) qs.add('dedup=$dedup');
-    final res = await _client.get(_u('/api/playback/recent?${qs.join('&')}'),
-        headers: _headers());
+    final res = await _client.get(
+      _u('/api/playback/recent?${qs.join('&')}'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list.map(RecentCardItem.fromApi).toList();
@@ -449,8 +483,10 @@ class ApiClient {
     if (dedup != null && dedup.isNotEmpty) qs.add('dedup=$dedup');
     if (sort != null && sort.isNotEmpty) qs.add('sort=$sort');
     final q = qs.isEmpty ? '' : '?${qs.join('&')}';
-    final res =
-        await _client.get(_u('/api/playback/recent$q'), headers: _headers());
+    final res = await _client.get(
+      _u('/api/playback/recent$q'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list;
@@ -459,16 +495,20 @@ class ApiClient {
   }
 
   Future<void> deletePlaybackProgress(int fileId) async {
-    final res = await _client.delete(_u('/api/playback/progress/$fileId'),
-        headers: _headers());
+    final res = await _client.delete(
+      _u('/api/playback/progress/$fileId'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) return;
     throw Exception('删除播放进度失败');
   }
 
   Future<HomeCardsResponse> getLibraryHome() async {
     // 接入后端真实API：/api/media/cards/home
-    final res =
-        await _client.get(_u('/api/media/cards/home'), headers: _headers());
+    final res = await _client.get(
+      _u('/api/media/cards/home'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return HomeCardsResponse.fromJson(data);
@@ -476,11 +516,17 @@ class ApiClient {
     throw Exception('获取首页内容失败');
   }
 
-  Future<PagedMediaResponse> getLibraryCategoryItems(String categoryId,
-      {int page = 1, int pageSize = 30}) async {
+  Future<PagedMediaResponse> getLibraryCategoryItems(
+    String categoryId, {
+    int page = 1,
+    int pageSize = 30,
+  }) async {
     final res = await _client.get(
-        _u('/api/library/categories/$categoryId/items?page=$page&page_size=$pageSize'),
-        headers: _headers());
+      _u(
+        '/api/library/categories/$categoryId/items?page=$page&page_size=$pageSize',
+      ),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return PagedMediaResponse.fromJson(data);
@@ -521,8 +567,10 @@ class ApiClient {
     final queryString = params.entries
         .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
         .join('&');
-    final res = await _client.get(_u('/api/media/cards?$queryString'),
-        headers: _headers());
+    final res = await _client.get(
+      _u('/api/media/cards?$queryString'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return FilterCardsResponse.fromJson(data);
@@ -532,8 +580,10 @@ class ApiClient {
 
   /// 获取媒体详情
   Future<MediaDetail> getMediaDetail(int id) async {
-    final res =
-        await _client.get(_u('/api/media/$id/detail'), headers: _headers());
+    final res = await _client.get(
+      _u('/api/media/$id/detail'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return MediaDetail.fromJson(data);
@@ -543,8 +593,10 @@ class ApiClient {
 
   /// 获取指定文件的外挂字幕列表
   Future<List<Map<String, dynamic>>> getSubtitles(int fileId) async {
-    final res = await _client.get(_u('/api/media/file/$fileId/subtitles'),
-        headers: _headers());
+    final res = await _client.get(
+      _u('/api/media/file/$fileId/subtitles'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final items =
@@ -570,8 +622,10 @@ class ApiClient {
 
   /// 获取指定文件所属剧集的选集列表
   Future<FileEpisodesResponse> getEpisodes(int fileId) async {
-    final res = await _client.get(_u('/api/media/file/$fileId/episodes'),
-        headers: _headers());
+    final res = await _client.get(
+      _u('/api/media/file/$fileId/episodes'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return FileEpisodesResponse.fromJson(data);
@@ -580,8 +634,10 @@ class ApiClient {
   }
 
   Future<List<SourceItem>> getSources({int page = 1, int size = 20}) async {
-    final res =
-        await _client.get(_u('/api/storage-config/'), headers: _headers());
+    final res = await _client.get(
+      _u('/api/storage-config/'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
       return list.map(SourceItem.fromJson).toList();
@@ -599,8 +655,10 @@ class ApiClient {
   }
 
   Future<SourceItem> getSource(String sourceId) async {
-    final res = await _client.get(_u('/api/storage-config/$sourceId'),
-        headers: _headers());
+    final res = await _client.get(
+      _u('/api/storage-config/$sourceId'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final wrapped = data['data'] as Map<String, dynamic>?;
@@ -610,8 +668,10 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> getStorageDetail(String sourceId) async {
-    final res = await _client.get(_u('/api/storage-config/$sourceId'),
-        headers: _headers());
+    final res = await _client.get(
+      _u('/api/storage-config/$sourceId'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final wrapped = data['data'] as Map<String, dynamic>?;
@@ -621,11 +681,15 @@ class ApiClient {
   }
 
   Future<void> updateSource(
-      String sourceId, Map<String, dynamic> payload) async {
+    String sourceId,
+    Map<String, dynamic> payload,
+  ) async {
     final normalized = _normalizeWebdavPayload(payload);
-    final res = await _client.put(_u('/api/storage-config/$sourceId'),
-        headers: _headers(headers: {'Content-Type': 'application/json'}),
-        body: jsonEncode(normalized));
+    final res = await _client.put(
+      _u('/api/storage-config/$sourceId'),
+      headers: _headers(headers: {'Content-Type': 'application/json'}),
+      body: jsonEncode(normalized),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) return;
     throw Exception('更新存储失败');
   }
@@ -644,16 +708,20 @@ class ApiClient {
   }
 
   Future<void> deleteSource(String sourceId) async {
-    final res = await _client.delete(_u('/api/storage-config/$sourceId'),
-        headers: _headers());
+    final res = await _client.delete(
+      _u('/api/storage-config/$sourceId'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) return;
     throw Exception('删除存储失败');
   }
 
   Future<String> loginWithEmail(String email, String password) async {
-    final res = await _client.post(_u('/api/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}));
+    final res = await _client.post(
+      _u('/api/auth/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email, 'password': password}),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final accessToken = data['access_token'] as String?;
@@ -674,9 +742,11 @@ class ApiClient {
   }
 
   Future<void> register(String email, String password) async {
-    final res = await _client.post(_u('/api/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}));
+    final res = await _client.post(
+      _u('/api/auth/register'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email, 'password': password}),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return;
     }
@@ -684,14 +754,18 @@ class ApiClient {
   }
 
   /// 搜索 TMDB 媒体信息
-  Future<Map<String, dynamic>> searchTmdb(String query, String type,
-      {int page = 1}) async {
+  Future<Map<String, dynamic>> searchTmdb(
+    String query,
+    String type, {
+    int page = 1,
+  }) async {
     final encodedQuery = Uri.encodeComponent(query);
     // 新接口: /api/tmdb/search/tv?q=...
     // 假设 movie 接口为 /api/tmdb/search/movie?q=...
     final res = await _client.get(
-        _u('/api/tmdb/search/$type?q=$encodedQuery&page=$page&language=zh-CN'),
-        headers: _headers());
+      _u('/api/tmdb/search/$type?q=$encodedQuery&page=$page&language=zh-CN'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -701,8 +775,10 @@ class ApiClient {
   /// 获取 TMDB 剧集的所有季列表
   Future<Map<String, dynamic>> getTmdbTvSeasons(int tmdbTvId) async {
     // 新接口: /api/tmdb/tv/{id}?language=zh-CN
-    final res = await _client.get(_u('/api/tmdb/tv/$tmdbTvId?language=zh-CN'),
-        headers: _headers());
+    final res = await _client.get(
+      _u('/api/tmdb/tv/$tmdbTvId?language=zh-CN'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -711,11 +787,14 @@ class ApiClient {
 
   /// 获取 TMDB 某一季的所有集信息
   Future<Map<String, dynamic>> getTmdbTvSeasonEpisodes(
-      int tmdbTvId, int seasonNumber) async {
+    int tmdbTvId,
+    int seasonNumber,
+  ) async {
     // 新接口: /api/tmdb/tv/{id}/season/{season}?language=zh-CN
     final res = await _client.get(
-        _u('/api/tmdb/tv/$tmdbTvId/season/$seasonNumber?language=zh-CN'),
-        headers: _headers());
+      _u('/api/tmdb/tv/$tmdbTvId/season/$seasonNumber?language=zh-CN'),
+      headers: _headers(),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -724,10 +803,14 @@ class ApiClient {
 
   /// 保存手动匹配结果
   Future<Map<String, dynamic>> saveManualMatch(
-      int mediaId, Map<String, dynamic> payload) async {
-    final res = await _client.put(_u('/api/media/$mediaId/manual-match'),
-        headers: _headers(headers: {'Content-Type': 'application/json'}),
-        body: jsonEncode(payload));
+    int mediaId,
+    Map<String, dynamic> payload,
+  ) async {
+    final res = await _client.put(
+      _u('/api/media/$mediaId/manual-match'),
+      headers: _headers(headers: {'Content-Type': 'application/json'}),
+      body: jsonEncode(payload),
+    );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -737,9 +820,7 @@ class ApiClient {
 
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
 
-final authUserProvider = FutureProvider<Map<String, dynamic>?>(
-  (ref) async {
-    final api = ref.watch(apiClientProvider);
-    return api.getCurrentUser();
-  },
-);
+final authUserProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
+  final api = ref.watch(apiClientProvider);
+  return api.getCurrentUser();
+});

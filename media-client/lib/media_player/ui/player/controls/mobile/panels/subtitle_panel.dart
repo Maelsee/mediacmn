@@ -53,9 +53,10 @@ class SubtitlePanel extends StatelessWidget {
                   Text(
                     '可用字幕',
                     style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold),
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -74,8 +75,10 @@ class SubtitlePanel extends StatelessWidget {
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
-                const Text('外挂字幕',
-                    style: TextStyle(color: Colors.white, fontSize: 14)),
+                const Text(
+                  '外挂字幕',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
                 const Spacer(),
                 const Icon(Icons.input, size: 16, color: Colors.white70),
                 const SizedBox(width: 4),
@@ -83,8 +86,10 @@ class SubtitlePanel extends StatelessWidget {
                   onTap: () {
                     // TODO: Import subtitle
                   },
-                  child: const Text('导入',
-                      style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  child: const Text(
+                    '导入',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
                 ),
               ],
             ),

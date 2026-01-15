@@ -71,9 +71,9 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
     // 监听保存错误
     ref.listen(manualMatchProvider(widget.mediaId), (prev, next) {
       if (next.saveError != null && next.saveError != prev?.saveError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(next.saveError!)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(next.saveError!)));
       }
     });
 
@@ -104,7 +104,8 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Text('保存'),
           ),
         ],
@@ -116,17 +117,19 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: Theme.of(context)
-                  .colorScheme
-                  .surfaceContainerHighest
-                  .withValues(alpha: 0.3),
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.description_outlined,
-                          size: 14, color: Colors.grey),
+                      const Icon(
+                        Icons.description_outlined,
+                        size: 14,
+                        color: Colors.grey,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         '${state.fileItems.length} 个文件',
@@ -141,8 +144,11 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
                       children: [
                         const Padding(
                           padding: EdgeInsets.only(top: 2),
-                          child: Icon(Icons.folder_open,
-                              size: 14, color: Colors.grey),
+                          child: Icon(
+                            Icons.folder_open,
+                            size: 14,
+                            color: Colors.grey,
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -166,9 +172,10 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('搜索并匹配影片',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const Text(
+                  '搜索并匹配影片',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 12),
                 if (state.selectedTmdbItem == null)
                   TextField(
@@ -186,8 +193,9 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide.none,
                       ),
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 16),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                      ),
                     ),
                     onSubmitted: notifier.search,
                   )
@@ -228,7 +236,8 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
                               Text(
                                 state.selectedTmdbItem!.title,
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               Text(
                                 '${state.selectedTmdbItem!.type == 'movie' ? '电影' : '剧集'} · ${state.selectedTmdbItem!.releaseDate?.split('-').first ?? ''}',
@@ -262,11 +271,16 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: const [
-                                  Icon(Icons.movie_filter,
-                                      size: 48, color: Colors.grey),
+                                  Icon(
+                                    Icons.movie_filter,
+                                    size: 48,
+                                    color: Colors.grey,
+                                  ),
                                   SizedBox(height: 16),
-                                  Text('仅搜索影片名，暂不支持搜索演员',
-                                      style: TextStyle(color: Colors.grey)),
+                                  Text(
+                                    '仅搜索影片名，暂不支持搜索演员',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
                                 ],
                               ),
                             )
@@ -320,26 +334,40 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
                                 final choice = state.draftChoices[file.fileId];
 
                                 return ListTile(
-                                  title: Text(file.displayName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis),
-                                  subtitle: Text(file.path,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                          fontSize: 10, color: Colors.grey)),
+                                  title: Text(
+                                    file.displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    file.path,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       _buildChoiceChip(context, choice, file),
-                                      const Icon(Icons.chevron_right,
-                                          size: 16, color: Colors.grey),
+                                      const Icon(
+                                        Icons.chevron_right,
+                                        size: 16,
+                                        color: Colors.grey,
+                                      ),
                                     ],
                                   ),
                                   onTap: () {
                                     // 打开选集面板
                                     _showEpisodePicker(
-                                        context, state, notifier, file, choice);
+                                      context,
+                                      state,
+                                      notifier,
+                                      file,
+                                      choice,
+                                    );
                                   },
                                 );
                               },
@@ -353,8 +381,11 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
     );
   }
 
-  Widget _buildChoiceChip(BuildContext context, ManualMatchChoice? choice,
-      ManualMatchFileItem file) {
+  Widget _buildChoiceChip(
+    BuildContext context,
+    ManualMatchChoice? choice,
+    ManualMatchFileItem file,
+  ) {
     String label = '暂不改动';
     Color color = Colors.grey;
 
@@ -389,8 +420,11 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
     );
   }
 
-  void _showSeasonPicker(BuildContext context, ManualMatchState state,
-      ManualMatchNotifier notifier) {
+  void _showSeasonPicker(
+    BuildContext context,
+    ManualMatchState state,
+    ManualMatchNotifier notifier,
+  ) {
     showModalBottomSheet(
       context: context,
       builder: (context) {
@@ -399,8 +433,10 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
           children: [
             const Padding(
               padding: EdgeInsets.all(16),
-              child: Text('选择季',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              child: Text(
+                '选择季',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
             ),
             Expanded(
               child: ListView.builder(
@@ -425,11 +461,12 @@ class _ManualMatchPageState extends ConsumerState<ManualMatchPage> {
   }
 
   void _showEpisodePicker(
-      BuildContext context,
-      ManualMatchState state,
-      ManualMatchNotifier notifier,
-      ManualMatchFileItem file,
-      ManualMatchChoice? currentChoice) {
+    BuildContext context,
+    ManualMatchState state,
+    ManualMatchNotifier notifier,
+    ManualMatchFileItem file,
+    ManualMatchChoice? currentChoice,
+  ) {
     // 如果是电影，不需要选集，直接是“绑定/不绑定”？
     // 简化处理：电影也弹窗，但只有 keep/other/bind_movie
 

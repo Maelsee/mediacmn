@@ -83,25 +83,30 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-          title: Text(widget.sourceId == null ? '添加 WebDAV' : '编辑 WebDAV')),
+        title: Text(widget.sourceId == null ? '添加 WebDAV' : '编辑 WebDAV'),
+      ),
       body: Form(
         key: _form,
-        child: ListView(padding: const EdgeInsets.all(16), children: [
-          Card(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
               child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(children: [
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
                     TextFormField(
-                        controller: _name,
-                        decoration: const InputDecoration(labelText: '名称'),
-                        validator: _req),
+                      controller: _name,
+                      decoration: const InputDecoration(labelText: '名称'),
+                      validator: _req,
+                    ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       key: ValueKey(_protocol),
                       initialValue: _protocol,
                       items: const [
                         DropdownMenuItem(value: 'HTTP', child: Text('HTTP')),
-                        DropdownMenuItem(value: 'HTTPS', child: Text('HTTPS'))
+                        DropdownMenuItem(value: 'HTTPS', child: Text('HTTPS')),
                       ],
                       onChanged: (v) {
                         if (v == null) return;
@@ -116,10 +121,13 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
                         Expanded(
                           flex: 2,
                           child: TextFormField(
-                              controller: _endpoint,
-                              decoration: const InputDecoration(
-                                  labelText: '地址*', hintText: 'IP或域名'),
-                              validator: _req),
+                            controller: _endpoint,
+                            decoration: const InputDecoration(
+                              labelText: '地址*',
+                              hintText: 'IP或域名',
+                            ),
+                            validator: _req,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -127,7 +135,9 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
                           child: TextFormField(
                             controller: _port,
                             decoration: const InputDecoration(
-                                labelText: '端口', hintText: '选填'),
+                              labelText: '端口',
+                              hintText: '选填',
+                            ),
                             keyboardType: TextInputType.number,
                           ),
                         ),
@@ -135,30 +145,40 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
-                        controller: _basePath,
-                        decoration: const InputDecoration(
-                            labelText: '路径', hintText: '例如：/dav')),
+                      controller: _basePath,
+                      decoration: const InputDecoration(
+                        labelText: '路径',
+                        hintText: '例如：/dav',
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     TextFormField(
-                        controller: _username,
-                        decoration:
-                            const InputDecoration(labelText: '用户名(选填)')),
+                      controller: _username,
+                      decoration: const InputDecoration(labelText: '用户名(选填)'),
+                    ),
                     const SizedBox(height: 12),
                     TextFormField(
-                        controller: _password,
-                        decoration: const InputDecoration(labelText: '密码(选填)'),
-                        obscureText: true),
-                  ]))),
-          const SizedBox(height: 16),
-          FilledButton(
+                      controller: _password,
+                      decoration: const InputDecoration(labelText: '密码(选填)'),
+                      obscureText: true,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
               onPressed: _busy ? null : _onSave,
               child: _busy
                   ? const SizedBox(
                       height: 16,
                       width: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : Text(widget.sourceId == null ? '添加' : '保存')),
-        ]),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(widget.sourceId == null ? '添加' : '保存'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -226,7 +246,7 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
             'login': _username.text,
             'root_path': _basePath.text,
             if (_password.text.isNotEmpty) 'password': _password.text,
-          }
+          },
         };
         await api.updateSource(widget.sourceId!, payload);
         ref
@@ -239,8 +259,9 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
           'root_path': _basePath.text,
         });
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('保存成功')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('保存成功')));
           if (mounted) context.pop(true);
         }
       } else {
@@ -252,8 +273,8 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
             'login': _username.text,
             'password': _password.text,
             'root_path': _basePath.text,
-            'verify_ssl': true
-          }
+            'verify_ssl': true,
+          },
         });
         ref.read(sourcesProvider.notifier).cacheDetail(res.id, {
           'name': _name.text,
@@ -264,8 +285,9 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
           'verify_ssl': true,
         });
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('保存成功：${res.id}')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('保存成功：${res.id}')));
           await ref.read(sourcesProvider.notifier).load();
           if (res.taskId != null) {
             ref
@@ -282,8 +304,9 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('保存失败：$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('保存失败：$e')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);

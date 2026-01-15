@@ -18,9 +18,11 @@ class _HomeSectionsPageState extends ConsumerState<HomeSectionsPage> {
     super.initState();
     final s = ref.read(settingsProvider);
     _order = List.of(s.order.isEmpty ? defaultSections : s.order);
-    _vis = Map.of(s.visibility.isEmpty
-        ? {for (final i in defaultSections) i: true}
-        : s.visibility);
+    _vis = Map.of(
+      s.visibility.isEmpty
+          ? {for (final i in defaultSections) i: true}
+          : s.visibility,
+    );
   }
 
   @override
@@ -34,9 +36,7 @@ class _HomeSectionsPageState extends ConsumerState<HomeSectionsPage> {
           icon: const Icon(Icons.arrow_back_ios),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          TextButton(onPressed: _onSave, child: const Text('保存')),
-        ],
+        actions: [TextButton(onPressed: _onSave, child: const Text('保存'))],
       ),
       body: ReorderableListView.builder(
         itemCount: _order.length,
@@ -53,9 +53,11 @@ class _HomeSectionsPageState extends ConsumerState<HomeSectionsPage> {
           return ListTile(
             key: ValueKey(name),
             leading: IconButton(
-              icon: Icon(visible
-                  ? Icons.remove_circle_outline
-                  : Icons.add_circle_outline),
+              icon: Icon(
+                visible
+                    ? Icons.remove_circle_outline
+                    : Icons.add_circle_outline,
+              ),
               onPressed: () => setState(() => _vis[name] = !visible),
             ),
             title: Text(name),

@@ -88,8 +88,10 @@ class _MediaLibraryHomePageState extends ConsumerState<MediaLibraryHomePage>
           children: const [
             Icon(Icons.movie_filter_outlined, size: 72),
             SizedBox(height: 16),
-            Text('欢迎来到个人影视库！',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            Text(
+              '欢迎来到个人影视库！',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
             SizedBox(height: 8),
             Text('添加视频资源后即可打造私人影视库，随时随地观看', textAlign: TextAlign.center),
             SizedBox(height: 16),

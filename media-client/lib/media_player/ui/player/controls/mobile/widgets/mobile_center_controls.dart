@@ -47,10 +47,7 @@ class MobileCenterControls extends StatelessWidget {
               icon: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
-                    Icons.screen_rotation,
-                    color: Colors.white,
-                  ),
+                  const Icon(Icons.screen_rotation, color: Colors.white),
                   const SizedBox(height: 4),
                   const Text(
                     '旋转',

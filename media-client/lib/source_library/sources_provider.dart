@@ -8,11 +8,12 @@ class SourcesState {
   final bool loading;
   final String? error;
   final Map<String, Map<String, dynamic>> details;
-  const SourcesState(
-      {this.items = const [],
-      this.loading = false,
-      this.error,
-      this.details = const {}});
+  const SourcesState({
+    this.items = const [],
+    this.loading = false,
+    this.error,
+    this.details = const {},
+  });
 }
 
 class SourcesNotifier extends StateNotifier<SourcesState> {
@@ -43,32 +44,39 @@ class SourcesNotifier extends StateNotifier<SourcesState> {
 
   void setStatus(String sourceId, String status) {
     final updated = state.items
-        .map((it) => it.id == sourceId
-            ? SourceItem(
-                id: it.id,
-                type: it.type,
-                name: it.name,
-                status: status,
-                lastScan: it.lastScan)
-            : it)
+        .map(
+          (it) => it.id == sourceId
+              ? SourceItem(
+                  id: it.id,
+                  type: it.type,
+                  name: it.name,
+                  status: status,
+                  lastScan: it.lastScan,
+                )
+              : it,
+        )
         .toList();
     state = SourcesState(
-        items: updated,
-        loading: state.loading,
-        error: state.error,
-        details: state.details);
+      items: updated,
+      loading: state.loading,
+      error: state.error,
+      details: state.details,
+    );
   }
 
   void updateName(String sourceId, String name) {
     final updated = state.items
-        .map((it) => it.id == sourceId
-            ? SourceItem(
-                id: it.id,
-                type: it.type,
-                name: name,
-                status: it.status,
-                lastScan: it.lastScan)
-            : it)
+        .map(
+          (it) => it.id == sourceId
+              ? SourceItem(
+                  id: it.id,
+                  type: it.type,
+                  name: name,
+                  status: it.status,
+                  lastScan: it.lastScan,
+                )
+              : it,
+        )
         .toList();
     final newDetails = Map<String, Map<String, dynamic>>.from(state.details);
     final d = newDetails[sourceId];
@@ -76,20 +84,22 @@ class SourcesNotifier extends StateNotifier<SourcesState> {
       newDetails[sourceId] = {...d, 'name': name};
     }
     state = SourcesState(
-        items: updated,
-        loading: state.loading,
-        error: state.error,
-        details: newDetails);
+      items: updated,
+      loading: state.loading,
+      error: state.error,
+      details: newDetails,
+    );
   }
 
   void cacheDetail(String sourceId, Map<String, dynamic> detail) {
     final newDetails = Map<String, Map<String, dynamic>>.from(state.details);
     newDetails[sourceId] = {...(newDetails[sourceId] ?? {}), ...detail};
     state = SourcesState(
-        items: state.items,
-        loading: state.loading,
-        error: state.error,
-        details: newDetails);
+      items: state.items,
+      loading: state.loading,
+      error: state.error,
+      details: newDetails,
+    );
   }
 
   Future<Map<String, dynamic>> getDetail(String sourceId) async {
@@ -136,8 +146,9 @@ class SourcesNotifier extends StateNotifier<SourcesState> {
   }
 }
 
-final sourcesProvider =
-    StateNotifierProvider<SourcesNotifier, SourcesState>((ref) {
+final sourcesProvider = StateNotifierProvider<SourcesNotifier, SourcesState>((
+  ref,
+) {
   final api = ref.watch(apiClientProvider);
   final n = SourcesNotifier(api);
   n.load();

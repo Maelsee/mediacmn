@@ -92,51 +92,59 @@ class _MediaKindPageState extends ConsumerState<MediaKindPage> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Column(children: [
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Text('加载失败：$_error'),
-          ),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _onRefresh,
-            child: GridView.builder(
-              controller: _controller,
+      body: Column(
+        children: [
+          if (_error != null)
+            Padding(
               padding: const EdgeInsets.all(12),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 150,
-                mainAxisExtent: 220,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 12,
-              ),
-              itemCount: _items.length + (_loading ? 9 : 0),
-              itemBuilder: (ctx, i) {
-                if (i < _items.length) {
-                  final it = _items[i];
-                  return MediaCard(
-                      item: it, width: double.infinity, height: 220);
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: AspectRatio(
-                        aspectRatio: 0.68,
-                        child: Container(color: Colors.grey.shade300),
+              child: Text('加载失败：$_error'),
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _onRefresh,
+              child: GridView.builder(
+                controller: _controller,
+                padding: const EdgeInsets.all(12),
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 150,
+                  mainAxisExtent: 220,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 12,
+                ),
+                itemCount: _items.length + (_loading ? 9 : 0),
+                itemBuilder: (ctx, i) {
+                  if (i < _items.length) {
+                    final it = _items[i];
+                    return MediaCard(
+                      item: it,
+                      width: double.infinity,
+                      height: 220,
+                    );
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: AspectRatio(
+                          aspectRatio: 0.68,
+                          child: Container(color: Colors.grey.shade300),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                        height: 14, width: 80, color: Colors.grey.shade300),
-                  ],
-                );
-              },
+                      const SizedBox(height: 6),
+                      Container(
+                        height: 14,
+                        width: 80,
+                        color: Colors.grey.shade300,
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 }

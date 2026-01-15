@@ -71,10 +71,8 @@ class _LoadingOverlayState extends State<LoadingOverlay>
     _progressAnimation?.removeListener(_onProgressTick);
     _progressController.stop();
 
-    _progressAnimation = Tween<double>(
-      begin: _displayProgress,
-      end: target,
-    ).animate(
+    _progressAnimation =
+        Tween<double>(begin: _displayProgress, end: target).animate(
       CurvedAnimation(
         parent: _progressController,
         curve: Curves.easeOutCubic,
@@ -113,9 +111,7 @@ class _LoadingOverlayState extends State<LoadingOverlay>
               const SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                ),
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
               const SizedBox(width: 12),
               Text(

@@ -142,9 +142,6 @@ A new Flutter project.
 2.  **Windows 构建失败（.plugin_symlinks 缺失）**：
     *   现象：CMake 报 `flutter/ephemeral/.plugin_symlinks/<plugin>/windows` 目录不存在。
     *   根因：Windows 环境下插件链接目录生成失败（常见于开发者模式未开启、权限/安全策略或路径问题）。
-3.  **打开播放窗口后主窗口“不可操作”**：
-    *   现象：播放窗口可播放，但主窗口看似无法点击/操作。
-    *   根因：叠加了两类问题：1) go_router `go` 进入播放页无返回栈，导致启动页遮罩未退出；2) Windows 下子窗口若被当作“模态/拥有者窗口”处理，主窗口可能被禁用而不接收输入。
 
 **改动**：
 1.  **补齐新引擎插件注册回调**：
@@ -153,13 +150,79 @@ A new Flutter project.
     *   macOS：设置 `FlutterMultiWindowPlugin.setOnWindowCreatedCallback`，对新控制器执行 `RegisterGeneratedPlugins`。
 2.  **完善播放器多窗口设计文档**：
     *   统一阐述通信协议、初始化顺序、Hive 目录隔离与阻塞规避策略。
-3.  **修复桌面端启动后路由回退**：
-    *   优先使用 go_router 的 `pop` 返回；无法返回时回退到 `/media`，避免启动页遮罩阻塞主窗口交互。
-4.  **修复 Windows 主窗口禁用兜底**：
-    *   在 desktop_multi_window 新窗口创建回调中解除新窗口 owner 关系，并检测主窗口是否被禁用，必要时重新启用，避免主窗口无法交互。
 
 **验证**：
 *   执行 `flutter analyze / dart format . / flutter test`（当前 Flutter 版本无 `flutter format` 命令）。
+
+### 连续播放与最近观看选集统一优化 (2026-01-15)
+
+**目标**：修复从“最近观看”卡片进入播放器时，连续播放模式下播完当前集不会自动跳到下一集的问题，并统一不同入口下的选集列表使用方式。
+
+**改动**：
+
+1.  **选集列表来源统一**：
+    * 详情页入口继续通过路由 `extra.episodes` 直接传入当前季版本的 `EpisodeDetail` 列表。
+    * “最近观看”入口仅携带 `fileId`，播放器在初始化时通过 `/api/media/file/{file_id}/episodes` 获取完整选集列表，并写入 `PlaybackState.episodes`，实现与详情页相同的数据结构。
+
+2.  **当前剧集反查逻辑增强**：
+    * 在 `PlaybackNotifier` 中，新增基于“任意资源 fileId”反查所属 `EpisodeDetail` 的逻辑：
+      * 先按“每集首个资源 fileId”匹配；
+      * 若未命中，则在该集的所有 `assets` 中查找匹配的 `fileId`。
+    * 解决了从“最近观看”进入时，当前播放 `fileId` 不是首个资源导致无法找到当前剧集，从而上一集/下一集和连续播放均不可用的问题。
+
+3.  **上一集/下一集导航修正**：
+    * `_recomputeEpisodeNav` 与 `_resolveAdjacentEpisode` 在无法直接通过 `fileId` 命中“首个资源列表”索引时，会回退使用上述反查到的剧集索引计算上一集/下一集。
+    * 导航开启条件从“媒体类型不为 movie”改为“存在至少两条可导航的选集 fileId”，避免后端把剧集误标为 `movie` 时导致从“最近观看”入口连续播放失效。
+    * 确保无论从详情页还是“最近观看”入口进入，只要后端返回了完整选集，连续播放模式都能正确跳转到下一集。
+
+4.  **文档同步**：
+    * 在 `lib/media_player/design.md` 中补充“来源 B：后端接口拉取”说明，记录基于 `fileId` 反查所属剧集并驱动连续播放的实现细节。
+
+**验证**：
+
+* 通过从详情页与“最近观看”两种入口进入相同剧集，分别在播放结束时验证：
+  * 连续播放模式：自动跳转到下一集；
+  * 单集循环模式：当前集从头重新播放；
+  * 不循环模式：播放结束后停留在完成状态，不再自动切集。
+
+### 播放器标题格式统一优化 (2026-01-15)
+
+**目标**：统一播放器中的标题格式，使其在以下场景保持一致且信息完整：
+
+* 从“最近观看”卡片进入播放器时，初始标题与卡片标题语义一致；
+* 从详情页点击播放进入播放器时，标题包含系列名、季信息和集标题；
+* 在选集面板中切换集数后，播放器标题依然展示完整的“系列 + 季 + 集 + 集标题”信息。
+
+**改动**：
+
+1.  **最近观看数据模型扩展**：
+    * 为 `RecentCardItem` 增加 `seriesName`、`seasonIndex`、`episodeIndex`、`episodeTitle` 字段，用于保存后端返回的原始剧集信息，而不再仅依赖已经拼好的展示名称。
+    * 更新 `RecentCardItem.fromApi` 从接口字段 `series_name`、`season_index`、`episode_index`、`episode_title` 中解析并落地上述字段，同时继续使用这些字段生成卡片展示用的 `name`（例如 `剧名 S01E02 集标题`）。
+    * 在合并本地进度的 `_mergeItemWithLocal` 中，将扩展字段从远端条目透传到新的 `RecentCardItem`，避免在“最近观看”数据流转过程中丢失系列与季/集信息。
+
+2.  **路由参数补齐系列/季/集信息**：
+    * 在 `RecentMediaCard` 点击续播时的 `extra.detail` 中，除了原有的 `id`、`media_type`、`name`、`poster_path` 外，额外携带：
+      * `series_name`：系列名（来自 `RecentCardItem.seriesName`）；
+      * `season_index`：季编号；
+      * `episode_index`：集编号；
+      * `episode_title`：原始集标题。
+    * 播放器初始化时从 `detail` Map 中解析上述字段，并保存到内部的 `_seriesNameHint` 与 `_seasonIndexHint` 作为标题拼接的提示信息，用于在缺少完整 `MediaDetail` 的场景（如最近观看入口）构造完整标题。
+
+3.  **标题拼接逻辑统一**：
+    * 在 `PlaybackNotifier` 中重写 `_composeEpisodeTitle`：
+      * 电影：继续优先使用整体标题，不追加季/集信息。
+      * 剧集：统一按“系列名 + 第几季 + 第几集 + 集标题”格式拼接：
+        * 系列名优先取 `MediaDetail.title`，否则取 `_seriesNameHint`，再否则退回当前 `state.title`。
+        * 季信息优先通过 `state.seasonVersionId` 在 `detail.seasons[].versions[].id` 中反查季号；若查不到则退回 `_seasonIndexHint`。
+        * 集信息固定使用 `EpisodeDetail.episodeNumber` 和 `EpisodeDetail.title`。
+    * `_syncTitleForCurrentEpisode` 调用新的 `_composeEpisodeTitle`，保证：
+      * 从详情页入口打开时，首集标题包含“系列 + 季 + 集 + 集标题”；
+      * 从“最近观看”入口打开并在选集面板切换集数后，标题仍然是完整格式，而不再退化为仅显示集标题。
+
+**效果**：
+
+* 播放器顶部标题在“最近观看入口 + 切换选集”与“详情页入口 + 切换选集”两种路径下，都会保持统一的结构化信息展示，便于用户快速识别当前播放的是哪一部剧的第几季第几集。
+
 ## 3. 功能方案设计
 
 ### 3.1 选集列表方案

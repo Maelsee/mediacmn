@@ -34,8 +34,9 @@ class MediaListSection extends StatelessWidget {
           title: title,
           onMoreTap: onMoreTap ??
               () {
-                GoRouter.of(context)
-                    .push('/media/cards?title=$title&kind=$kind');
+                GoRouter.of(
+                  context,
+                ).push('/media/cards?title=$title&kind=$kind');
               },
         ),
         SizedBox(
@@ -46,10 +47,7 @@ class MediaListSection extends StatelessWidget {
             itemCount: items.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
-              return MediaCard(
-                item: items[index],
-                width: 120,
-              );
+              return MediaCard(item: items[index], width: 120);
             },
           ),
         ),

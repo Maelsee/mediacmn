@@ -58,9 +58,9 @@ class _GenreCard extends StatelessWidget {
     final color = Theme.of(context).colorScheme.primaryContainer;
     return GestureDetector(
       onTap: () {
-        GoRouter.of(context).push(
-          '/media/cards?title=${genre.name}&genres=${genre.name}',
-        );
+        GoRouter.of(
+          context,
+        ).push('/media/cards?title=${genre.name}&genres=${genre.name}');
       },
       child: Container(
         width: 120,

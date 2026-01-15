@@ -37,17 +37,18 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final order =
         (_box!.get(orderKey) as List?)?.cast<String>() ?? defaultSections;
     final visRaw = (_box!.get(visKey) as Map?)?.cast<String, bool>() ??
-        {
-          for (final s in defaultSections) s: true,
-        };
+        {for (final s in defaultSections) s: true};
     state = SettingsState(order: order, visibility: visRaw, ready: true);
   }
 
   Future<void> setOrder(List<String> order) async {
     if (_box == null) await load();
     await _box!.put(orderKey, order);
-    state =
-        SettingsState(order: order, visibility: state.visibility, ready: true);
+    state = SettingsState(
+      order: order,
+      visibility: state.visibility,
+      ready: true,
+    );
   }
 
   Future<void> setVisibility(Map<String, bool> vis) async {
@@ -57,7 +58,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   }
 
   Future<void> setOrderAndVisibility(
-      List<String> order, Map<String, bool> vis) async {
+    List<String> order,
+    Map<String, bool> vis,
+  ) async {
     if (_box == null) await load();
     await _box!.put(orderKey, order);
     await _box!.put(visKey, vis);
@@ -70,25 +73,27 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await _box!.put(orderKey, defaultSections);
     await _box!.put(visKey, vis);
     state = const SettingsState(
-        order: defaultSections,
-        visibility: {
-          '类型': true,
-          '最近观看': true,
-          '本地影片': true,
-          '电影': true,
-          '电视剧': true,
-          '动漫': true,
-          '综艺': true,
-          '纪录片': true,
-          '其他': true,
-        },
-        ready: true);
+      order: defaultSections,
+      visibility: {
+        '类型': true,
+        '最近观看': true,
+        '本地影片': true,
+        '电影': true,
+        '电视剧': true,
+        '动漫': true,
+        '综艺': true,
+        '纪录片': true,
+        '其他': true,
+      },
+      ready: true,
+    );
   }
 }
 
-final settingsProvider =
-    StateNotifierProvider<SettingsNotifier, SettingsState>((ref) {
-  final notifier = SettingsNotifier();
-  notifier.load();
-  return notifier;
-});
+final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>(
+  (ref) {
+    final notifier = SettingsNotifier();
+    notifier.load();
+    return notifier;
+  },
+);

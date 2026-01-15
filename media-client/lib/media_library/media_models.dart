@@ -3,10 +3,8 @@ class HomeCardGenre {
   final int id;
   final String name;
   HomeCardGenre({required this.id, required this.name});
-  factory HomeCardGenre.fromJson(Map<String, dynamic> json) => HomeCardGenre(
-        id: json['id'] as int,
-        name: json['name'] as String,
-      );
+  factory HomeCardGenre.fromJson(Map<String, dynamic> json) =>
+      HomeCardGenre(id: json['id'] as int, name: json['name'] as String);
 }
 
 class HomeCardItem {
@@ -205,13 +203,14 @@ class VersionItem {
   final String? edition;
   final List<AssetItem> assets;
 
-  VersionItem(
-      {required this.id,
-      this.label,
-      this.quality,
-      this.source,
-      this.edition,
-      this.assets = const []});
+  VersionItem({
+    required this.id,
+    this.label,
+    this.quality,
+    this.source,
+    this.edition,
+    this.assets = const [],
+  });
   factory VersionItem.fromJson(Map<String, dynamic> json) => VersionItem(
         id: (json['id'] ?? 0) as int,
         label: json['label'] as String?,
@@ -233,13 +232,14 @@ class SeasonVersionItem {
   final int? episodeCount;
   final List<EpisodeDetail> episodes;
 
-  SeasonVersionItem(
-      {required this.id,
-      this.versionTags,
-      this.seasonVersionPath,
-      this.storageName,
-      this.episodeCount,
-      this.episodes = const []});
+  SeasonVersionItem({
+    required this.id,
+    this.versionTags,
+    this.seasonVersionPath,
+    this.storageName,
+    this.episodeCount,
+    this.episodes = const [],
+  });
   factory SeasonVersionItem.fromJson(Map<String, dynamic> json) =>
       SeasonVersionItem(
         id: (json['id'] ?? 0) as int,
@@ -310,15 +310,16 @@ class EpisodeDetail {
   final List<AssetItem> assets;
   final Map<String, dynamic>? technical;
   final String? stillPath;
-  EpisodeDetail(
-      {this.id,
-      required this.episodeNumber,
-      required this.title,
-      this.runtime,
-      this.runtimeText,
-      this.assets = const [],
-      this.technical,
-      this.stillPath});
+  EpisodeDetail({
+    this.id,
+    required this.episodeNumber,
+    required this.title,
+    this.runtime,
+    this.runtimeText,
+    this.assets = const [],
+    this.technical,
+    this.stillPath,
+  });
   factory EpisodeDetail.fromJson(Map<String, dynamic> json) => EpisodeDetail(
         id: (json['id'] as num?)?.toInt(),
         episodeNumber: (json['episode_number'] ?? 0) as int,
@@ -435,6 +436,10 @@ class RecentCardItem {
   final int? positionMs;
   final int? durationMs;
   final int? fileId;
+  final String? seriesName;
+  final int? seasonIndex;
+  final int? episodeIndex;
+  final String? episodeTitle;
 
   RecentCardItem({
     required this.id,
@@ -444,6 +449,10 @@ class RecentCardItem {
     this.positionMs,
     this.durationMs,
     this.fileId,
+    this.seriesName,
+    this.seasonIndex,
+    this.episodeIndex,
+    this.episodeTitle,
   });
 
   factory RecentCardItem.fromJson(Map<String, dynamic> json) {
@@ -455,6 +464,10 @@ class RecentCardItem {
       positionMs: json['position_ms'] as int?,
       durationMs: json['duration_ms'] as int?,
       fileId: json['file_id'] as int?,
+      seriesName: json['series_name'] as String?,
+      seasonIndex: (json['season_index'] as num?)?.toInt(),
+      episodeIndex: (json['episode_index'] as num?)?.toInt(),
+      episodeTitle: json['episode_title'] as String?,
     );
   }
 
@@ -471,12 +484,11 @@ class RecentCardItem {
 
     // Name/Title Logic
     String displayName = title;
+    final seriesName = json['series_name'] as String?;
+    final seasonIndex = (json['season_index'] as num?)?.toInt();
+    final episodeIndex = (json['episode_index'] as num?)?.toInt();
+    final episodeTitle = json['episode_title'] as String?;
     if (kind == 'tv' || kind == 'tv_episode') {
-      final seriesName = json['series_name'] as String?;
-      final seasonIndex = (json['season_index'] as num?)?.toInt();
-      final episodeIndex = (json['episode_index'] as num?)?.toInt();
-      final episodeTitle = json['episode_title'] as String?;
-
       if (seriesName != null && seasonIndex != null && episodeIndex != null) {
         final s = seasonIndex.toString().padLeft(2, '0');
         final e = episodeIndex.toString().padLeft(2, '0');
@@ -494,6 +506,10 @@ class RecentCardItem {
       positionMs: (json['position_ms'] as num?)?.toInt(),
       durationMs: (json['duration_ms'] as num?)?.toInt(),
       fileId: (json['file_id'] as num?)?.toInt(),
+      seriesName: seriesName,
+      seasonIndex: seasonIndex,
+      episodeIndex: episodeIndex,
+      episodeTitle: episodeTitle,
     );
   }
 }

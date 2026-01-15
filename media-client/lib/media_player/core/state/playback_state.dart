@@ -61,10 +61,12 @@ class PlaybackSettings {
   static PlaybackSettings fromJson(Map<String, dynamic> json) {
     return PlaybackSettings(
       skipIntroOutro: (json['skip'] as bool?) ?? false,
-      introTime:
-          Duration(milliseconds: (json['intro_ms'] as num?)?.toInt() ?? 0),
-      outroTime:
-          Duration(milliseconds: (json['outro_ms'] as num?)?.toInt() ?? 0),
+      introTime: Duration(
+        milliseconds: (json['intro_ms'] as num?)?.toInt() ?? 0,
+      ),
+      outroTime: Duration(
+        milliseconds: (json['outro_ms'] as num?)?.toInt() ?? 0,
+      ),
       applyToAllEpisodes: (json['apply_all'] as bool?) ?? false,
     );
   }
@@ -299,8 +301,9 @@ class PlaybackState {
   }
 }
 
-final playerConfigProvider =
-    Provider<PlayerConfig>((ref) => const PlayerConfig());
+final playerConfigProvider = Provider<PlayerConfig>(
+  (ref) => const PlayerConfig(),
+);
 
 /// 画中画控制器（同一播放页内复用同一个实例，确保 UI 能正确感知 PiP 状态）。
 final floatingProvider = Provider.autoDispose<Floating>((ref) => Floating());
@@ -330,6 +333,7 @@ final playbackProvider =
 class PlaybackNotifier extends StateNotifier<PlaybackState> {
   static const _settingsBox = 'player_settings_box';
   static const _settingsKey = 'playback_settings_v1';
+  static const _playlistModeKey = 'playlist_mode_v1';
 
   final ApiClient api;
   final PlayerServiceBase service;
@@ -369,6 +373,9 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   /// 目的：避免用户连续点击导致频繁重建解码管线，造成卡顿或长时间无响应。
   bool _audioSwitching = false;
 
+  String? _seriesNameHint;
+  int? _seasonIndexHint;
+
   PlaybackNotifier({
     required this.api,
     required this.service,
@@ -384,9 +391,29 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     _initialized = true;
 
     await _loadSettings();
+    try {
+      await _applyPlaylistModeToService(state.playlistMode);
+    } catch (_) {}
 
     final parsedCoreId = int.tryParse(coreId);
     final payload = extra is Map ? extra : const <String, dynamic>{};
+
+    final seriesNameHint =
+        (payload['seriesName'] ?? payload['series_name'])?.toString();
+    final seasonIndexHintRaw =
+        payload['seasonIndex'] ?? payload['season_index'];
+    int? seasonIndexHint;
+    if (seasonIndexHintRaw is int) {
+      seasonIndexHint = seasonIndexHintRaw;
+    } else if (seasonIndexHintRaw != null) {
+      seasonIndexHint = int.tryParse('$seasonIndexHintRaw');
+    }
+    if (seriesNameHint != null && seriesNameHint.trim().isNotEmpty) {
+      _seriesNameHint = seriesNameHint.trim();
+    }
+    if (seasonIndexHint != null && seasonIndexHint > 0) {
+      _seasonIndexHint = seasonIndexHint;
+    }
 
     // 本地播放：在 extra 参数中传入 filePath/path 即可
     final filePath =
@@ -404,6 +431,9 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       );
       _lastOpenAt = DateTime.now();
       await service.openUrl(filePath);
+      try {
+        await _applyPlaylistModeToService(state.playlistMode);
+      } catch (_) {}
       return;
     }
 
@@ -417,6 +447,9 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       title = detail.title;
       posterUrl = detail.posterPath ?? detail.backdropPath;
       mediaType = detail.mediaType;
+      if (detail.title.trim().isNotEmpty) {
+        _seriesNameHint = detail.title.trim();
+      }
     } else if (detail is Map) {
       title = (detail['name'] ?? detail['title'])?.toString();
       posterUrl = (detail['poster_path'] ??
@@ -424,6 +457,19 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
               detail['cover_url'])
           ?.toString();
       mediaType = (detail['media_type'] ?? detail['kind'])?.toString();
+
+      final seriesName =
+          (detail['series_name'] ?? detail['seriesName'])?.toString();
+      final seasonIndexRaw = detail['season_index'] ?? detail['seasonIndex'];
+      final seasonIndex = seasonIndexRaw is int
+          ? seasonIndexRaw
+          : int.tryParse('$seasonIndexRaw');
+      if (seriesName != null && seriesName.trim().isNotEmpty) {
+        _seriesNameHint ??= seriesName.trim();
+      }
+      if (seasonIndex != null && seasonIndex > 0) {
+        _seasonIndexHint ??= seasonIndex;
+      }
     }
 
     final candidatesRaw = payload['candidates'];
@@ -444,7 +490,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     final seasonVersionId = payload['seasonVersionId'] is int
         ? payload['seasonVersionId'] as int
         : int.tryParse(
-            '${payload['seasonVersionId'] ?? payload['season_version_id'] ?? ''}');
+            '${payload['seasonVersionId'] ?? payload['season_version_id'] ?? ''}',
+          );
 
     int? fileId = payload['fileId'] is int
         ? payload['fileId'] as int
@@ -525,40 +572,37 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       );
 
       _lastOpenAt = DateTime.now();
-      await service.openUrl(url,
-          headers: headers,
-          start: resumeMs != null ? Duration(milliseconds: resumeMs) : null);
+      await service.openUrl(
+        url,
+        headers: headers,
+        start: resumeMs != null ? Duration(milliseconds: resumeMs) : null,
+      );
+      try {
+        await _applyPlaylistModeToService(state.playlistMode);
+      } catch (_) {}
       state = state.copyWith(loading: false, error: null);
 
-      unawaited(progressRepository
-          .enqueueOpenReport(
-            fileId: fileId,
-            coreId: state.coreId,
-            mediaType: state.mediaType,
-            positionMs: resumeMs ?? 0,
-            durationMs: state.duration == Duration.zero
-                ? null
-                : state.duration.inMilliseconds,
-            title: state.title,
-            coverUrl: state.posterUrl,
-          )
-          .catchError((_) {}));
+      unawaited(
+        progressRepository
+            .enqueueOpenReport(
+              fileId: fileId,
+              coreId: state.coreId,
+              mediaType: state.mediaType,
+              positionMs: resumeMs ?? 0,
+              durationMs: state.duration == Duration.zero
+                  ? null
+                  : state.duration.inMilliseconds,
+              title: state.title,
+              coverUrl: state.posterUrl,
+            )
+            .catchError((_) {}),
+      );
 
       _startLocalProgressSave();
       _recomputeEpisodeNav();
     } catch (e) {
       state = state.copyWith(loading: false, error: '$e');
     }
-  }
-
-  Future<void> reload({
-    required String coreId,
-    required Object? extra,
-  }) async {
-    _shutdown();
-    _initialized = false;
-    state = const PlaybackState();
-    await initialize(coreId: coreId, extra: extra);
   }
 
   /// 解析路由参数中的选集列表。
@@ -593,10 +637,7 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     }
     if (state.episodesLoading) return;
 
-    state = state.copyWith(
-      episodesLoading: true,
-      episodesError: null,
-    );
+    state = state.copyWith(episodesLoading: true, episodesError: null);
 
     try {
       final res = await api.getEpisodes(fileId);
@@ -609,10 +650,7 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       _syncTitleForCurrentEpisode();
       _recomputeEpisodeNav();
     } catch (e) {
-      state = state.copyWith(
-        episodesLoading: false,
-        episodesError: '$e',
-      );
+      state = state.copyWith(episodesLoading: false, episodesError: '$e');
     }
   }
 
@@ -620,26 +658,6 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     // 锁屏状态下不允许隐藏控制层，避免误触导致无法解锁。
     if (state.isLocked) return;
     state = state.copyWith(controlsVisible: !state.controlsVisible);
-  }
-
-  void showControls() {
-    if (state.isLocked) return;
-    if (state.controlsVisible) return;
-    state = state.copyWith(controlsVisible: true);
-  }
-
-  void hideControls() {
-    if (state.isLocked) return;
-    if (!state.controlsVisible) return;
-    state = state.copyWith(controlsVisible: false);
-  }
-
-  void showError(String message) {
-    state = state.copyWith(
-      loading: false,
-      error: message,
-      controlsVisible: true,
-    );
   }
 
   void toggleLock() {
@@ -673,7 +691,10 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
 
   Future<void> setPlaylistMode(PlaylistMode mode) async {
     state = state.copyWith(playlistMode: mode);
-    await service.setPlaylistMode(mode);
+    await _savePlaylistMode(mode);
+    try {
+      await _applyPlaylistModeToService(mode);
+    } catch (_) {}
   }
 
   Future<void> setVideoTrack(VideoTrack track) => service.setVideoTrack(track);
@@ -688,10 +709,12 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
 
     _audioSwitching = true;
     state = state.copyWith(selectedAudioTrack: track);
-    unawaited(service
-        .setAudioTrack(track)
-        .catchError((_) {})
-        .whenComplete(() => _audioSwitching = false));
+    unawaited(
+      service
+          .setAudioTrack(track)
+          .catchError((_) {})
+          .whenComplete(() => _audioSwitching = false),
+    );
   }
 
   Future<void> setSubtitleTrack(SubtitleTrack track) async {
@@ -703,10 +726,12 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     // 先更新选中状态，保证 UI 立即反馈。
     state = state.copyWith(selectedSubtitleTrack: track);
     // 字幕切换可能涉及解码器重新加载，使用异步方式避免阻塞 UI 事件处理。
-    unawaited(service
-        .setSubtitleTrack(track)
-        .catchError((_) {})
-        .whenComplete(() => _subtitleSwitching = false));
+    unawaited(
+      service
+          .setSubtitleTrack(track)
+          .catchError((_) {})
+          .whenComplete(() => _subtitleSwitching = false),
+    );
   }
 
   Future<void> setFullscreen(bool fullscreen) async {
@@ -745,8 +770,9 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
         videoScale: 1.0,
         videoOffset: Offset.zero,
       );
-      final resumeMs =
-          await progressRepository.getResumePositionMs(fileId: fileId);
+      final resumeMs = await progressRepository.getResumePositionMs(
+        fileId: fileId,
+      );
       final playData = await api.getPlayUrl(fileId);
       final url = extractPlayableUrl(playData);
       final headers = extractPlayableHeaders(playData);
@@ -760,23 +786,30 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
         videoScale: 1.0,
         videoOffset: Offset.zero,
       );
-      await service.openUrl(url,
-          headers: headers,
-          start: resumeMs != null ? Duration(milliseconds: resumeMs) : null);
+      await service.openUrl(
+        url,
+        headers: headers,
+        start: resumeMs != null ? Duration(milliseconds: resumeMs) : null,
+      );
+      try {
+        await _applyPlaylistModeToService(state.playlistMode);
+      } catch (_) {}
       state = state.copyWith(loading: false);
-      unawaited(progressRepository
-          .enqueueOpenReport(
-            fileId: fileId,
-            coreId: state.coreId,
-            mediaType: state.mediaType,
-            positionMs: resumeMs ?? 0,
-            durationMs: state.duration == Duration.zero
-                ? null
-                : state.duration.inMilliseconds,
-            title: state.title,
-            coverUrl: state.posterUrl,
-          )
-          .catchError((_) {}));
+      unawaited(
+        progressRepository
+            .enqueueOpenReport(
+              fileId: fileId,
+              coreId: state.coreId,
+              mediaType: state.mediaType,
+              positionMs: resumeMs ?? 0,
+              durationMs: state.duration == Duration.zero
+                  ? null
+                  : state.duration.inMilliseconds,
+              title: state.title,
+              coverUrl: state.posterUrl,
+            )
+            .catchError((_) {}),
+      );
       _startLocalProgressSave();
       _recomputeEpisodeNav();
     } catch (e) {
@@ -838,10 +871,16 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     _tracksSub?.cancel();
     _trackSub?.cancel();
     try {
-      unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge)
-          .catchError((_) {}));
-      unawaited(SystemChrome.setPreferredOrientations(DeviceOrientation.values)
-          .catchError((_) {}));
+      unawaited(
+        SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.edgeToEdge,
+        ).catchError((_) {}),
+      );
+      unawaited(
+        SystemChrome.setPreferredOrientations(
+          DeviceOrientation.values,
+        ).catchError((_) {}),
+      );
       unawaited(WakelockPlus.disable().catchError((_) {}));
     } catch (_) {}
   }
@@ -888,8 +927,7 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       final d = state.duration;
       if (d == Duration.zero) return;
       if (state.position + const Duration(seconds: 2) < d) return;
-
-      unawaited(playNextEpisode());
+      unawaited(_handlePlaybackCompleted());
     });
     _tracksSub = service.tracksStream.listen((tracks) {
       state = state.copyWith(
@@ -976,7 +1014,6 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       fileId,
       candidates: episode.assets,
       selectedCandidateIndex: 0,
-      title: _composeEpisodeTitle(episode),
     );
   }
 
@@ -985,7 +1022,6 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     int fileId, {
     List<AssetItem>? candidates,
     int? selectedCandidateIndex,
-    String? title,
     bool restoreProgress = true,
   }) async {
     try {
@@ -996,10 +1032,10 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
         currentEpisodeFileId: fileId,
         candidates: candidates,
         selectedCandidateIndex: selectedCandidateIndex,
-        title: title,
         videoScale: 1.0,
         videoOffset: Offset.zero,
       );
+      _syncTitleForCurrentEpisode();
       final resumeMs = restoreProgress
           ? await progressRepository.getResumePositionMs(fileId: fileId)
           : null;
@@ -1018,23 +1054,30 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       );
 
       _lastOpenAt = DateTime.now();
-      await service.openUrl(url,
-          headers: headers,
-          start: resumeMs != null ? Duration(milliseconds: resumeMs) : null);
+      await service.openUrl(
+        url,
+        headers: headers,
+        start: resumeMs != null ? Duration(milliseconds: resumeMs) : null,
+      );
+      try {
+        await _applyPlaylistModeToService(state.playlistMode);
+      } catch (_) {}
       state = state.copyWith(loading: false);
-      unawaited(progressRepository
-          .enqueueOpenReport(
-            fileId: fileId,
-            coreId: state.coreId,
-            mediaType: state.mediaType,
-            positionMs: resumeMs ?? 0,
-            durationMs: state.duration == Duration.zero
-                ? null
-                : state.duration.inMilliseconds,
-            title: state.title,
-            coverUrl: state.posterUrl,
-          )
-          .catchError((_) {}));
+      unawaited(
+        progressRepository
+            .enqueueOpenReport(
+              fileId: fileId,
+              coreId: state.coreId,
+              mediaType: state.mediaType,
+              positionMs: resumeMs ?? 0,
+              durationMs: state.duration == Duration.zero
+                  ? null
+                  : state.duration.inMilliseconds,
+              title: state.title,
+              coverUrl: state.posterUrl,
+            )
+            .catchError((_) {}),
+      );
       _startLocalProgressSave();
       _recomputeEpisodeNav();
     } catch (e) {
@@ -1042,16 +1085,45 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     }
   }
 
-  String _composeEpisodeTitle(EpisodeDetail episode) {
-    final base = state.detail?.title ?? state.title;
+  int? _currentSeasonNumber() {
+    final detail = state.detail;
+    if (detail == null) {
+      return _seasonIndexHint;
+    }
+    if (detail.mediaType != 'tv') {
+      return null;
+    }
+    final vId = state.seasonVersionId;
+    if (vId == null) {
+      return _seasonIndexHint;
+    }
+    for (final season in detail.seasons ?? const []) {
+      for (final version in season.versions ?? const []) {
+        if (version.id == vId) {
+          return season.seasonNumber;
+        }
+      }
+    }
+    return _seasonIndexHint;
+  }
 
-    if (state.mediaType == 'movie') {
-      return (base == null || base.isEmpty) ? episode.title : base;
+  String _composeEpisodeTitle(EpisodeDetail episode) {
+    String seriesName = '';
+    final detail = state.detail;
+    if (detail != null && detail.title.trim().isNotEmpty) {
+      seriesName = detail.title.trim();
+    } else if (_seriesNameHint != null && _seriesNameHint!.trim().isNotEmpty) {
+      seriesName = _seriesNameHint!.trim();
     }
 
     final parts = <String>[];
-    if (base != null && base.trim().isNotEmpty) {
-      parts.add(base.trim());
+    if (seriesName.isNotEmpty) {
+      parts.add(seriesName);
+    }
+
+    final seasonNo = _currentSeasonNumber();
+    if (seasonNo != null && seasonNo > 0) {
+      parts.add('第$seasonNo季');
     }
 
     final epNo = episode.episodeNumber;
@@ -1059,17 +1131,19 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       parts.add('第$epNo集');
     }
 
-    final epTitle = episode.title.trim();
+    var epTitle = episode.title.trim();
     if (epTitle.isNotEmpty) {
-      parts.add(epTitle);
+      final prefix = RegExp(r'^第\d+集\s*');
+      epTitle = epTitle.replaceFirst(prefix, '');
+      if (epTitle.isNotEmpty) {
+        parts.add(epTitle);
+      }
     }
 
     return parts.isEmpty ? '' : parts.join(' ');
   }
 
   void _syncTitleForCurrentEpisode() {
-    if (state.mediaType == 'movie') return;
-
     final keyFileId = state.currentEpisodeFileId ?? state.fileId;
     if (keyFileId == null) return;
 
@@ -1083,12 +1157,27 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     state = state.copyWith(title: nextTitle);
   }
 
-  /// 根据“每集的首个资源 fileId”定位对应的选集条目。
+  /// 根据当前文件 ID 定位对应的选集条目。
+  ///
+  /// 优先按“每集首个资源 fileId”匹配，保证与上一集/下一集导航使用的
+  /// 键一致；若未命中（例如从“最近观看”入口进入时，fileId 可能是某集
+  /// 的非首个资源），则回退在该集的所有资源中查找，确保仍能正确识别
+  /// 当前所属的剧集。
   EpisodeDetail? _findEpisodeByFirstAssetFileId(int fileId) {
+    // 第一步：按首个资源 fileId 快速匹配，兼容详情页传入的标准场景。
     for (final e in state.episodes) {
       if (e.assets.isEmpty) continue;
       if (e.assets.first.fileId == fileId) return e;
     }
+
+    // 第二步：兼容“最近观看”等入口，fileId 不一定等于首个资源 fileId，
+    // 在所有资源中做一次完整扫描以反查所属剧集。
+    for (final e in state.episodes) {
+      for (final a in e.assets) {
+        if (a.fileId == fileId) return e;
+      }
+    }
+
     return null;
   }
 
@@ -1130,8 +1219,45 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     }
 
     if (s.outroTime > Duration.zero && state.position >= s.outroTime) {
-      unawaited(playNextEpisode());
+      unawaited(_handlePlaybackCompleted(fromOutroSkip: true));
       return;
+    }
+  }
+
+  /// 将 UI 侧的播放模式（连续播放/单集循环/不循环）映射为底层播放器的循环策略。
+  ///
+  /// 说明：
+  /// - UI 的“连续播放”需要依赖 completed 事件切换到下一集；
+  /// - 若把底层设置为 PlaylistMode.loop，在“单文件播放”场景会表现为单集循环，导致无法触发下一集逻辑；
+  /// - 因此连续播放时强制把底层循环关闭（none），由上层负责切集。
+  PlaylistMode _toUnderlyingPlaylistMode(PlaylistMode mode) {
+    if (mode == PlaylistMode.loop) return PlaylistMode.none;
+    return mode;
+  }
+
+  /// 将当前播放模式同步到播放器底层。
+  Future<void> _applyPlaylistModeToService(PlaylistMode mode) async {
+    await service.setPlaylistMode(_toUnderlyingPlaylistMode(mode));
+  }
+
+  /// 播放结束后的模式分发逻辑。
+  ///
+  /// - 连续播放：自动播放下一集（若无下一集则停留在结束态）
+  /// - 单集循环：从头重新播放当前集
+  /// - 不循环：不做额外动作（保持结束态）
+  Future<void> _handlePlaybackCompleted({bool fromOutroSkip = false}) async {
+    // 片尾跳过属于“提前结束”，同样按播放模式执行。
+    // fromOutroSkip 目前仅用于语义区分，保留扩展点。
+    switch (state.playlistMode) {
+      case PlaylistMode.loop:
+        await playNextEpisode();
+        return;
+      case PlaylistMode.single:
+        await service.seek(Duration.zero);
+        await service.play();
+        return;
+      case PlaylistMode.none:
+        return;
     }
   }
 
@@ -1143,6 +1269,10 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
         final m = raw.cast<String, dynamic>();
         state = state.copyWith(settings: PlaybackSettings.fromJson(m));
       }
+
+      final rawMode = box.get(_playlistModeKey);
+      final mode = _parsePlaylistMode(rawMode);
+      state = state.copyWith(playlistMode: mode);
     } catch (_) {}
   }
 
@@ -1153,12 +1283,35 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     } catch (_) {}
   }
 
-  void _recomputeEpisodeNav() {
-    if (state.mediaType == 'movie') {
-      state = state.copyWith(hasPrevEpisode: false, hasNextEpisode: false);
-      return;
+  /// 解析本地存储的播放模式。
+  ///
+  /// 兼容历史版本可能存入的 int（0/1/2）或 string（枚举 name）。
+  PlaylistMode _parsePlaylistMode(Object? raw) {
+    if (raw is String) {
+      for (final v in PlaylistMode.values) {
+        if (v.name == raw) return v;
+      }
+      return PlaylistMode.none;
     }
+    if (raw is int) {
+      if (raw >= 0 && raw < PlaylistMode.values.length) {
+        return PlaylistMode.values[raw];
+      }
+      return PlaylistMode.none;
+    }
+    return PlaylistMode.none;
+  }
 
+  Future<void> _savePlaylistMode(PlaylistMode mode) async {
+    try {
+      final box = await Hive.openBox(_settingsBox);
+      await box.put(_playlistModeKey, mode.name);
+    } catch (_) {}
+  }
+
+  void _recomputeEpisodeNav() {
+    // 若没有任何选集列表（既没有 state.episodes，也无法从 detail 推导），
+    // 则认为当前媒体不支持上一集/下一集导航，直接关闭连续播放导航能力。
     final current = state.fileId ?? state.currentEpisodeFileId;
     if (current == null) {
       state = state.copyWith(hasPrevEpisode: false, hasNextEpisode: false);
@@ -1166,31 +1319,71 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     }
 
     final episodeFileIds = _episodeFileIdList();
-    if (episodeFileIds.isEmpty) {
+    if (episodeFileIds.length <= 1) {
       state = state.copyWith(hasPrevEpisode: false, hasNextEpisode: false);
       return;
     }
-    final idx = episodeFileIds.indexOf(current);
+
+    // 默认按 fileId 在“首个资源 fileId 列表”中的位置计算上一集/下一集。
+    var idx = episodeFileIds.indexOf(current);
+
+    // 若未命中（例如当前播放的是该集的第二个或第三个资源），则退回
+    // 通过选集列表查找当前 fileId 所属的剧集索引，保证“最近观看”等
+    // 入口同样可以正确计算上一集/下一集。
     if (idx == -1) {
-      state = state.copyWith(hasPrevEpisode: false, hasNextEpisode: false);
-      return;
+      final episodes = state.episodes;
+      for (var i = 0; i < episodes.length; i++) {
+        final ep = episodes[i];
+        for (final a in ep.assets) {
+          if (a.fileId == current) {
+            idx = i;
+            break;
+          }
+        }
+        if (idx != -1) break;
+      }
+      if (idx == -1) {
+        state = state.copyWith(hasPrevEpisode: false, hasNextEpisode: false);
+        return;
+      }
     }
+
     state = state.copyWith(
-        hasPrevEpisode: idx > 0,
-        hasNextEpisode: idx + 1 < episodeFileIds.length);
+      hasPrevEpisode: idx > 0,
+      hasNextEpisode: idx + 1 < episodeFileIds.length,
+    );
   }
 
   int? _resolveAdjacentEpisode({required bool previous}) {
-    if (state.mediaType == 'movie') return null;
-
+    // 仅当存在至少两集可导航时才计算上一集/下一集，避免在单集场景下
+    // 误触发连续播放逻辑。
     final current = state.fileId ?? state.currentEpisodeFileId;
     if (current == null) return null;
 
     final episodeFileIds = _episodeFileIdList();
-    if (episodeFileIds.isEmpty) return null;
+    if (episodeFileIds.length <= 1) return null;
 
-    final idx = episodeFileIds.indexOf(current);
-    if (idx == -1) return null;
+    // 先按“首个资源 fileId 列表”查找当前索引。
+    var idx = episodeFileIds.indexOf(current);
+
+    // 若未命中，则根据选集列表中任意资源 fileId 反查索引，
+    // 解决“最近观看”入口 fileId 不等于首个资源 fileId 时
+    // 连续播放无法找到下一集的问题。
+    if (idx == -1) {
+      final episodes = state.episodes;
+      for (var i = 0; i < episodes.length; i++) {
+        final ep = episodes[i];
+        for (final a in ep.assets) {
+          if (a.fileId == current) {
+            idx = i;
+            break;
+          }
+        }
+        if (idx != -1) break;
+      }
+      if (idx == -1) return null;
+    }
+
     final nextIdx = previous ? idx - 1 : idx + 1;
     if (nextIdx < 0 || nextIdx >= episodeFileIds.length) return null;
     return episodeFileIds[nextIdx];

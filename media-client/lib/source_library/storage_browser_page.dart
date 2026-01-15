@@ -57,17 +57,19 @@ class _StorageBrowserPageState extends ConsumerState<StorageBrowserPage> {
     try {
       final api = ref.read(apiClientProvider);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('扫描任务提交中...')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('扫描任务提交中...')));
 
       await api.startScan(
-          storageId: widget.storageId, scanPath: _selectedPaths.toList());
+        storageId: widget.storageId,
+        scanPath: _selectedPaths.toList(),
+      );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('扫描任务已提交')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('扫描任务已提交')));
         setState(() {
           _selectedPaths.clear();
         });
@@ -75,9 +77,9 @@ class _StorageBrowserPageState extends ConsumerState<StorageBrowserPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('扫描失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('扫描失败: $e')));
       }
     }
   }
@@ -85,9 +87,7 @@ class _StorageBrowserPageState extends ConsumerState<StorageBrowserPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title ?? '浏览文件夹'),
-      ),
+      appBar: AppBar(title: Text(widget.title ?? '浏览文件夹')),
       body: _buildBody(),
       floatingActionButton: _selectedPaths.isNotEmpty
           ? FloatingActionButton.extended(
@@ -147,12 +147,12 @@ class _StorageBrowserPageState extends ConsumerState<StorageBrowserPage> {
             },
           ),
           onTap: () {
-            context.push(Uri(
+            context.push(
+              Uri(
                 path: '/sources/browse/${widget.storageId}',
-                queryParameters: {
-                  'path': fullPath,
-                  'title': name,
-                }).toString());
+                queryParameters: {'path': fullPath, 'title': name},
+              ).toString(),
+            );
           },
         );
       },

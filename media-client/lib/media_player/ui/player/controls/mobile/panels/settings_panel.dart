@@ -52,8 +52,11 @@ class SettingsPanel extends StatelessWidget {
               children: [
                 _buildListTile(
                   title: '设置片头片尾',
-                  trailing: const Icon(Icons.arrow_forward_ios,
-                      size: 16, color: Colors.white70),
+                  trailing: const Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Colors.white70,
+                  ),
                   onTap: () {
                     // TODO: Implement Intro/Outro settings dialog
                   },
@@ -66,7 +69,7 @@ class SettingsPanel extends StatelessWidget {
                     final modes = [
                       PlaylistMode.loop,
                       PlaylistMode.single,
-                      PlaylistMode.none
+                      PlaylistMode.none,
                     ];
                     if (index >= 0 && index < modes.length) {
                       onPlaylistModeChanged(modes[index]);
@@ -142,10 +145,11 @@ class SettingsPanel extends StatelessWidget {
     return bestIndex;
   }
 
-  Widget _buildListTile(
-      {required String title,
-      required Widget trailing,
-      required VoidCallback onTap}) {
+  Widget _buildListTile({
+    required String title,
+    required Widget trailing,
+    required VoidCallback onTap,
+  }) {
     return ListTile(
       title: Text(title, style: const TextStyle(color: Colors.white)),
       trailing: trailing,

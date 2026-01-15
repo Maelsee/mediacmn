@@ -3,22 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:floating/floating.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
-import 'package:go_router/go_router.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/state/playback_state.dart';
-import '../../../desktop_window/desktop_player_window_service.dart';
 import '../layouts/common_player_layout.dart';
 
 class PlayerPage extends ConsumerStatefulWidget {
   final String coreId;
   final Object? extra;
 
-  const PlayerPage({
-    super.key,
-    required this.coreId,
-    this.extra,
-  });
+  const PlayerPage({super.key, required this.coreId, this.extra});
 
   @override
   ConsumerState<PlayerPage> createState() => _PlayerPageState();
@@ -33,35 +27,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     return binding.runtimeType.toString().contains('TestWidgetsFlutterBinding');
   }
 
-  bool _launchingDesktopWindow = false;
-
-  bool get _shouldLaunchDesktopWindow {
-    return !_isWidgetTest && DesktopPlayerWindowService.isSupported;
-  }
-
   @override
   void initState() {
     super.initState();
-    _launchingDesktopWindow = _shouldLaunchDesktopWindow;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_shouldLaunchDesktopWindow) {
-        final extra = widget.extra;
-        final Map<String, dynamic> extraMap =
-            extra is Map ? extra.cast<String, dynamic>() : <String, dynamic>{};
-        DesktopPlayerWindowService.open(coreId: widget.coreId, extra: extraMap)
-            .catchError((_) {})
-            .whenComplete(() {
-          if (!mounted) return;
-          final router = GoRouter.of(context);
-          // if (router.canPop()) {
-          //   router.pop();
-          //   return;
-          // }
-          router.go('/media');
-        });
-        return;
-      }
-
       if (!_isWidgetTest) {
         // 进入播放页即启用沉浸式全屏，隐藏状态栏与底部导航栏。
         SystemChrome.setEnabledSystemUIMode(
@@ -91,19 +60,6 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_launchingDesktopWindow) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-
     final s = ref.watch(playbackProvider);
     final service = ref.watch(playerServiceProvider);
     if (_isWidgetTest) {

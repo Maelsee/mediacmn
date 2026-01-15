@@ -9,12 +9,13 @@ class SourceEditPage extends ConsumerStatefulWidget {
   final String? initialName;
   final String? initialType;
   final String? initialStatus;
-  const SourceEditPage(
-      {super.key,
-      required this.sourceId,
-      this.initialName,
-      this.initialType,
-      this.initialStatus});
+  const SourceEditPage({
+    super.key,
+    required this.sourceId,
+    this.initialName,
+    this.initialType,
+    this.initialStatus,
+  });
 
   @override
   ConsumerState<SourceEditPage> createState() => _SourceEditPageState();
@@ -58,32 +59,41 @@ class _SourceEditPageState extends ConsumerState<SourceEditPage> {
                   Text('类型：${widget.initialType ?? _item!.type}'),
                   const SizedBox(height: 12),
                   TextFormField(
-                      controller: _name,
-                      decoration: const InputDecoration(labelText: '名称'),
-                      validator: _req),
+                    controller: _name,
+                    decoration: const InputDecoration(labelText: '名称'),
+                    validator: _req,
+                  ),
                   const SizedBox(height: 24),
-                  Row(children: [
-                    FilledButton(
+                  Row(
+                    children: [
+                      FilledButton(
                         onPressed: _busy ? null : _onSave,
                         child: _busy
                             ? const SizedBox(
                                 height: 16,
                                 width: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('保存')),
-                    const SizedBox(width: 12),
-                    OutlinedButton(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('保存'),
+                      ),
+                      const SizedBox(width: 12),
+                      OutlinedButton(
                         onPressed: _busy ? null : _onDelete,
-                        child: const Text('删除')),
-                    const SizedBox(width: 12),
-                    OutlinedButton(
+                        child: const Text('删除'),
+                      ),
+                      const SizedBox(width: 12),
+                      OutlinedButton(
                         onPressed: _busy ? null : _onToggle,
                         child: Text(
-                            (widget.initialStatus ?? _item!.status) == 'enabled'
-                                ? '停用'
-                                : '启用')),
-                  ]),
+                          (widget.initialStatus ?? _item!.status) == 'enabled'
+                              ? '停用'
+                              : '启用',
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -99,8 +109,9 @@ class _SourceEditPageState extends ConsumerState<SourceEditPage> {
       final api = ref.read(apiClientProvider);
       await api.updateSource(widget.sourceId, {'name': _name.text});
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('保存成功')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('保存成功')));
         if (mounted) context.pop(true);
       }
     } finally {
@@ -114,8 +125,9 @@ class _SourceEditPageState extends ConsumerState<SourceEditPage> {
       final api = ref.read(apiClientProvider);
       await api.deleteSource(widget.sourceId);
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('已删除')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已删除')));
         if (mounted) context.pop(true);
       }
     } finally {
@@ -129,12 +141,15 @@ class _SourceEditPageState extends ConsumerState<SourceEditPage> {
       final api = ref.read(apiClientProvider);
       final enabled = _item!.status != 'enabled';
       await api.toggleSource(widget.sourceId, enabled: enabled);
-      setState(() => _item = SourceItem(
+      setState(
+        () => _item = SourceItem(
           id: _item!.id,
           type: _item!.type,
           name: _item!.name,
           status: enabled ? 'enabled' : 'disabled',
-          lastScan: _item!.lastScan));
+          lastScan: _item!.lastScan,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }

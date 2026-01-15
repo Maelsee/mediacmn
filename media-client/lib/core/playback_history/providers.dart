@@ -12,19 +12,21 @@ final localPlaybackStoreProvider = Provider<LocalPlaybackStore>((ref) {
 });
 
 /// 播放历史远端数据源 Provider。
-final remotePlaybackDataSourceProvider =
-    Provider<RemotePlaybackDataSource>((ref) {
+final remotePlaybackDataSourceProvider = Provider<RemotePlaybackDataSource>((
+  ref,
+) {
   final api = ref.watch(apiClientProvider);
   return RemotePlaybackDataSource(api: api);
 });
 
 /// 播放进度仓库 Provider。
-final playbackProgressRepositoryProvider =
-    Provider<PlaybackProgressRepository>((ref) {
-  final local = ref.watch(localPlaybackStoreProvider);
-  final remote = ref.watch(remotePlaybackDataSourceProvider);
-  return PlaybackProgressRepository(local: local, remote: remote);
-});
+final playbackProgressRepositoryProvider = Provider<PlaybackProgressRepository>(
+  (ref) {
+    final local = ref.watch(localPlaybackStoreProvider);
+    final remote = ref.watch(remotePlaybackDataSourceProvider);
+    return PlaybackProgressRepository(local: local, remote: remote);
+  },
+);
 
 /// 最近观看仓库 Provider。
 final recentRepositoryProvider = Provider<RecentRepository>((ref) {

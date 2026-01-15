@@ -4,7 +4,9 @@ class SourceCreateResponse {
   SourceCreateResponse({required this.id, this.taskId});
   factory SourceCreateResponse.fromJson(Map<String, dynamic> json) =>
       SourceCreateResponse(
-          id: '${json['id']}', taskId: json['task_id'] as String?);
+        id: '${json['id']}',
+        taskId: json['task_id'] as String?,
+      );
 }
 
 class SourceItem {
@@ -13,12 +15,13 @@ class SourceItem {
   final String name;
   final String status;
   final String? lastScan;
-  SourceItem(
-      {required this.id,
-      required this.type,
-      required this.name,
-      required this.status,
-      this.lastScan});
+  SourceItem({
+    required this.id,
+    required this.type,
+    required this.name,
+    required this.status,
+    this.lastScan,
+  });
   factory SourceItem.fromJson(Map<String, dynamic> json) => SourceItem(
         id: '${json['id']}',
         type: (json['type'] as String?) ??

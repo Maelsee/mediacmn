@@ -13,11 +13,7 @@ class MediaPlayerPage extends ConsumerWidget {
   /// 路由额外参数（一般包含 fileId、detail、candidates 等）。
   final Object? extra;
 
-  const MediaPlayerPage({
-    super.key,
-    required this.coreId,
-    this.extra,
-  });
+  const MediaPlayerPage({super.key, required this.coreId, this.extra});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

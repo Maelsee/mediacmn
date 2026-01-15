@@ -141,13 +141,17 @@ class _RecentListPageState extends ConsumerState<RecentListPage> {
                                   right: 8,
                                   top: 8,
                                   child: IconButton(
-                                    icon: const Icon(Icons.close,
-                                        color: Colors.white),
+                                    icon: const Icon(
+                                      Icons.close,
+                                      color: Colors.white,
+                                    ),
                                     style: ButtonStyle(
                                       backgroundColor: WidgetStateProperty.all(
-                                          Colors.black45),
+                                        Colors.black45,
+                                      ),
                                       padding: WidgetStateProperty.all(
-                                          const EdgeInsets.all(4)),
+                                        const EdgeInsets.all(4),
+                                      ),
                                     ),
                                     onPressed: () => _remove(it),
                                   ),
@@ -185,8 +189,9 @@ class _RecentListPageState extends ConsumerState<RecentListPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('移除失败：$e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('移除失败：$e')));
     }
   }
 }

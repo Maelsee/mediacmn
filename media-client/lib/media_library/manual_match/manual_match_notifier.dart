@@ -15,8 +15,11 @@ class ManualMatchNotifier extends StateNotifier<ManualMatchState> {
   /// [detail] 详情数据
   /// [seasonIndex] 当前详情页选中的季索引（仅 TV 有效）
   /// [versionIndex] 当前详情页选中的版本索引
-  void initFiles(MediaDetail detail,
-      {int seasonIndex = 0, int versionIndex = 0}) {
+  void initFiles(
+    MediaDetail detail, {
+    int seasonIndex = 0,
+    int versionIndex = 0,
+  }) {
     final List<ManualMatchFileItem> files = [];
     int? localMediaId;
     int? localMediaVersionId;
@@ -60,8 +63,14 @@ class ManualMatchNotifier extends StateNotifier<ManualMatchState> {
           for (final ep in version.episodes) {
             for (final asset in ep.assets) {
               if (asset.type == 'video' || asset.type.isEmpty) {
-                files.add(_mapAsset(
-                    asset, season.seasonNumber, ep.episodeNumber, ep.title));
+                files.add(
+                  _mapAsset(
+                    asset,
+                    season.seasonNumber,
+                    ep.episodeNumber,
+                    ep.title,
+                  ),
+                );
               }
             }
           }
@@ -74,14 +83,19 @@ class ManualMatchNotifier extends StateNotifier<ManualMatchState> {
     }
 
     state = state.copyWith(
-        fileItems: files,
-        filePathHint: filePathHint,
-        localMediaId: localMediaId,
-        localMediaVersionId: localMediaVersionId);
+      fileItems: files,
+      filePathHint: filePathHint,
+      localMediaId: localMediaId,
+      localMediaVersionId: localMediaVersionId,
+    );
   }
 
   ManualMatchFileItem _mapAsset(
-      AssetItem asset, int? seasonNum, int? epNum, String? epTitle) {
+    AssetItem asset,
+    int? seasonNum,
+    int? epNum,
+    String? epTitle,
+  ) {
     return ManualMatchFileItem(
       fileId: asset.fileId,
       path: asset.path,
@@ -96,8 +110,11 @@ class ManualMatchNotifier extends StateNotifier<ManualMatchState> {
   /// 搜索 TMDB
   Future<void> search(String query) async {
     if (query.isEmpty) return;
-    state =
-        state.copyWith(searching: true, query: query, clearSearchError: true);
+    state = state.copyWith(
+      searching: true,
+      query: query,
+      clearSearchError: true,
+    );
     try {
       // 默认搜索 multi 或分别搜 movie/tv？需求说“输入电影或电视剧名称”，
       // 且 UI 结果混排。这里调用 searchTmdb 传 'multi' 或者前端根据 tab 分开？
@@ -147,10 +164,11 @@ class ManualMatchNotifier extends StateNotifier<ManualMatchState> {
   /// 选中 TMDB 条目
   Future<void> selectTmdbItem(TmdbSearchItem item) async {
     state = state.copyWith(
-        selectedTmdbItem: item,
-        seasonList: [],
-        episodeList: [],
-        selectedSeason: null);
+      selectedTmdbItem: item,
+      seasonList: [],
+      episodeList: [],
+      selectedSeason: null,
+    );
 
     // 如果是 TV，拉取季列表
     if (item.type == 'tv') {
@@ -162,16 +180,19 @@ class ManualMatchNotifier extends StateNotifier<ManualMatchState> {
             .toList();
         state = state.copyWith(loadingSeasons: false, seasonList: list);
       } catch (e) {
-        state =
-            state.copyWith(loadingSeasons: false, searchError: '获取季列表失败: $e');
+        state = state.copyWith(
+          loadingSeasons: false,
+          searchError: '获取季列表失败: $e',
+        );
       }
     } else {
       // Movie，直接进入匹配模式（不需要选季）
       // 默认把所有文件绑定到该 Movie
       final newDraft = <int, ManualMatchChoice>{};
       for (final f in state.fileItems) {
-        newDraft[f.fileId] =
-            ManualMatchChoice.bindMovie(tmdbMovieId: item.tmdbId);
+        newDraft[f.fileId] = ManualMatchChoice.bindMovie(
+          tmdbMovieId: item.tmdbId,
+        );
       }
       state = state.copyWith(draftChoices: newDraft);
     }
@@ -196,7 +217,9 @@ class ManualMatchNotifier extends StateNotifier<ManualMatchState> {
 
     try {
       final res = await api.getTmdbTvSeasonEpisodes(
-          state.selectedTmdbItem!.tmdbId, season.seasonNumber);
+        state.selectedTmdbItem!.tmdbId,
+        season.seasonNumber,
+      );
       final list = (res['episodes'] as List? ?? [])
           .map((e) => TmdbEpisodeItem.fromJson(e))
           .toList();
@@ -207,8 +230,10 @@ class ManualMatchNotifier extends StateNotifier<ManualMatchState> {
       // 需求：下面 listview 中都是视频文件条目...为每一个视频文件选择集信息。
       // 初始状态下，draft 为空，UI 显示“暂不改动”或原状态。
     } catch (e) {
-      state =
-          state.copyWith(loadingEpisodes: false, searchError: '获取集列表失败: $e');
+      state = state.copyWith(
+        loadingEpisodes: false,
+        searchError: '获取集列表失败: $e',
+      );
     }
   }
 
@@ -257,10 +282,7 @@ class ManualMatchNotifier extends StateNotifier<ManualMatchState> {
       }
 
       final items = state.draftChoices.entries.map((e) {
-        return {
-          'file_id': e.key,
-          ...e.value.toJson(),
-        };
+        return {'file_id': e.key, ...e.value.toJson()};
       }).toList();
 
       // 如果 items 为空（用户没做任何改变），是否提交？

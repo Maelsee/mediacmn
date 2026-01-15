@@ -61,10 +61,7 @@ class _MobileBottomBarState extends State<MobileBottomBar> {
         gradient: LinearGradient(
           begin: Alignment.bottomCenter,
           end: Alignment.topCenter,
-          colors: [
-            Colors.black.withValues(alpha: 0.9),
-            Colors.transparent,
-          ],
+          colors: [Colors.black.withValues(alpha: 0.9), Colors.transparent],
         ),
       ),
       child: Column(
@@ -89,11 +86,18 @@ class _MobileBottomBarState extends State<MobileBottomBar> {
               const SizedBox(width: 16),
               _buildTextButton('选集', widget.onEpisodes),
               const SizedBox(width: 16),
-              _buildTextButton(widget.speedText, widget.onSpeed,
-                  subtitle: '倍速'),
+              _buildTextButton(
+                widget.speedText,
+                widget.onSpeed,
+                subtitle: '倍速',
+              ),
               const SizedBox(width: 16),
-              _buildTextButton(widget.qualityText, widget.onQuality,
-                  subtitle: '画质', isHighlight: true),
+              _buildTextButton(
+                widget.qualityText,
+                widget.onQuality,
+                subtitle: '画质',
+                isHighlight: true,
+              ),
             ],
           ),
         ],
@@ -157,8 +161,12 @@ class _MobileBottomBarState extends State<MobileBottomBar> {
     );
   }
 
-  Widget _buildTextButton(String text, VoidCallback onTap,
-      {String? subtitle, bool isHighlight = false}) {
+  Widget _buildTextButton(
+    String text,
+    VoidCallback onTap, {
+    String? subtitle,
+    bool isHighlight = false,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Column(
