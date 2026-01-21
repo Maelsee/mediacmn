@@ -39,26 +39,28 @@ class MobileCenterControls extends StatelessWidget {
             ),
           ),
         ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 32),
-            child: IconButton(
-              icon: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.screen_rotation, color: Colors.white),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '旋转',
-                    style: TextStyle(color: Colors.white, fontSize: 10),
-                  ),
-                ],
+        // 只有在非锁屏状态下才显示旋转按钮
+        if (!isLocked)
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 32),
+              child: IconButton(
+                icon: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.screen_rotation, color: Colors.white),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '旋转',
+                      style: TextStyle(color: Colors.white, fontSize: 10),
+                    ),
+                  ],
+                ),
+                onPressed: onOrientationToggle,
               ),
-              onPressed: onOrientationToggle,
             ),
           ),
-        ),
       ],
     );
   }

@@ -69,15 +69,16 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   @override
   void didUpdateWidget(covariant MobilePlayerControls oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.state.isLocked) {
-      _autoHideTimer?.cancel();
-      return;
-    }
 
     final becameVisible =
         !oldWidget.state.controlsVisible && widget.state.controlsVisible;
     final becamePlaying = !oldWidget.state.playing && widget.state.playing;
-    if (becameVisible || becamePlaying) {
+    // 如果刚刚锁定，且当前可见，也应该安排自动隐藏
+    final becameLocked = !oldWidget.state.isLocked && widget.state.isLocked;
+
+    if (becameVisible ||
+        becamePlaying ||
+        (becameLocked && widget.state.controlsVisible)) {
       _scheduleAutoHide();
     }
 
@@ -90,14 +91,19 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _scheduleAutoHide() {
     _autoHideTimer?.cancel();
     if (!widget.state.controlsVisible) return;
-    if (widget.state.isLocked) return;
-    if (!widget.state.playing) return;
+
+    // 播放中或锁屏状态下都需要自动隐藏
+    // 锁屏状态下即使暂停也隐藏，避免遮挡画面
+    final shouldAutoHide = widget.state.playing || widget.state.isLocked;
+    if (!shouldAutoHide) return;
 
     _autoHideTimer = Timer(const Duration(seconds: 3), () {
       if (!mounted) return;
       if (!widget.state.controlsVisible) return;
-      if (widget.state.isLocked) return;
-      if (!widget.state.playing) return;
+
+      final shouldAutoHideNow = widget.state.playing || widget.state.isLocked;
+      if (!shouldAutoHideNow) return;
+
       widget.notifier.toggleControls();
     });
   }
@@ -107,13 +113,21 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     if (widget.state.isLocked) {
       return Stack(
         children: [
-          // 锁屏状态下不响应点击隐藏控制层，避免误操作。
-          Container(color: Colors.transparent),
-          MobileCenterControls(
-            isLocked: true,
-            onLockToggle: _toggleLock,
-            onOrientationToggle: () {}, // 锁屏状态下禁用旋转按钮
+          // 锁屏状态下点击背景显示/隐藏控制层（主要是显示解锁按钮）
+          GestureDetector(
+            onTap: () {
+              widget.notifier.toggleControls();
+              _scheduleAutoHide();
+            },
+            behavior: HitTestBehavior.translucent,
+            child: Container(color: Colors.transparent),
           ),
+          if (widget.state.controlsVisible)
+            MobileCenterControls(
+              isLocked: true,
+              onLockToggle: _toggleLock,
+              onOrientationToggle: () {}, // 锁屏状态下禁用旋转按钮
+            ),
         ],
       );
     }
@@ -575,6 +589,20 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
   /// 系统音量节流定时器。
   Timer? _systemVolumeTimer;
 
+  /// 延迟检查并重置浮层状态，防止手势异常中断导致文案残留。
+  void _checkAndResetOverlay() {
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted &&
+          _pointerCount == 0 &&
+          (_overlayText != null || _dragMode != 0)) {
+        setState(() {
+          _overlayText = null;
+          _dragMode = 0;
+        });
+      }
+    });
+  }
+
   @override
   void dispose() {
     _systemVolumeTimer?.cancel();
@@ -587,10 +615,15 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
       children: [
         Listener(
           onPointerDown: (_) => _pointerCount++,
-          onPointerUp: (_) =>
-              _pointerCount = _pointerCount > 0 ? _pointerCount - 1 : 0,
-          onPointerCancel: (_) =>
-              _pointerCount = _pointerCount > 0 ? _pointerCount - 1 : 0,
+          onPointerUp: (_) {
+            _pointerCount = _pointerCount > 0 ? _pointerCount - 1 : 0;
+            // 所有触点抬起后，延迟检查并重置可能残留的浮层
+            if (_pointerCount == 0) _checkAndResetOverlay();
+          },
+          onPointerCancel: (_) {
+            _pointerCount = _pointerCount > 0 ? _pointerCount - 1 : 0;
+            if (_pointerCount == 0) _checkAndResetOverlay();
+          },
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onTap: widget.controlsVisible ? null : widget.onToggleControls,
@@ -600,6 +633,13 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
               widget.onSetSpeed(2.0);
               setState(() {
                 _overlayText = '2倍速';
+              });
+            },
+            onLongPressCancel: () {
+              // 长按取消：恢复倍速并清除文案
+              widget.onSetSpeed(_longPressStartSpeed);
+              setState(() {
+                _overlayText = null;
               });
             },
             onLongPressEnd: (_) {

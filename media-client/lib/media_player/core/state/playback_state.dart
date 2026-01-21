@@ -682,8 +682,6 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   }
 
   Future<void> toggleControls() async {
-    // 锁屏状态下不允许隐藏控制层，避免误触导致无法解锁。
-    if (state.isLocked) return;
     state = state.copyWith(controlsVisible: !state.controlsVisible);
   }
 

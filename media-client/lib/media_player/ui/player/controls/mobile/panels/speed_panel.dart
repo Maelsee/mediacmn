@@ -71,19 +71,31 @@ class SpeedPanel extends ConsumerWidget {
             itemBuilder: (context, index) {
               final speed = availableSpeeds[index];
               final isSelected = (speed - currentSpeed).abs() < 0.01;
-              return ListTile(
-                title: Text(
-                  '${speed}x',
-                  style: TextStyle(
-                    color: isSelected ? const Color(0xFFFFE796) : Colors.white,
-                    fontWeight:
-                        isSelected ? FontWeight.bold : FontWeight.normal,
+              return GestureDetector(
+                onTap: () => onSpeedChanged(speed),
+                child: Container(
+                  margin:
+                      const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF666666).withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: isSelected
+                        ? Border.all(color: const Color(0xFFFFE796), width: 1)
+                        : null,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${speed}x',
+                    style: TextStyle(
+                      color:
+                          isSelected ? const Color(0xFFFFE796) : Colors.white,
+                      fontSize: 14,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
                   ),
                 ),
-                trailing: isSelected
-                    ? const Icon(Icons.check, color: Color(0xFFFFE796))
-                    : null,
-                onTap: () => onSpeedChanged(speed),
               );
             },
           ),

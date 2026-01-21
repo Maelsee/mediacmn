@@ -509,6 +509,8 @@ class PlayerService implements PlayerServiceBase {
 
   @override
   void dispose() {
+    // 强制停止播放，防止 native 侧未及时释放导致声音残留
+    _player.stop();
     _player.dispose();
   }
 }

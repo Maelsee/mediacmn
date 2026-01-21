@@ -145,7 +145,7 @@ class _EpisodePanelState extends State<EpisodePanel> {
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(6),
               border: isSelected
-                  ? Border.all(color: const Color(0xFFFFD700))
+                  ? Border.all(color: const Color(0xFFFFE796))
                   : null,
             ),
             child: Row(
@@ -162,7 +162,7 @@ class _EpisodePanelState extends State<EpisodePanel> {
                             : '第 ${episode.episodeNumber} 集',
                         style: TextStyle(
                           color: isSelected
-                              ? const Color(0xFFFFD700)
+                              ? const Color(0xFFFFE796)
                               : Colors.white,
                           fontSize: 14,
                           fontWeight:
@@ -230,7 +230,7 @@ class _EpisodeThumbnail extends StatelessWidget {
               alignment: Alignment.center,
               child: Icon(
                 Icons.play_circle_outline,
-                color: selected ? const Color(0xFFFFD700) : Colors.white70,
+                color: selected ? const Color(0xFFFFE796) : Colors.white70,
                 size: 22,
               ),
             ),

@@ -95,21 +95,36 @@ class _QualityPanelState extends State<QualityPanel> {
                     final quality = _visibleQualities[index];
                     // 使用 ID 对比确保选中状态正确
                     final isSelected = quality.id == widget.currentQuality.id;
-                    return ListTile(
-                      title: Text(
-                        _getTrackName(quality),
-                        style: TextStyle(
-                          color: isSelected
-                              ? const Color(0xFFFFE796)
-                              : Colors.white,
-                          fontWeight:
-                              isSelected ? FontWeight.bold : FontWeight.normal,
+                    return GestureDetector(
+                      onTap: () => widget.onQualitySelected(quality),
+                      child: Container(
+                        // margin: const EdgeInsets.symmetric(vertical: 4),
+                        // padding: const EdgeInsets.symmetric(vertical: 14),
+                        margin: const EdgeInsets.symmetric(
+                            vertical: 4, horizontal: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF666666).withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(12),
+                          border: isSelected
+                              ? Border.all(
+                                  color: const Color(0xFFFFE796), width: 1)
+                              : null,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          _getTrackName(quality),
+                          style: TextStyle(
+                            color: isSelected
+                                ? const Color(0xFFFFE796)
+                                : Colors.white,
+                            fontSize: 14,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
                         ),
                       ),
-                      trailing: isSelected
-                          ? const Icon(Icons.check, color: Color(0xFFFFE796))
-                          : null,
-                      onTap: () => widget.onQualitySelected(quality),
                     );
                   },
                 ),

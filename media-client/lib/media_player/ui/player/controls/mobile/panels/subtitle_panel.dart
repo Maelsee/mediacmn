@@ -288,34 +288,20 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF666666).withValues(alpha: 0.3)
-              : const Color(0xFF666666).withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(8),
+          color: const Color(0xFF666666).withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(12),
           border: isSelected
-              ? Border.all(
-                  color: const Color(0xFFFFE796).withValues(alpha: 0.5),
-                  width: 1)
+              ? Border.all(color: const Color(0xFFFFE796), width: 1)
               : null,
         ),
         alignment: Alignment.center,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // Center text trick: Spacer + Text + Spacer
-            const Spacer(),
-            Text(
-              _getTrackName(track),
-              style: TextStyle(
-                color: isSelected ? const Color(0xFFFFE796) : Colors.white70,
-                fontSize: 14,
-                fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
-              ),
-            ),
-            const Spacer(),
-            if (isSelected)
-              const Icon(Icons.check, size: 16, color: Color(0xFFFFE796)),
-          ],
+        child: Text(
+          _getTrackName(track),
+          style: TextStyle(
+            color: isSelected ? const Color(0xFFFFE796) : Colors.white70,
+            fontSize: 14,
+            fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
+          ),
         ),
       ),
     );
