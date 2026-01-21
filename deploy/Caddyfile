@@ -1,3 +1,0 @@
-http://{$DOMAIN:localhost}:6069 {
-	reverse_proxy api:8000
-}
