@@ -88,3 +88,6 @@ docker-compose.prod.yml
 docker-compose.yml
 log
 mediacmn_backup.sql
+deploy/.env
+.gitignore
+media-client/.gitignore
