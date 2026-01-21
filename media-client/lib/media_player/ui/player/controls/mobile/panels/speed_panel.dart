@@ -22,78 +22,73 @@ class SpeedPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final availableSpeeds = _getAvailableSpeeds(context, ref);
 
-    return Container(
-      // 移除固定宽度，由父组件控制
-      color: const Color(0xFF1E1E1E),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                const Text(
-                  '倍速播放',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              const Text(
+                '倍速播放',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+
+              /// 显示性能提示
+              Consumer(
+                builder: (context, ref, _) {
+                  final state = ref.watch(playbackProvider);
+                  final isHighResolution =
+                      state.selectedVideoTrack?.w != null &&
+                          state.selectedVideoTrack?.h != null &&
+                          (state.selectedVideoTrack!.w! >= 3840 ||
+                              state.selectedVideoTrack!.h! >= 2160);
+
+                  if (isHighResolution) {
+                    return const Tooltip(
+                      message: '4K视频高倍速播放将自动优化同步',
+                      child: Icon(
+                        Icons.speed,
+                        color: Colors.blue,
+                        size: 16,
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: availableSpeeds.length,
+            itemBuilder: (context, index) {
+              final speed = availableSpeeds[index];
+              final isSelected = (speed - currentSpeed).abs() < 0.01;
+              return ListTile(
+                title: Text(
+                  '${speed}x',
                   style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    color: isSelected ? const Color(0xFFFFE796) : Colors.white,
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
-                const Spacer(),
-
-                /// 显示性能提示
-                Consumer(
-                  builder: (context, ref, _) {
-                    final state = ref.watch(playbackProvider);
-                    final isHighResolution =
-                        state.selectedVideoTrack?.w != null &&
-                            state.selectedVideoTrack?.h != null &&
-                            (state.selectedVideoTrack!.w! >= 3840 ||
-                                state.selectedVideoTrack!.h! >= 2160);
-
-                    if (isHighResolution) {
-                      return const Tooltip(
-                        message: '4K视频高倍速播放将自动优化同步',
-                        child: Icon(
-                          Icons.speed,
-                          color: Colors.blue,
-                          size: 16,
-                        ),
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  },
-                ),
-              ],
-            ),
+                trailing: isSelected
+                    ? const Icon(Icons.check, color: Color(0xFFFFE796))
+                    : null,
+                onTap: () => onSpeedChanged(speed),
+              );
+            },
           ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: availableSpeeds.length,
-              itemBuilder: (context, index) {
-                final speed = availableSpeeds[index];
-                final isSelected = (speed - currentSpeed).abs() < 0.01;
-                return ListTile(
-                  title: Text(
-                    '${speed}x',
-                    style: TextStyle(
-                      color:
-                          isSelected ? const Color(0xFFFFD700) : Colors.white,
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                  trailing: isSelected
-                      ? const Icon(Icons.check, color: Color(0xFFFFD700))
-                      : null,
-                  onTap: () => onSpeedChanged(speed),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

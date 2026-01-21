@@ -71,41 +71,38 @@ class _AudioPanelState extends State<AudioPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF1E1E1E),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              '音轨选择',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text(
+            '音轨选择',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          Expanded(
-            child: _visibleAudios.isEmpty
-                ? const Center(
-                    child: Text(
-                      '暂无可用音轨',
-                      style: TextStyle(color: Colors.white70, fontSize: 14),
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _visibleAudios.length,
-                    itemBuilder: (context, index) {
-                      return _buildAudioOption(_visibleAudios[index]);
-                    },
+        ),
+        Expanded(
+          child: _visibleAudios.isEmpty
+              ? const Center(
+                  child: Text(
+                    '暂无可用音轨',
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
-          ),
-        ],
-      ),
+                )
+              : ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _visibleAudios.length,
+                  itemBuilder: (context, index) {
+                    return _buildAudioOption(_visibleAudios[index]);
+                  },
+                ),
+        ),
+      ],
     );
   }
 
@@ -118,12 +115,12 @@ class _AudioPanelState extends State<AudioPanel> {
       title: Text(
         _getTrackName(track),
         style: TextStyle(
-          color: isSelected ? const Color(0xFFFFD700) : Colors.white70,
+          color: isSelected ? const Color(0xFFFFE796) : Colors.white70,
           fontSize: 14,
         ),
       ),
       trailing: isSelected
-          ? const Icon(Icons.check, color: Color(0xFFFFD700), size: 16)
+          ? const Icon(Icons.check, color: Color(0xFFFFE796), size: 16)
           : null,
       onTap: () => widget.onAudioSelected(track),
     );

@@ -66,60 +66,55 @@ class _QualityPanelState extends State<QualityPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      // 移除固定宽度，由父组件控制
-      color: const Color(0xFF1E1E1E),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              '画质选择',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text(
+            '画质选择',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          Expanded(
-            child: _visibleQualities.isEmpty
-                ? const Center(
-                    child: Text(
-                      '暂无可用画质',
-                      style: TextStyle(color: Colors.white70, fontSize: 14),
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    itemCount: _visibleQualities.length,
-                    itemBuilder: (context, index) {
-                      final quality = _visibleQualities[index];
-                      // 使用 ID 对比确保选中状态正确
-                      final isSelected = quality.id == widget.currentQuality.id;
-                      return ListTile(
-                        title: Text(
-                          _getTrackName(quality),
-                          style: TextStyle(
-                            color: isSelected
-                                ? const Color(0xFFFFD700)
-                                : Colors.white,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                        ),
-                        trailing: isSelected
-                            ? const Icon(Icons.check, color: Color(0xFFFFD700))
-                            : null,
-                        onTap: () => widget.onQualitySelected(quality),
-                      );
-                    },
+        ),
+        Expanded(
+          child: _visibleQualities.isEmpty
+              ? const Center(
+                  child: Text(
+                    '暂无可用画质',
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
-          ),
-        ],
-      ),
+                )
+              : ListView.builder(
+                  controller: _scrollController,
+                  itemCount: _visibleQualities.length,
+                  itemBuilder: (context, index) {
+                    final quality = _visibleQualities[index];
+                    // 使用 ID 对比确保选中状态正确
+                    final isSelected = quality.id == widget.currentQuality.id;
+                    return ListTile(
+                      title: Text(
+                        _getTrackName(quality),
+                        style: TextStyle(
+                          color: isSelected
+                              ? const Color(0xFFFFE796)
+                              : Colors.white,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      trailing: isSelected
+                          ? const Icon(Icons.check, color: Color(0xFFFFE796))
+                          : null,
+                      onTap: () => widget.onQualitySelected(quality),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 

@@ -70,34 +70,31 @@ class _EpisodePanelState extends State<EpisodePanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF1E1E1E),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  '选集',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                '选集',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
                 ),
-                Text(
-                  '共${widget.episodes.length}个',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ],
-            ),
+              ),
+              Text(
+                '共${widget.episodes.length}个',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ],
           ),
-          Expanded(child: _buildBody()),
-        ],
-      ),
+        ),
+        Expanded(child: _buildBody()),
+      ],
     );
   }
 

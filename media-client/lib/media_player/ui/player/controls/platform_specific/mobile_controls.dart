@@ -239,7 +239,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             final state = ref.watch(playbackProvider);
             final notifier = ref.read(playbackProvider.notifier);
             return Container(
-              height: MediaQuery.of(context).size.height * 0.6, // 占据 60% 高度
+              height: MediaQuery.of(context).size.height * 0.5, // 占据 60% 高度
+              clipBehavior: Clip.hardEdge, // 新增：强制裁剪子组件
               decoration: const BoxDecoration(
                 color: Color(0xFF1E1E1E),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -271,9 +272,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               return Align(
                 alignment: Alignment.centerRight,
                 child: Material(
-                  color: Colors.transparent,
+                  color: const Color(0xFF1E1E1E),
                   child: SizedBox(
-                    width: 300, // 侧边栏固定宽度
+                    width: 350, // 侧边栏固定宽度
                     child: builder(state, notifier),
                   ),
                 ),

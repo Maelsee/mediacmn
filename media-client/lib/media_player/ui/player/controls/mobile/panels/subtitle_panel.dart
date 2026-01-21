@@ -36,6 +36,8 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
   final ScrollController _scrollController = ScrollController();
   late List<SubtitleTrack> _visibleSubtitles;
 
+  bool _showSettings = false;
+
   @override
   void didUpdateWidget(SubtitlePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -77,70 +79,81 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Container(
-        color: const Color(0xFF1E1E1E),
-        child: Column(
-          children: [
-            const TabBar(
-              indicatorColor: Color(0xFFFFD700),
-              labelColor: Color(0xFFFFD700),
-              unselectedLabelColor: Colors.white70,
-              tabs: [
-                Tab(text: '字幕选择'),
-                Tab(text: '样式设置'),
+    return Column(
+      children: [
+        _buildHeader(),
+        Expanded(
+          child: _showSettings ? _buildStyleSettings() : _buildTrackSelection(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          const Text(
+            '显示字幕',
+            style: TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(width: 12),
+          Switch(
+            value: widget.showSubtitles,
+            onChanged: widget.onToggleShowSubtitles,
+            activeTrackColor: const Color(0xFFFFE796),
+            thumbColor: WidgetStateProperty.resolveWith<Color>((states) {
+              if (states.contains(WidgetState.selected)) {
+                return Colors.white;
+              }
+              return Colors.white;
+            }),
+          ),
+          const Spacer(),
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _showSettings = !_showSettings;
+              });
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.settings,
+                  size: 18,
+                  color:
+                      _showSettings ? const Color(0xFFFFE796) : Colors.white70,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '字幕设置',
+                  style: TextStyle(
+                    color: _showSettings
+                        ? const Color(0xFFFFE796)
+                        : Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
               ],
             ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _buildTrackSelectionTab(),
-                  _buildStyleSettingsTab(),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildTrackSelectionTab() {
+  Widget _buildTrackSelection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            children: [
-              const Text(
-                '显示字幕',
-                style: TextStyle(color: Colors.white, fontSize: 16),
-              ),
-              const Spacer(),
-              Switch(
-                value: widget.showSubtitles,
-                onChanged: widget.onToggleShowSubtitles,
-                activeTrackColor: const Color(0xFFFFD700),
-              ),
-            ],
-          ),
-        ),
         if (widget.showSubtitles) ...[
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Row(
-              children: [
-                Text(
-                  '可用字幕',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Text(
+              '内嵌字幕',
+              style: TextStyle(color: Colors.white70, fontSize: 14),
             ),
           ),
           Expanded(
@@ -181,7 +194,7 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
     );
   }
 
-  Widget _buildStyleSettingsTab() {
+  Widget _buildStyleSettings() {
     if (!widget.showSubtitles) {
       return const Center(
         child: Text(
@@ -192,17 +205,17 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
     }
 
     return ListView(
-      padding: const EdgeInsets.all(24.0),
+      padding: const EdgeInsets.all(16.0),
       children: [
         _buildSlider(
-          label: '字体大小',
+          label: '字号大小',
           value: widget.fontSize,
           min: 20.0,
           max: 80.0,
           onChanged: widget.onFontSizeChanged,
           displayFormat: (v) => v.toInt().toString(),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 16),
         _buildSlider(
           label: '垂直位置',
           value: widget.bottomPadding,
@@ -223,57 +236,88 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
     required ValueChanged<double> onChanged,
     required String Function(double) displayFormat,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-            ),
-            Text(
-              displayFormat(value),
-              style: const TextStyle(color: Colors.white70, fontSize: 14),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        SliderTheme(
-          data: SliderThemeData(
-            activeTrackColor: const Color(0xFFFFD700),
-            inactiveTrackColor: Colors.white24,
-            thumbColor: Colors.white,
-            overlayColor: const Color(0xFFFFD700).withValues(alpha: 0.2),
-            trackHeight: 4.0,
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF666666).withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+              Text(
+                displayFormat(value),
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+            ],
           ),
-          child: Slider(
-            value: value,
-            min: min,
-            max: max,
-            onChanged: onChanged,
+          const SizedBox(height: 12),
+          SliderTheme(
+            data: SliderThemeData(
+              activeTrackColor: const Color(0xFFFFE796),
+              inactiveTrackColor: Colors.white24,
+              thumbColor: Colors.white,
+              overlayColor: const Color(0xFFFFE796).withValues(alpha: 0.2),
+              trackHeight: 4.0,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
+            ),
+            child: Slider(
+              value: value,
+              min: min,
+              max: max,
+              onChanged: onChanged,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildSubtitleOption(SubtitleTrack track) {
     final isSelected = track.id == widget.selectedSubtitle.id;
-    return ListTile(
-      title: Text(
-        _getTrackName(track),
-        style: TextStyle(
-          color: isSelected ? const Color(0xFFFFD700) : Colors.white70,
-          fontSize: 14,
+    return GestureDetector(
+      onTap: () => widget.onSubtitleSelected(track),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF666666).withValues(alpha: 0.3)
+              : const Color(0xFF666666).withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(8),
+          border: isSelected
+              ? Border.all(
+                  color: const Color(0xFFFFE796).withValues(alpha: 0.5),
+                  width: 1)
+              : null,
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Center text trick: Spacer + Text + Spacer
+            const Spacer(),
+            Text(
+              _getTrackName(track),
+              style: TextStyle(
+                color: isSelected ? const Color(0xFFFFE796) : Colors.white70,
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
+              ),
+            ),
+            const Spacer(),
+            if (isSelected)
+              const Icon(Icons.check, size: 16, color: Color(0xFFFFE796)),
+          ],
         ),
       ),
-      trailing: isSelected
-          ? const Icon(Icons.check, color: Color(0xFFFFD700), size: 16)
-          : null,
-      onTap: () => widget.onSubtitleSelected(track),
     );
   }
 

@@ -52,108 +52,120 @@ class _IntroOutroSettingsPanelState extends State<IntroOutroSettingsPanel> {
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF1E1E1E),
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '播放设置',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildSwitchTile(
-            title: '自动跳过电视剧片头片尾',
-            subtitle: '开启后，所有电视剧均将自动跳过片头片尾',
-            value: _s.skipIntroOutro,
-            onChanged: (v) => _updateSettings(_s.copyWith(skipIntroOutro: v)),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            '当前视频片头片尾设置',
-            style: TextStyle(color: Colors.white54, fontSize: 13),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF2C2C2C), // 深灰色背景
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                _buildTimeTile(
-                  label: '片头时间',
-                  time: _s.introTime,
-                  onTap: () => _showTimePicker(
-                    context,
-                    '片头时间',
-                    _s.introTime,
-                    (d) => _updateSettings(_s.copyWith(introTime: d)),
+          Expanded(
+            child: SingleChildScrollView(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '播放设置',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const Divider(height: 1, color: Colors.black12),
-                _buildTimeTile(
-                  label: '片尾时间',
-                  time: _s.outroTime,
-                  onTap: () => _showTimePicker(
-                    context,
-                    '片尾时间',
-                    _s.outroTime,
-                    (d) => _updateSettings(_s.copyWith(outroTime: d)),
+                  const SizedBox(height: 12),
+                  _buildSwitchTile(
+                    title: '自动跳过电视剧片头片尾',
+                    subtitle: '开启后，所有电视剧均将自动跳过片头片尾',
+                    value: _s.skipIntroOutro,
+                    onChanged: (v) =>
+                        _updateSettings(_s.copyWith(skipIntroOutro: v)),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          GestureDetector(
-            onTap: () {
-              _updateSettings(
-                _s.copyWith(applyToAllEpisodes: !_s.applyToAllEpisodes),
-              );
-            },
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              children: [
-                Icon(
-                  _s.applyToAllEpisodes
-                      ? Icons.check_box
-                      : Icons.check_box_outline_blank,
-                  color: _s.applyToAllEpisodes ? Colors.blue : Colors.white70,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  '同步应用到电视剧当前季的所有剧集',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-          const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: () {
-                widget.onChanged(_s);
-                widget.onSave?.call();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF333333),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    '当前视频片头片尾设置',
+                    style: TextStyle(color: Colors.white54, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2C2C2C), // 深灰色背景
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildTimeTile(
+                          label: '片头时间',
+                          time: _s.introTime,
+                          onTap: () => _showTimePicker(
+                            context,
+                            '片头时间',
+                            _s.introTime,
+                            (d) => _updateSettings(_s.copyWith(introTime: d)),
+                          ),
+                        ),
+                        const Divider(height: 1, color: Colors.black12),
+                        _buildTimeTile(
+                          label: '片尾时间',
+                          time: _s.outroTime,
+                          onTap: () => _showTimePicker(
+                            context,
+                            '片尾时间',
+                            _s.outroTime,
+                            (d) => _updateSettings(_s.copyWith(outroTime: d)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: () {
+                      _updateSettings(
+                        _s.copyWith(applyToAllEpisodes: !_s.applyToAllEpisodes),
+                      );
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Row(
+                      children: [
+                        Icon(
+                          _s.applyToAllEpisodes
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                          color: _s.applyToAllEpisodes
+                              ? Colors.blue
+                              : Colors.white70,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          '同步应用到电视剧当前季的所有剧集',
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        widget.onChanged(_s);
+                        widget.onSave?.call();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF333333),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('保存设置', style: TextStyle(fontSize: 15)),
+                    ),
+                  ),
+                  SizedBox(height: 16 + MediaQuery.of(context).padding.bottom),
+                ],
               ),
-              child: const Text('保存设置', style: TextStyle(fontSize: 15)),
             ),
           ),
-          const SizedBox(height: 16),
         ],
       ),
     );
@@ -323,11 +335,22 @@ class _TimePickerSheetState extends State<_TimePickerSheet> {
             ),
           ),
           Expanded(
-            child: CupertinoTimerPicker(
-              mode: CupertinoTimerPickerMode.hms,
-              initialTimerDuration: _current,
-              onTimerDurationChanged: (d) => _current = d,
-              backgroundColor: Colors.transparent,
+            child: CupertinoTheme(
+              data: const CupertinoThemeData(
+                brightness: Brightness.dark,
+                textTheme: CupertinoTextThemeData(
+                  dateTimePickerTextStyle: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                  ),
+                ),
+              ),
+              child: CupertinoTimerPicker(
+                mode: CupertinoTimerPickerMode.hms,
+                initialTimerDuration: _current,
+                onTimerDurationChanged: (d) => _current = d,
+                backgroundColor: Colors.transparent,
+              ),
             ),
           ),
         ],

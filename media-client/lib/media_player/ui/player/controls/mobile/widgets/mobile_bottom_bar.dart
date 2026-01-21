@@ -122,7 +122,7 @@ class _MobileBottomBarState extends State<MobileBottomBar> {
         Expanded(
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              activeTrackColor: const Color(0xFFFFD700),
+              activeTrackColor: const Color(0xFFFFE796),
               inactiveTrackColor: Colors.white24,
               thumbColor: Colors.white,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
@@ -175,7 +175,7 @@ class _MobileBottomBarState extends State<MobileBottomBar> {
           Text(
             text,
             style: TextStyle(
-              color: isHighlight ? const Color(0xFFFFD700) : Colors.white,
+              color: isHighlight ? const Color(0xFFFFE796) : Colors.white,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
