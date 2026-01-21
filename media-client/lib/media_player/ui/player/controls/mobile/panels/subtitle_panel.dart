@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:media_client/media_player/utils/track_formatter.dart';
 import 'package:media_kit/media_kit.dart';
 
 /// 移动端字幕面板。
@@ -296,7 +297,7 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
         ),
         alignment: Alignment.center,
         child: Text(
-          _getTrackName(track),
+          TrackFormatter.subtitle(track),
           style: TextStyle(
             color: isSelected ? const Color(0xFFFFE796) : Colors.white70,
             fontSize: 14,
@@ -305,28 +306,5 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
         ),
       ),
     );
-  }
-
-  String _getTrackName(SubtitleTrack track) {
-    if (track.id == 'auto') return '自动';
-    if (track.title != null && track.title!.isNotEmpty) {
-      return track.title!;
-    }
-    if (track.language != null && track.language!.isNotEmpty) {
-      const map = {
-        'chi': '中文',
-        'zho': '中文',
-        'eng': 'English',
-        'jpn': '日本語',
-        'kor': '한국어',
-        'fre': 'Français',
-        'ger': 'Deutsch',
-        'spa': 'Español',
-        'ita': 'Italiano',
-        'rus': 'Русский',
-      };
-      return map[track.language!] ?? track.language!;
-    }
-    return track.id;
   }
 }
