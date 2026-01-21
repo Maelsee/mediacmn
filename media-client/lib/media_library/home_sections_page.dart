@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'settings_provider.dart';
+import '../profile/settings_provider.dart';
 
 class HomeSectionsPage extends ConsumerStatefulWidget {
   const HomeSectionsPage({super.key});

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:media_client/profile/settings_provider.dart';
 import 'router.dart';
 
-class MediaClientApp extends StatelessWidget {
+class MediaClientApp extends ConsumerWidget {
   const MediaClientApp({super.key});
 
   /// AppBar 的统一高度（用于减少垂直空间占用）。
@@ -11,7 +14,8 @@ class MediaClientApp extends StatelessWidget {
   static const double _bottomNavigationBarHeight = 64;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
     final light = ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
@@ -54,6 +58,17 @@ class MediaClientApp extends StatelessWidget {
       title: 'Media Client',
       theme: light,
       darkTheme: dark,
+      themeMode: settings.themeMode,
+      locale: settings.locale,
+      supportedLocales: const [
+        Locale('en'),
+        Locale('zh'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       debugShowCheckedModeBanner: false,
       routerConfig: appRouter,
     );

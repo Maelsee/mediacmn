@@ -45,13 +45,14 @@ def _verify_password(password: str, hashed: str) -> bool:
     return pwd_context.verify(password, hashed)
 
 # 创建用户
-def create_user(session: Session, email: str, password: str) -> User:
+def create_user(session: Session, email: str, password: str, language: str) -> User:
     """创建新用户。
 
     Args:
         session: SQLModel会话。
         email: 用户邮箱。
         password: 用户密码。
+        language: 用户语言选择。
 
     Returns:
         User: 创建的用户对象。
@@ -59,7 +60,10 @@ def create_user(session: Session, email: str, password: str) -> User:
     Raises:
         AppError: 邮箱已存在时抛出。
     """
-    user = User(email=email, hashed_password=_hash_password(password))
+    if not language:
+        user = User(email=email, hashed_password=_hash_password(password))
+    else:
+        user = User(email=email, hashed_password=_hash_password(password), language=language)
     session.add(user)
     try:
         session.commit()

@@ -89,7 +89,12 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
     setState(() => _busy = true);
     try {
       final api = ref.read(apiClientProvider);
-      await api.register(_email.text, _password.text);
+      final locale = Localizations.localeOf(context);
+      await api.register(
+        _email.text,
+        _password.text,
+        language: locale.toString(),
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,

@@ -25,8 +25,10 @@ def register(payload: UserCreate, session: Session = Depends(get_session)) -> Us
 
     - email: 唯一的用户邮箱
     - password: 密码（会被哈希存储）
+    - language: 用户语言选择
     """
-    user = create_user(session, email=payload.email, password=payload.password)
+    logger.info(f"注册请求语言: {payload.language}")
+    user = create_user(session, email=payload.email, password=payload.password, language=payload.language)
     return UserRead(id=user.id, email=user.email, is_active=user.is_active)
 
 

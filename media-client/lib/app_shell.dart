@@ -89,7 +89,7 @@ class _MediaLibraryPageState extends ConsumerState<MediaLibraryPage> {
                 ),
                 IconButton(
                   onPressed: () {
-                    GoRouter.of(context).push('/profile/settings');
+                    GoRouter.of(context).push('/media/home-sections');
                   },
                   icon: const Icon(Icons.tune),
                 ),

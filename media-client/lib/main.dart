@@ -8,6 +8,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   await Hive.openBox('auth');
+  await Hive.openBox('settings');
   MediaKit.ensureInitialized();
   runApp(const ProviderScope(child: MediaClientApp()));
 }

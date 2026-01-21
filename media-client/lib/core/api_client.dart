@@ -716,11 +716,19 @@ class ApiClient {
     throw Exception('删除存储失败');
   }
 
-  Future<String> loginWithEmail(String email, String password) async {
+  Future<String> loginWithEmail(
+    String email,
+    String password, {
+    String? language,
+  }) async {
+    final payload = {'email': email, 'password': password};
+    if (language != null) {
+      payload['language'] = language;
+    }
     final res = await _client.post(
       _u('/api/auth/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
+      body: jsonEncode(payload),
     );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -741,11 +749,19 @@ class ApiClient {
     throw Exception('登录失败');
   }
 
-  Future<void> register(String email, String password) async {
+  Future<void> register(
+    String email,
+    String password, {
+    String? language,
+  }) async {
+    final payload = {'email': email, 'password': password};
+    if (language != null) {
+      payload['language'] = language;
+    }
     final res = await _client.post(
       _u('/api/auth/register'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
+      body: jsonEncode(payload),
     );
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return;

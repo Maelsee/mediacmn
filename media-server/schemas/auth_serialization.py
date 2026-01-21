@@ -36,3 +36,4 @@ class LoginRequest(BaseModel):
     """登录请求模型"""
     email: EmailStr = Field(description="邮箱")
     password: str = Field(description="密码")
+    language: Optional[str] = Field(default=None, description="用户语言选择")

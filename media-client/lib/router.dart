@@ -16,7 +16,8 @@ import 'package:media_client/source_library/storage_browser_page.dart';
 // import 'profile/home_page.dart';
 import 'profile/login_page.dart';
 import 'profile/register_page.dart';
-import 'profile/home_sections_page.dart';
+import 'profile/user_setting.dart';
+import 'media_library/home_sections_page.dart';
 import 'media_library/media_kind_page.dart';
 import 'media_library/genres_page.dart';
 import 'media_library/recent_list_page.dart';
@@ -62,6 +63,11 @@ final appRouter = GoRouter(
                     final kind = state.uri.queryParameters['kind'];
                     return SearchPage(initialKind: kind);
                   },
+                ),
+                GoRoute(
+                  path: 'home-sections',
+                  parentNavigatorKey: _rootNavigatorKey,
+                  builder: (context, state) => const HomeSectionsPage(),
                 ),
                 GoRoute(
                   path: 'cards',
@@ -221,7 +227,7 @@ final appRouter = GoRouter(
                 GoRoute(
                   path: 'settings',
                   parentNavigatorKey: _rootNavigatorKey,
-                  builder: (context, state) => const HomeSectionsPage(),
+                  builder: (context, state) => const UserSettingsPage(),
                 ),
               ],
             ),
