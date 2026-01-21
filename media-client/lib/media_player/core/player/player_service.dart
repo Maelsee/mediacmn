@@ -129,10 +129,39 @@ class PlayerService implements PlayerServiceBase {
   }) : _player = player;
 
   factory PlayerService.create({PlayerConfig config = const PlayerConfig()}) {
-    final player = Player();
-    final controller = VideoController(player);
+    final player = Player(
+      configuration: const PlayerConfiguration(
+        /// 启用硬件加速解码，提升4K高帧率视频播放性能
+        vo: 'gpu',
+      ),
+    );
+
+    /// 针对移动端性能的激进优化配置 (通过底层属性设置)
+    /// 解决 4K 60fps 2x 倍速下的音画不同步问题
+    try {
+      final platform = player.platform as dynamic;
+      // 自动选择最佳硬件解码器 (mediacodec/videotoolbox)
+      platform.setProperty('hwdec', 'auto');
+      // 关键：解码性能不足时，在解码层丢帧以保持音画同步
+      platform.setProperty('framedrop', 'decoder');
+      // 跳过非参考帧的去块滤波，大幅降低 CPU/GPU 负载
+      platform.setProperty('vd-lavc-skiploopfilter', 'nonref');
+    } catch (e) {
+      debugPrint('Failed to set mpv properties: $e');
+    }
+
+    /// 配置视频控制器，优化渲染性能
+    final controller = VideoController(
+      player,
+      configuration: const VideoControllerConfiguration(
+        /// 启用硬件加速渲染
+        enableHardwareAcceleration: true,
+      ),
+    );
+
     player.setVolume(config.initialVolume);
     player.setRate(config.initialSpeed);
+
     return PlayerService._(
       player: player,
       videoController: controller,
@@ -175,10 +204,35 @@ class PlayerService implements PlayerServiceBase {
         ? Media(url)
         : Media(url, httpHeaders: headers);
 
-    // 优化续播逻辑：
-    // - 先暂停打开，避免抢跑播放 0 帧导致 seek 失效或出现“先播放再跳转”。
-    // - 等待 duration 就绪后再 seek，并做位置确认与重试，提升不同设备/协议下的成功率。
     final shouldSeek = start != null && start > Duration.zero;
+    bool usedNativeStart = false;
+
+    // 优化续播逻辑：尝试使用底层 start 属性直接从指定位置开始播放
+    // 避免 "0 -> seek -> 0 -> seek" 的多重跳变问题
+    try {
+      final platform = _player.platform as dynamic;
+      if (shouldSeek) {
+        // mpv start 属性支持秒数 (浮点数)
+        final startSeconds = start.inMilliseconds / 1000.0;
+        await platform.setProperty('start', '$startSeconds');
+        usedNativeStart = true;
+      } else {
+        // 重置 start，避免污染下一个播放
+        await platform.setProperty('start', '0');
+      }
+    } catch (e) {
+      _debugLog('设置 start 属性失败: $e');
+    }
+
+    if (usedNativeStart) {
+      // 如果使用了原生 start 属性，直接 open 即可（mpv 会处理 seek）
+      await _player.open(media, play: play);
+      return;
+    }
+
+    // 回退逻辑：手动 seek
+    // - 先暂停打开，避免抢跑播放 0 帧导致 seek 失效或出现“先播放再跳转”。
+    // - 等待 duration 就绪后再 seek，并做位置确认与重试。
     await _player.open(media, play: play && !shouldSeek);
 
     if (shouldSeek) {
@@ -385,7 +439,49 @@ class PlayerService implements PlayerServiceBase {
   @override
   Future<void> setVolume(double volume) => _player.setVolume(volume);
   @override
-  Future<void> setSpeed(double speed) => _player.setRate(speed);
+  Future<void> setSpeed(double speed) async {
+    /// 动态调整缓冲区大小以适应不同播放速度
+    final platform = _player.platform as dynamic;
+
+    if (speed > 1.0) {
+      /// 高速播放时启用严格同步模式
+      _debugLog('高速播放(${speed}x)，启用音画同步优化模式');
+
+      // 视频严格跟随音频，避免音画不同步
+      await platform.setProperty('video-sync', 'audio');
+      // 开启音调修正，确保倍速播放时音调不变（避免变声）
+      await platform.setProperty('audio-pitch-correction', 'yes');
+      // 高精度seek确保位置准确
+      await platform.setProperty('hr-seek', 'always');
+      // 避免缓存导致的同步延迟
+      await platform.setProperty('cache-pause', 'no');
+
+      // 根据倍速动态调整丢帧策略
+      if (speed >= 2.0) {
+        // 渲染级丢帧，优先保证音频流畅
+        await platform.setProperty('framedrop', 'vo');
+        // 降低视频延迟
+        await platform.setProperty('video-latency-hacks', 'yes');
+        // 高速播放时减少缓冲区避免延迟
+        await platform.setProperty('cache', 'no');
+        await platform.setProperty('demuxer-max-bytes', '50M');
+        await platform.setProperty('demuxer-max-back-bytes', '25M');
+      }
+    } else {
+      /// 正常速度时恢复默认同步策略
+      _debugLog('恢复正常速度模式');
+      await platform.setProperty('video-sync', 'display-resample');
+      await platform.setProperty('audio-pitch-correction', 'yes');
+      await platform.setProperty('framedrop', 'decoder');
+      await platform.setProperty('video-latency-hacks', 'no');
+      // 恢复默认缓存策略
+      await platform.setProperty('cache', 'auto');
+      await platform.setProperty('demuxer-max-bytes', '200M');
+      await platform.setProperty('demuxer-max-back-bytes', '100M');
+    }
+
+    await _player.setRate(speed);
+  }
 
   @override
   Future<void> setMute(bool mute) async {

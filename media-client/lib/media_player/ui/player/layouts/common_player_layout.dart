@@ -117,21 +117,21 @@ class CommonPlayerLayout extends ConsumerWidget {
     final showControls = state.controlsVisible;
 
     // 字幕统一样式配置：透明背景、加大字号、阴影增强可读性。
-    const subtitleConfig = SubtitleViewConfiguration(
+    final subtitleConfig = SubtitleViewConfiguration(
       style: TextStyle(
         height: 1.25,
-        fontSize: 40,
-        color: Color(0xffffffff),
+        fontSize: state.settings.subtitleFontSize,
+        color: const Color(0xffffffff),
         backgroundColor: Colors.transparent,
-        shadows: [
+        shadows: const [
           Shadow(
             color: Color(0xaa000000),
-            offset: Offset(2.0, 2.0),
+            offset: Offset(1.0, 1.0),
             blurRadius: 2.0,
           ),
         ],
       ),
-      padding: EdgeInsets.only(bottom: 24.0),
+      padding: EdgeInsets.only(bottom: state.settings.subtitleBottomPadding),
     );
 
     return LayoutBuilder(
@@ -162,6 +162,11 @@ class CommonPlayerLayout extends ConsumerWidget {
                           // 使 Video 组件的大小严格贴合视频画面。
                           // 这样 media_kit_video 渲染的字幕就会相对于画面位置显示，而不是固定在屏幕底部。
                           Widget videoWidget = Video(
+                            // 添加 Key 以强制 Video 组件在字幕配置变更时重建，
+                            // 确保 subtitleViewConfiguration 的更新能实时生效（解决垂直位置调节不更新的问题）。
+                            key: ValueKey(
+                              'video_${state.settings.subtitleFontSize}_${state.settings.subtitleBottomPadding}',
+                            ),
                             controller: controller!,
                             fit: state.fit,
                             controls: NoVideoControls,

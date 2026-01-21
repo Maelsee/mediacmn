@@ -184,7 +184,7 @@ class StateStore:
             v = _mem_idemp().get(idem_key)
         return v
 
-    async def set_idempotency(self, idem_key: str, task_id: str, ttl_seconds: int = 43200) -> None:
+    async def set_idempotency(self, idem_key: str, task_id: str, ttl_seconds: int = 60) -> None:
         try:
             await self._redis.set(self._idemp_key(idem_key), task_id, ex=ttl_seconds, nx=True)
         except Exception:

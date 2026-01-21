@@ -80,14 +80,15 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
 
     final floating = ref.watch(floatingProvider);
 
-    // 字幕统一样式配置：透明背景、加大字号、阴影增强可读性。
-    const subtitleConfig = SubtitleViewConfiguration(
+    // PiP 字幕样式配置：使用较小字号并固定在底部，避免遮挡中心画面。
+    final subtitleConfig = SubtitleViewConfiguration(
       style: TextStyle(
         height: 1.25,
-        fontSize: 34,
-        color: Color(0xffffffff),
+        // PiP 窗口较小，字号适当缩小（相对于主界面的 40）
+        fontSize: s.settings.subtitleFontSize * 0.85,
+        color: const Color(0xffffffff),
         backgroundColor: Colors.transparent,
-        shadows: [
+        shadows: const [
           Shadow(
             color: Color(0xaa000000),
             offset: Offset(2.0, 2.0),
@@ -95,7 +96,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           ),
         ],
       ),
-      padding: EdgeInsets.only(bottom: 48.0),
+      // PiP 窗口底部留出一定安全距离，避免贴底
+      padding: const EdgeInsets.only(bottom: 12.0),
     );
 
     return PiPSwitcher(
@@ -117,6 +119,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         backgroundColor: Colors.black,
         body: service.videoController != null
             ? Video(
+                // 强制 key 重建以响应配置变更
+                key: ValueKey(
+                  'pip_video_${s.settings.subtitleFontSize}',
+                ),
                 controller: service.videoController!,
                 controls: NoVideoControls,
                 fit: s.fit,

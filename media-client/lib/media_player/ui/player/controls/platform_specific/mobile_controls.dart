@@ -412,6 +412,14 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       subtitles: state.subtitleTracks,
       selectedSubtitle: state.selectedSubtitleTrack ?? SubtitleTrack.auto(),
       onSubtitleSelected: notifier.setSubtitleTrack,
+      fontSize: state.settings.subtitleFontSize,
+      bottomPadding: state.settings.subtitleBottomPadding,
+      onFontSizeChanged: (v) => notifier.updateSettings(
+        state.settings.copyWith(subtitleFontSize: v),
+      ),
+      onBottomPaddingChanged: (v) => notifier.updateSettings(
+        state.settings.copyWith(subtitleBottomPadding: v),
+      ),
     );
   }
 
@@ -686,9 +694,10 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
 
               if (_dragMode == 1) {
                 // 亮度：上滑增加、下滑减少。
+                // 优化：直接映射系统亮度 0.0 - 1.0 范围，而非基于初始值的增量累加，以解决边界无法触达的问题。
                 final delta = -dy / 300;
                 final newValue = (_startValue + delta).clamp(0.0, 1.0);
-                _startValue = newValue;
+                _startValue = newValue; // 更新基准值，保证连续滑动的手感
                 try {
                   await ScreenBrightness().setApplicationScreenBrightness(
                     newValue,

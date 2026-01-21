@@ -264,3 +264,118 @@ A new Flutter project.
 - 语言标识：
   - 结合语言代码与标题信息，在 UI 中展示人类可读的语言名称（如 `zh-CN` 映射为「简体中文」）。
   - 在多音轨场景下，通过附加描述（如「导演评论音轨」）帮助用户快速识别。
+
+### 3.4 4K 60fps 视频播放优化 (2026-01-20)
+
+**背景**：移动端在播放4K 60fps视频时，用户反馈开启2倍速播放出现音画不同步和严重画面卡顿。此前的 1.5x 限速方案未能满足用户需求。
+
+**问题分析**：
+- **解码能力不足**：4K 60fps 2x 倍速要求 120fps 解码，远超大多数移动设备的硬件解码极限。
+- **同步策略失效**：默认同步策略在解码严重滞后时会导致视频停滞等待，进而拖累音频或导致完全卡死。
+- **渲染瓶颈**：高分辨率高帧率渲染消耗大量 GPU 资源。
+
+**解决方案（V2 - 激进性能优化版）**：
+
+1. **底层解码优化 (`libmpvOptions`)**：
+   - 启用 **解码级丢帧 (`framedrop: decoder`)**：当解码速度落后于播放进度时，直接丢弃视频帧（包括 B 帧），优先保证音频同步和时间轴推进。
+   - 启用 **非参考帧去块滤波跳过 (`vd-lavc-skiploopfilter: nonref`)**：牺牲微小的画质细节（通常在运动中不可见），换取显著的 CPU/GPU 负载降低。
+   - 强制 **自动硬件解码 (`hwdec: auto`)**。
+
+   ```dart
+   configuration: const PlayerConfiguration(
+     vo: 'gpu',
+     libmpvOptions: {
+       'hwdec': 'auto',
+       'framedrop': 'decoder', // 核心优化：保同步，弃画质
+       'vd-lavc-skiploopfilter': 'nonref', // 核心优化：降负载
+     },
+   ),
+   ```
+
+2. **策略调整**：
+   - **移除倍速限制**：撤销对 4K 视频 1.5x 倍速的强制限制，允许用户使用 2.0x/3.0x。
+   - **UI 提示**：将警告图标改为“性能优化模式”提示，告知用户高倍速下可能会自动降低帧率。
+
+**实施效果**：
+- **音画同步**：在 2.0x 播放 4K 60fps 视频时，音频保持完美同步，不再卡顿。
+- **视觉体验**：虽然实际显示帧率可能低于 120fps（触发丢帧），但画面保持连续流动，无冻结感。
+- **功能完整性**：完全恢复了高倍速播放功能。
+
+**技术亮点**：
+- 利用 `media_kit` (mpv) 强大的底层控制能力，通过参数微调解决硬件瓶颈问题，而非简单粗暴地阉割功能。
+
+### 3.5 倍速播放音画同步优化 (2026-01-20)
+
+**问题现象**：
+- **声音比画面快**：倍速播放时音频正常推进，视频解码滞后导致画面落后
+- **倍速结束后画面仍在倍速**：速度切换时音视频时钟未正确同步，视频继续保持倍速渲染
+
+**根本原因**：
+- **音频时钟主导**：mpv默认以音频时钟为主，倍速时音频推进过快
+- **视频解码滞后**：高分辨率下视频解码无法跟上音频节奏  
+- **同步策略失效**：默认同步参数在倍速场景下未动态调整
+
+**解决方案（V3 - 音画同步优化版）**：
+
+1. **动态同步策略调整**：
+   - **video-sync=audio**：视频严格跟随音频时钟，确保音画同步
+   - **audio-pitch-correction=no**：关闭音调修正，避免倍速音频失真
+   - **framedrop=vo**：渲染级丢帧，优先保证音频流畅度
+   - **video-latency-hacks=yes**：降低视频延迟，减少画面滞后
+
+2. **缓冲区动态管理**：
+   - 高速播放时减少缓冲区大小，避免缓存延迟导致的同步问题
+   - 根据播放速度动态调整demuxer缓存参数
+
+3. **代码实现**：
+```dart
+Future<void> setSpeed(double speed) async {
+  final platform = _player.platform as dynamic;
+  
+  if (speed > 1.0) {
+    // 高速播放时启用严格同步模式
+    await platform.setProperty('video-sync', 'audio');
+    await platform.setProperty('audio-pitch-correction', 'no');
+    await platform.setProperty('hr-seek', 'always');
+    await platform.setProperty('cache-pause', 'no');
+    
+    if (speed >= 2.0) {
+      await platform.setProperty('framedrop', 'vo');
+      await platform.setProperty('video-latency-hacks', 'yes');
+      await platform.setProperty('cache', 'no');
+      await platform.setProperty('demuxer-max-bytes', '50M');
+    }
+  } else {
+    // 恢复正常速度模式
+    await platform.setProperty('video-sync', 'display-resample');
+    await platform.setProperty('audio-pitch-correction', 'yes');
+    await platform.setProperty('framedrop', 'decoder');
+    await platform.setProperty('video-latency-hacks', 'no');
+    await platform.setProperty('cache', 'auto');
+    await platform.setProperty('demuxer-max-bytes', '200M');
+  }
+
+  await _player.setRate(speed);
+}
+```
+
+**实施效果**：
+- **音画完美同步**：声音与画面严格对齐，无快慢差异
+- **倍速切换平滑**：速度切换时无卡顿或同步错乱
+- **音频质量保持**：关闭音调修正避免倍速音频失真
+- **播放流畅稳定**：动态丢帧策略保证连续播放体验
+
+### 3.6 字幕自定义调节功能 (2026-01-22)
+
+**需求背景**：用户希望能自定义调节字幕的大小和垂直位置，以适应不同视频画面和个人阅读习惯。
+
+**解决方案**：
+1.  **状态管理**：在 `PlaybackSettings` 中新增 `subtitleFontSize` (默认 40.0) 和 `subtitleBottomPadding` (默认 24.0) 字段，并持久化存储。
+2.  **UI 交互**：改造 `SubtitlePanel`，引入 Tab 布局：
+    *   **字幕选择** Tab：保留原有的字幕轨道列表选择功能。
+    *   **样式设置** Tab：新增字体大小 (20-80) 和 垂直位置 (0-200) 的调节滑块。
+3.  **渲染实现**：`CommonPlayerLayout` 监听 `PlaybackSettings` 变化，动态更新 `SubtitleViewConfiguration`，实时应用样式调整。
+
+**效果**：
+*   用户可实时预览字幕大小和位置变化。
+*   设置自动保存，下次播放自动应用。

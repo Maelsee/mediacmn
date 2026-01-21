@@ -28,11 +28,19 @@ class PlaybackSettings {
   /// 是否对所有剧集生效。
   final bool applyToAllEpisodes;
 
+  /// 字幕字体大小。
+  final double subtitleFontSize;
+
+  /// 字幕底部边距。
+  final double subtitleBottomPadding;
+
   const PlaybackSettings({
     this.skipIntroOutro = false,
     this.introTime = Duration.zero,
     this.outroTime = Duration.zero,
     this.applyToAllEpisodes = false,
+    this.subtitleFontSize = 40.0,
+    this.subtitleBottomPadding = 24.0,
   });
 
   PlaybackSettings copyWith({
@@ -40,12 +48,17 @@ class PlaybackSettings {
     Duration? introTime,
     Duration? outroTime,
     bool? applyToAllEpisodes,
+    double? subtitleFontSize,
+    double? subtitleBottomPadding,
   }) {
     return PlaybackSettings(
       skipIntroOutro: skipIntroOutro ?? this.skipIntroOutro,
       introTime: introTime ?? this.introTime,
       outroTime: outroTime ?? this.outroTime,
       applyToAllEpisodes: applyToAllEpisodes ?? this.applyToAllEpisodes,
+      subtitleFontSize: subtitleFontSize ?? this.subtitleFontSize,
+      subtitleBottomPadding:
+          subtitleBottomPadding ?? this.subtitleBottomPadding,
     );
   }
 
@@ -55,6 +68,8 @@ class PlaybackSettings {
       'intro_ms': introTime.inMilliseconds,
       'outro_ms': outroTime.inMilliseconds,
       'apply_all': applyToAllEpisodes,
+      'sub_size': subtitleFontSize,
+      'sub_padding': subtitleBottomPadding,
     };
   }
 
@@ -68,6 +83,8 @@ class PlaybackSettings {
         milliseconds: (json['outro_ms'] as num?)?.toInt() ?? 0,
       ),
       applyToAllEpisodes: (json['apply_all'] as bool?) ?? false,
+      subtitleFontSize: (json['sub_size'] as num?)?.toDouble() ?? 40.0,
+      subtitleBottomPadding: (json['sub_padding'] as num?)?.toDouble() ?? 24.0,
     );
   }
 }
@@ -373,6 +390,9 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   /// 目的：避免用户连续点击导致频繁重建解码管线，造成卡顿或长时间无响应。
   bool _audioSwitching = false;
 
+  /// 路由入参中原始的标题文案（只在初始化时赋值一次，用于降级拼接）。
+  String? _routeTitleHint;
+
   String? _seriesNameHint;
   int? _seasonIndexHint;
 
@@ -472,6 +492,11 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       }
     }
 
+    // 仅在初始化阶段记录一次路由原始标题，用于后续无系列名/季信息时的降级处理。
+    if (title != null && title.trim().isNotEmpty) {
+      _routeTitleHint ??= title.trim();
+    }
+
     final candidatesRaw = payload['candidates'];
     final candidates = <AssetItem>[];
     if (candidatesRaw is List) {
@@ -542,6 +567,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     }
 
     unawaited(_ensureEpisodesLoaded(fileId: fileId));
+
+    _loadVideoSpecificSettings();
 
     try {
       // 统一进度获取逻辑：路由参数优先，本地优先，远端兜底。
@@ -677,11 +704,24 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
 
   Future<void> setFit(BoxFit fit) async {
     state = state.copyWith(fit: fit);
+    // 自动保存视频特定配置（包含 fit）
+    await _saveVideoSpecificSettings(
+        applyToAll: state.settings.applyToAllEpisodes);
   }
 
   /// 设置画面缩放与位置（用于手势缩放/拖动）。
   void setVideoTransform({required double scale, required Offset offset}) {
     state = state.copyWith(videoScale: scale, videoOffset: offset);
+    // 手势操作频繁，这里建议通过防抖或仅在结束时保存，但为了简化逻辑暂且在每次确定的设置变更时保存。
+    // 注意：如果是连续手势，建议在手势结束时调用单独的 save 方法。
+    // 这里假设 setVideoTransform 是手势过程中的实时调用，因此不在此处保存。
+    // 应该提供一个 saveVideoTransform 方法供手势结束时调用。
+  }
+
+  /// 手势结束时保存画面状态
+  Future<void> saveVideoTransform() async {
+    await _saveVideoSpecificSettings(
+        applyToAll: state.settings.applyToAllEpisodes);
   }
 
   /// 重置画面缩放与位置。
@@ -847,8 +887,18 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   }
 
   Future<void> updateSettings(PlaybackSettings settings) async {
+    // 检查 applyToAllEpisodes 是否发生变化，或者片头片尾时间是否变化
+    final bool specificChanged =
+        settings.introTime != state.settings.introTime ||
+            settings.outroTime != state.settings.outroTime ||
+            settings.applyToAllEpisodes != state.settings.applyToAllEpisodes;
+
     state = state.copyWith(settings: settings);
     await _saveSettings(settings);
+
+    if (specificChanged) {
+      await _saveVideoSpecificSettings(applyToAll: settings.applyToAllEpisodes);
+    }
   }
 
   @override
@@ -1088,7 +1138,16 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   int? _currentSeasonNumber() {
     final detail = state.detail;
     if (detail == null) {
-      return _seasonIndexHint;
+      // 无详情对象时，优先使用路由携带的季序号提示。
+      if (_seasonIndexHint != null && _seasonIndexHint! > 0) {
+        return _seasonIndexHint;
+      }
+      // 若仍然缺失，但媒体类型为剧集，则默认按第 1 季展示，
+      // 以提升“最近观看”等入口下的可读性。
+      if (state.mediaType == 'tv' || state.mediaType == 'tv_episode') {
+        return 1;
+      }
+      return null;
     }
     if (detail.mediaType != 'tv') {
       return null;
@@ -1267,7 +1326,14 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       final raw = box.get(_settingsKey);
       if (raw is Map) {
         final m = raw.cast<String, dynamic>();
-        state = state.copyWith(settings: PlaybackSettings.fromJson(m));
+        state = state.copyWith(
+          settings: state.settings.copyWith(
+            skipIntroOutro: (m['skip'] as bool?) ?? false,
+            subtitleFontSize: (m['sub_size'] as num?)?.toDouble() ?? 40.0,
+            subtitleBottomPadding:
+                (m['sub_padding'] as num?)?.toDouble() ?? 24.0,
+          ),
+        );
       }
 
       final rawMode = box.get(_playlistModeKey);
@@ -1276,10 +1342,123 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     } catch (_) {}
   }
 
+  /// 加载当前视频或季度的片头片尾及画面配置（缩放/比例）。
+  ///
+  /// 优先级：单集配置 > 季度/系列配置 > 全局默认。
+  Future<void> _loadVideoSpecificSettings() async {
+    final fileId = state.fileId;
+    final seasonId = state.seasonVersionId;
+    if (fileId == null) return;
+
+    try {
+      final box = await Hive.openBox(_settingsBox);
+
+      // 1. 尝试加载单集配置
+      final fileKey = 'video_settings_file_$fileId';
+      final fileData = box.get(fileKey);
+
+      if (fileData is Map) {
+        final m = fileData.cast<String, dynamic>();
+        state = state.copyWith(
+          settings: state.settings.copyWith(
+            introTime: Duration(milliseconds: (m['intro_ms'] as int?) ?? 0),
+            outroTime: Duration(milliseconds: (m['outro_ms'] as int?) ?? 0),
+            applyToAllEpisodes: false,
+          ),
+          fit: _parseBoxFit(m['fit']),
+          videoScale: (m['scale'] as num?)?.toDouble() ?? 1.0,
+          videoOffset: Offset(
+            (m['offset_dx'] as num?)?.toDouble() ?? 0.0,
+            (m['offset_dy'] as num?)?.toDouble() ?? 0.0,
+          ),
+        );
+        return;
+      }
+
+      // 2. 尝试加载季度/系列通用配置
+      if (seasonId != null) {
+        final seasonKey = 'video_settings_season_$seasonId';
+        final seasonData = box.get(seasonKey);
+
+        if (seasonData is Map) {
+          final m = seasonData.cast<String, dynamic>();
+          state = state.copyWith(
+            settings: state.settings.copyWith(
+              introTime: Duration(milliseconds: (m['intro_ms'] as int?) ?? 0),
+              outroTime: Duration(milliseconds: (m['outro_ms'] as int?) ?? 0),
+              applyToAllEpisodes: true,
+            ),
+            fit: _parseBoxFit(m['fit']),
+            videoScale: (m['scale'] as num?)?.toDouble() ?? 1.0,
+            videoOffset: Offset(
+              (m['offset_dx'] as num?)?.toDouble() ?? 0.0,
+              (m['offset_dy'] as num?)?.toDouble() ?? 0.0,
+            ),
+          );
+          return;
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// 保存视频特定的配置（片头片尾、缩放、比例）。
+  ///
+  /// 根据 [applyToAll] 参数决定是保存为单集配置还是季度配置。
+  Future<void> _saveVideoSpecificSettings({bool applyToAll = false}) async {
+    final fileId = state.fileId;
+    final seasonId = state.seasonVersionId;
+    if (fileId == null) return;
+
+    try {
+      final box = await Hive.openBox(_settingsBox);
+
+      final data = {
+        'intro_ms': state.settings.introTime.inMilliseconds,
+        'outro_ms': state.settings.outroTime.inMilliseconds,
+        'fit': state.fit.name,
+        'scale': state.videoScale,
+        'offset_dx': state.videoOffset.dx,
+        'offset_dy': state.videoOffset.dy,
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      };
+
+      if (applyToAll && seasonId != null) {
+        // 保存为季度配置，并清除当前集的单集配置以避免冲突
+        await box.put('video_settings_season_$seasonId', data);
+        await box.delete('video_settings_file_$fileId');
+      } else {
+        // 仅保存为单集配置
+        await box.put('video_settings_file_$fileId', data);
+      }
+    } catch (_) {}
+  }
+
+  BoxFit _parseBoxFit(String? name) {
+    if (name == null) return BoxFit.contain;
+    return BoxFit.values.firstWhere(
+      (e) => e.name == name,
+      orElse: () => BoxFit.contain,
+    );
+  }
+
   Future<void> _saveSettings(PlaybackSettings settings) async {
     try {
       final box = await Hive.openBox(_settingsBox);
-      await box.put(_settingsKey, settings.toJson());
+      // 仅保存全局通用设置，视频特定设置由 _saveVideoSpecificSettings 处理
+      final globalData = {
+        'skip': settings.skipIntroOutro,
+        'sub_size': settings.subtitleFontSize,
+        'sub_padding': settings.subtitleBottomPadding,
+      };
+      // 保留旧数据中的其他字段
+      final raw = box.get(_settingsKey);
+      if (raw is Map) {
+        final m = raw.cast<String, dynamic>();
+        m.addAll(globalData);
+        await box.put(_settingsKey, m);
+      } else {
+        await box.put(_settingsKey, globalData);
+      }
     } catch (_) {}
   }
 

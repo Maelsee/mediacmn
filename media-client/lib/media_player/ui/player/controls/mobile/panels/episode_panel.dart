@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../../../media_library/media_models.dart';
 
 /// 移动端选集列表面板。
-class EpisodePanel extends StatelessWidget {
+class EpisodePanel extends StatefulWidget {
   /// 选集列表。
   final List<EpisodeDetail> episodes;
 
@@ -32,6 +32,43 @@ class EpisodePanel extends StatelessWidget {
   });
 
   @override
+  State<EpisodePanel> createState() => _EpisodePanelState();
+}
+
+class _EpisodePanelState extends State<EpisodePanel> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 初始滚动到当前播放集
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.currentEpisodeIndex > 0 &&
+          widget.currentEpisodeIndex < widget.episodes.length) {
+        // 估算每个 Item 的高度（缩略图高度45 + 上下padding 16 + margin 8 ≈ 70）
+        // 这里采用更精确的计算方式，或者直接使用 scrollable_positioned_list 库
+        // 为简单起见，这里假设每个 item 高度固定约为 80 (45 + 16 + 8 + border/padding等)
+        // 实际高度：Thumbnail(45) + Padding(16) + Margin(8) = 69，取 70 左右
+        const itemHeight = 70.0;
+        final offset = widget.currentEpisodeIndex * itemHeight;
+
+        // 确保不超出滚动范围
+        if (_scrollController.hasClients) {
+          final maxScroll = _scrollController.position.maxScrollExtent;
+          final targetOffset = offset > maxScroll ? maxScroll : offset;
+          _scrollController.jumpTo(targetOffset);
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF1E1E1E),
@@ -52,7 +89,7 @@ class EpisodePanel extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '共${episodes.length}个',
+                  '共${widget.episodes.length}个',
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ],
@@ -65,7 +102,7 @@ class EpisodePanel extends StatelessWidget {
   }
 
   Widget _buildBody() {
-    if (loading && episodes.isEmpty) {
+    if (widget.loading && widget.episodes.isEmpty) {
       return const Center(
         child: SizedBox(
           width: 20,
@@ -75,10 +112,10 @@ class EpisodePanel extends StatelessWidget {
       );
     }
 
-    if (episodes.isEmpty) {
+    if (widget.episodes.isEmpty) {
       return Center(
         child: Text(
-          errorText?.isNotEmpty == true ? errorText! : '暂无选集数据',
+          widget.errorText?.isNotEmpty == true ? widget.errorText! : '暂无选集数据',
           style: const TextStyle(color: Colors.white70, fontSize: 13),
           textAlign: TextAlign.center,
         ),
@@ -86,18 +123,19 @@ class EpisodePanel extends StatelessWidget {
     }
 
     return ListView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: episodes.length,
+      itemCount: widget.episodes.length,
       itemBuilder: (context, index) {
-        final episode = episodes[index];
-        final isSelected = index == currentEpisodeIndex;
+        final episode = widget.episodes[index];
+        final isSelected = index == widget.currentEpisodeIndex;
         final assetName = episode.assets.isNotEmpty
             ? episode.assets.first.path.split('/').last
             : null;
         return InkWell(
           onTap: () {
-            onEpisodeSelected(index);
-            if (closeOnSelect) {
+            widget.onEpisodeSelected(index);
+            if (widget.closeOnSelect) {
               Navigator.of(context).maybePop();
             }
           },

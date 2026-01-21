@@ -493,7 +493,22 @@ lib/media_player/ui/player/controls/mobile/
     └── quality_panel.dart         # 画质面板
 ```
 
-### 7.2 图标功能说明
+### 7.3 面板自适应展示策略
+针对移动端横竖屏差异，所有功能面板（选集、倍速、画质、字幕、设置）采用统一的自适应展示逻辑，逻辑实现在 `MobilePlayerControls._openPanel` 中：
+
+- **竖屏模式**：
+  - 使用 `showModalBottomSheet` 底部弹窗。
+  - 高度占据屏幕 60%。
+  - 顶部圆角 (`Radius.circular(16)`)。
+  - 背景色统一为 `Color(0xFF1E1E1E)`。
+
+- **横屏/全屏模式**：
+  - 使用 `showGeneralDialog` 右侧侧滑抽屉。
+  - 宽度固定 300dp。
+  - 从右向左滑入动画 (`SlideTransition`)。
+  - 背景透明（内容区域自行控制背景色）。
+
+### 7.4 图标功能说明
 | 区域 | 图标/组件 | 功能说明 |
 |------|----------|----------|
 | 顶部左侧 | 返回箭头 | 退出播放页面或返回上一级 |
@@ -533,9 +548,62 @@ lib/media_player/ui/player/controls/mobile/
 | **手势控制** | ✅ 已完成 | `MobileGestureLayer` 支持左侧亮度、右侧音量；水平进度拖动改为按“总位移/屏宽”映射更大范围；双击热区为左25%/中50%/右25%。 | `mobile_controls.dart`, `common_player_layout.dart` |
 | **画面大小** | ✅ 已完成 | 设置面板支持一键切换 50%/75%/100%/125%，通过更新 `PlaybackState.videoScale` 生效。 | `settings_panel.dart`, `playback_state.dart`, `common_player_layout.dart` |
 
+### 9.8 片头片尾与画面配置持久化 (2026-01-22)
+
+**1. 片头片尾设置 UI**
+- **入口**：在设置面板中新增“设置片头片尾”选项，点击后进入二级页面。
+- **布局**：
+  - **自动跳过开关**：全局开关，开启后生效。
+  - **时间选择**：采用 `CupertinoTimerPicker` 风格的滚轮选择器，分别设置片头结束时间（Intro）和片尾开始时间（Outro）。
+  - **同步选项**：提供“同步应用到电视剧当前季的所有剧集”勾选框。
+  - **保存按钮**：确认并应用设置。
+
+**2. 视频配置持久化策略 (Persistence)**
+- **数据范围**：
+  - **片头片尾时间** (`introTime`, `outroTime`)
+  - **画面比例** (`fit`)
+  - **画面缩放与偏移** (`videoScale`, `videoOffset`)
+- **存储层级**：使用 Hive 存储，支持三级回退策略：
+  1.  **单集配置** (`video_settings_file_{fileId}`)：优先级最高，仅对当前集生效。
+  2.  **季度/系列配置** (`video_settings_season_{seasonId}`)：优先级次之，对整季生效（当用户勾选“同步应用”时保存为此级别）。
+  3.  **全局默认**：若无特定配置，则使用默认值（如不跳过、自适应比例）。
+- **加载逻辑**：播放器初始化或切集时，自动按上述优先级加载配置并应用。
+
+**3. 自动跳过实现**
+- 在 `PlaybackNotifier` 中监听 `positionStream`。
+- **跳过片头**：当 `skipIntroOutro` 开启且 `position < introTime` 时，自动 `seek(introTime)`。
+- **跳过片尾**：当 `skipIntroOutro` 开启且 `position >= outroTime` (且 `outroTime > 0`) 时，自动触发“播放结束”逻辑（切下一集或停止）。
+
+### 9.9 亮度手势优化与 UI 风格升级 (2026-01-22)
+
+**1. 亮度手势优化**
+- **问题**：原亮度调节基于当前亮度的增量累加，导致在低亮度或高亮度边界时无法一次性调节到位，且无法触达真正的 0% 或 100%。
+- **优化**：
+  - 使用 `ScreenBrightness().setApplicationScreenBrightness(newValue)` 直接映射 0.0 - 1.0 的绝对值。
+  - 上滑/下滑不再是增量，而是直接驱动目标亮度值趋向于手指位移比例。
+  - 增加基准值更新逻辑，保证连续滑动的线性手感。
+
+**2. 片头片尾面板横屏适配**
+- **问题**：横屏下直接 push 新页面会导致全屏覆盖，破坏了侧边栏（Side Panel）的交互一致性。
+- **修复**：
+  - 使用 `showGeneralDialog` 在屏幕右侧弹出一个与侧边栏等宽（300dp）的浮层。
+  - 添加从右向左的滑入动画 (`SlideTransition`)，模拟多级菜单效果。
+  - 背景透明，保留播放器画面的可见性。
+
+**3. 全局 UI 风格升级 (Dark Modern)**
+- **配色方案**：
+  - **背景**：统一使用深灰色 (`#1E1E1E` / `#2C2C2C`)，去除纯黑死板感。
+  - **高亮色**：去除原有的金黄色 (`#FFFFD700`)，改为更现代的 **蓝色**（系统蓝或 `#2196F3`）作为激活状态色。
+  - **文本色**：主文本纯白 (`Colors.white`)，次级文本白灰 (`Colors.white70` / `Colors.white54`)。
+  - **分割线**：极细微的深色分割线 (`Colors.black12`) 或去除分割线使用间距区分。
+- **组件样式**：
+  - **圆角**：面板顶部圆角统一为 16dp，内部卡片圆角 12dp/8dp。
+  - **按钮**：扁平化设计，去除高阴影，使用深色背景 (`#333333`) + 白色文字。
+  - **列表项**：增加点击态反馈，去除冗余的分割线。
+
 ### 8.2 状态管理完善
 - ✅ 将临时 UI 状态 (如 `_showSubtitles`, `_selectedSubtitle`) 迁移至 Riverpod `PlaybackState` 中统一管理。
-- ⏳ 增加 `UserPreferences` 本地存储，持久化保存用户设置（如默认倍速、画面比例偏好）。
+- ✅ 增加 `UserPreferences` 本地存储，持久化保存用户设置（如默认倍速、画面比例偏好、片头片尾设置）。
 
 ### 8.3 数据获取与使用说明 (Data & Usage)
 
@@ -574,13 +642,12 @@ lib/media_player/ui/player/controls/mobile/
 - **进度获取**：
   - **路由参数优先**：若路由参数 `extra` 中包含 `start` 或 `positionMs`（毫秒），则直接使用该值作为初始播放进度（适用于“最近观看”卡片直接跳转）。
   - **API 兜底**：若无路由参数，则通过 `GET /api/playback/progress/{file_id}` 获取历史播放进度，仅使用返回体中的 `position_ms` 字段。
-- **续播行为（关键实现）**：
-  - 若获取到的进度（路由或 API）大于 0，则在 `PlayerService.openUrl` 时以对应毫秒数作为 `start` 参数，实现自动续播。
-  - **Open(paused) -> Seek -> Play**：当 `start > 0` 时，播放器会先以暂停状态打开媒体，再等待时长（duration）就绪后执行 seek，并通过 position 流确认位置到达目标；确认成功后再开始播放。
-  - **重试策略**：如果第一次 seek 未能确认到达目标位置，会延迟 250ms 再重试一次，以提升不同设备/协议下的续播成功率。
-  - **回跳兜底**：少量播放源在 seek 成功后，开始播放阶段可能触发底层解码管线重建，导致 position 短暂回到 0 并从头播放。播放器会在“确认到达目标位置”后，在开始播放后的短窗口内检测“位置回跳到开头”的情况，并自动再执行一次 seek 兜底。
-  - **MediaCodec 重建说明**：Android 日志中看到的 MediaCodec RELEASING/UNINITIALIZED/INITIALIZING 可能发生在 open/切源/部分 seek 过程中，属于底层解码管线的正常重建行为；是否成功续播应以“seek 后 position 是否达到目标”来判定，而不是以 codec 是否重建来判定。
-  - 若无记录或接口失败，则从 0 开始播放。
+- **续播行为（Native Resume）**：
+  - **Native Start Property**：若获取到的进度（路由或 API）大于 0，则在播放器初始化阶段，通过 mpv 的 `start` 属性（`platform.setProperty('start', ...)`）直接指定起始位置。
+  - **无缝起播**：利用 mpv 内核的原生起播能力，无需执行“Open -> Wait Duration -> Seek”的复杂流程，彻底消除“进度条跳变（0 -> 历史 -> 0 -> 历史）”和“回跳兜底”带来的视觉干扰。
+  - **容错机制**：
+    - 若 `start` 属性设置失败，会自动降级为传统的 seek 方式。
+    - 若无记录或接口失败，则 `start` 默认为 0，从头播放。
 - **播放源约束（网络续播）**：
   - 对于 HTTP/HTTPS 的 MP4 等直链资源，服务端通常需要支持 **Range Request**（返回 206）才能从任意位置续播；若服务端忽略 Range 并返回 200，续播可能失败并从头开始加载。
   - 客户端会在 Debug 模式下对 HTTP/HTTPS 资源做一次轻量 Range 探测（`Range: bytes=0-0`），用于辅助定位“后端返回进度正确但仍无法续播”的问题。
@@ -693,3 +760,140 @@ lib/media_player/ui/player/controls/mobile/
 4.  **竖屏字幕位置调整**:
     - 优化 `CommonPlayerLayout` 布局逻辑：当视频适配模式为 `BoxFit.contain` 且能获取到视频尺寸时，使用 `AspectRatio` 包裹 `Video` 组件。
     - 效果：使 `Video` 组件的渲染区域严格贴合视频画面，从而让 `media_kit_video` 渲染的字幕相对于视频画面定位，而非固定在屏幕底部黑边区域。
+
+## 9.5 4K 60fps 二倍速卡顿问题优化 (2026-01-20)
+
+### 问题描述
+移动端在播放4K 60fps视频时，开启2倍速播放（解码需求高达120fps）会出现：
+1. **音画不同步**：音频正常播放，画面逐渐落后。
+2. **严重卡顿**：解码器无法及时输出帧，导致画面停滞。
+3. **前次优化无效**：单纯限制倍速为1.5x无法满足用户需求，且未能从根本上解决解码瓶颈。
+
+### 根本原因
+- **硬解能力上限**：移动设备硬件解码器（MediaCodec/VideoToolbox）通常针对60fps设计，难以稳定支撑4K分辨率下的120fps解码。
+- **同步策略**：默认的音画同步策略（video-sync=audio）在解码严重滞后时，会尝试等待视频帧，导致音频也受影响或视频完全卡死。
+- **渲染负担**：解码出的海量帧数据传输到GPU渲染也消耗巨大带宽。
+
+### 解决方案
+
+#### 1. 激进的帧丢弃策略 (Frame Dropping)
+在 `media_kit` (mpv) 层开启解码级丢帧。当解码速度跟不上播放速度时，直接在解码器层面丢弃B帧甚至P帧，优先保证音频同步和关键帧显示。
+
+```dart
+libmpvOptions: {
+  // 关键：解码器过载时主动丢帧，保持 A/V 同步
+  'framedrop': 'decoder', 
+}
+```
+
+#### 2. 解码器性能压榨
+- **跳过去块滤波**：对于高帧率视频，单帧画质细节不如流畅度重要。跳过非参考帧的去块滤波（Deblocking Filter）可显著降低CPU/GPU负载。
+- **自动硬解**：强制确保启用硬件解码。
+
+```dart
+libmpvOptions: {
+  'hwdec': 'auto',
+  'vd-lavc-skiploopfilter': 'nonref', // 跳过非参考帧滤波
+}
+```
+
+#### 3. 解除人为倍速限制
+- 移除 1.5x 倍速限制，允许用户选择 2.0x/3.0x。
+- 依赖上述丢帧策略，在 2.0x 播放时，虽然实际渲染帧率可能只有 60-80fps（视觉上略有跳帧），但音频完全同步，整体体验远优于卡顿或音画脱节。
+
+### 实施结果
+- **同步性**：4K 60fps @ 2.0x 下，音画完全同步。
+- **流畅度**：画面动态丢帧，视觉上保持连续运动，无明显冻结。
+- **可用性**：恢复了高倍速播放功能，满足了用户快速浏览内容的需求。
+
+### V3 音画同步优化 (2026-01-20)
+
+#### 问题现象
+- **声音比画面快**：倍速播放时音频正常推进，视频解码滞后导致画面落后
+- **倍速结束后画面仍在倍速**：速度切换时音视频时钟未正确同步，视频继续保持倍速渲染
+
+#### 根本原因
+- **音频时钟主导**：mpv默认以音频时钟为主，倍速时音频推进过快
+- **视频解码滞后**：高分辨率下视频解码无法跟上音频节奏
+- **同步策略失效**：默认同步参数在倍速场景下未动态调整
+
+#### 解决方案
+
+##### 1. 动态同步策略调整
+在`setSpeed`时同步调整mpv同步参数，实现音画严格同步：
+
+```dart
+Future<void> setSpeed(double speed) async {
+  final platform = _player.platform as dynamic;
+  
+  if (speed > 1.0) {
+    // 高速播放时启用严格同步模式
+    // 视频严格跟随音频，避免音画不同步
+    await platform.setProperty('video-sync', 'audio');
+    // 开启音调修正，确保倍速播放时音调不变
+    await platform.setProperty('audio-pitch-correction', 'yes');
+    // 高精度seek确保位置准确
+    await platform.setProperty('hr-seek', 'always');
+    // 避免缓存导致的同步延迟
+    await platform.setProperty('cache-pause', 'no');
+    
+    // 根据倍速动态调整丢帧策略
+    if (speed >= 2.0) {
+      // 渲染级丢帧，优先保证音频流畅
+      await platform.setProperty('framedrop', 'vo');
+      // 降低视频延迟
+      await platform.setProperty('video-latency-hacks', 'yes');
+      // 高速播放时减少缓冲区避免延迟
+      await platform.setProperty('cache', 'no');
+      await platform.setProperty('demuxer-max-bytes', '50M');
+      await platform.setProperty('demuxer-max-back-bytes', '25M');
+    }
+  } else {
+    // 正常速度时恢复默认同步策略
+    await platform.setProperty('video-sync', 'display-resample');
+    await platform.setProperty('audio-pitch-correction', 'yes');
+    await platform.setProperty('framedrop', 'decoder');
+    await platform.setProperty('video-latency-hacks', 'no');
+    // 恢复默认缓存策略
+    await platform.setProperty('cache', 'auto');
+    await platform.setProperty('demuxer-max-bytes', '200M');
+    await platform.setProperty('demuxer-max-back-bytes', '100M');
+  }
+
+  await _player.setRate(speed);
+}
+```
+
+##### 2. 关键优化参数说明
+- **video-sync=audio**：视频严格跟随音频时钟，确保音画同步
+- **audio-pitch-correction=yes**：开启音调修正，确保倍速播放时音调不变（避免变声）
+- **framedrop=vo**：渲染级丢帧，优先保证音频流畅度
+- **video-latency-hacks=yes**：降低视频延迟，减少画面滞后
+- **cache=no**：禁用缓存避免同步延迟
+
+#### 实施效果
+- **音画完美同步**：声音与画面严格对齐，无快慢差异
+- **倍速切换平滑**：速度切换时无卡顿或同步错乱
+- **音频音调保持**：开启音调修正，避免倍速播放时出现“变声”现象
+- **播放流畅稳定**：动态丢帧策略保证连续播放体验
+
+### 9.7 面板状态同步与 PiP 字幕优化 (2026-01-22)
+
+**1. 选集面板初始定位优化**
+- **问题**：打开选集面板时，列表总是从第一集开始显示，用户需要手动滚动查找当前播放集。
+- **方案**：将 `EpisodePanel` 改造为 `StatefulWidget`，引入 `ScrollController`。在 `initState` 后通过 `addPostFrameCallback` 计算当前播放集（`currentEpisodeIndex`）对应的偏移量，并自动滚动到该位置。
+
+**2. PiP 模式字幕优化**
+- **问题**：画中画模式下字幕字号过大且默认居中（或位置不当），遮挡画面核心内容。
+- **方案**：
+  - 调整 `PlayerPage` 中的 `subtitleConfig`，将 PiP 字幕字号设置为标准字号的 85%。
+  - 设置较小的底部边距（`bottom: 12.0`），确保字幕位于小窗口底部但不贴边。
+  - 为 PiP 的 `Video` 组件添加基于配置的 `Key`，确保配置变更实时生效。
+
+**3. 轨道面板状态同步**
+- **问题**：音轨、字幕、画质面板中，当前使用的轨道未被正确高亮选中。
+- **原因**：部分面板使用对象引用（`==`）进行对比，而状态流转中可能产生新的对象实例。
+- **修复**：
+  - 统一 `AudioPanel`、`SubtitlePanel`、`QualityPanel` 的实现，全部改造为 `StatefulWidget`。
+  - 使用轨道 `id` 进行唯一性匹配，确保选中状态准确。
+  - 为所有轨道列表面板添加初始滚动逻辑，打开面板时自动定位到当前选中的轨道。

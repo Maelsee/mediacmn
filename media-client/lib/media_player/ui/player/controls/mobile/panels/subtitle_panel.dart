@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
-class SubtitlePanel extends StatelessWidget {
+/// 移动端字幕面板。
+///
+/// 字幕数据来自播放器的 `tracksStream`。
+class SubtitlePanel extends StatefulWidget {
   final bool showSubtitles;
   final ValueChanged<bool> onToggleShowSubtitles;
   final List<SubtitleTrack> subtitles;
   final SubtitleTrack selectedSubtitle;
   final ValueChanged<SubtitleTrack> onSubtitleSelected;
+  final double fontSize;
+  final double bottomPadding;
+  final ValueChanged<double> onFontSizeChanged;
+  final ValueChanged<double> onBottomPaddingChanged;
 
   const SubtitlePanel({
     super.key,
@@ -15,92 +22,246 @@ class SubtitlePanel extends StatelessWidget {
     required this.subtitles,
     required this.selectedSubtitle,
     required this.onSubtitleSelected,
+    required this.fontSize,
+    required this.bottomPadding,
+    required this.onFontSizeChanged,
+    required this.onBottomPaddingChanged,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final visibleSubtitles = subtitles
-        .where((track) => track.id != 'auto' && track.id != 'no')
+  State<SubtitlePanel> createState() => _SubtitlePanelState();
+}
+
+class _SubtitlePanelState extends State<SubtitlePanel> {
+  final ScrollController _scrollController = ScrollController();
+  late List<SubtitleTrack> _visibleSubtitles;
+
+  @override
+  void didUpdateWidget(SubtitlePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.subtitles != oldWidget.subtitles) {
+      _visibleSubtitles = widget.subtitles
+          .where((track) => track.id != 'no')
+          .toList(growable: false);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _visibleSubtitles = widget.subtitles
+        .where((track) => track.id != 'no')
         .toList(growable: false);
-    return Container(
-      // 移除固定宽度，由父组件控制
-      color: const Color(0xFF1E1E1E),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                const Text(
-                  '显示字幕',
-                  style: TextStyle(color: Colors.white, fontSize: 16),
-                ),
-                const Spacer(),
-                Switch(
-                  value: showSubtitles,
-                  onChanged: onToggleShowSubtitles,
-                  activeTrackColor: const Color(0xFFFFD700),
-                ),
+
+    // 初始滚动到选中项
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.showSubtitles) {
+        final index = _visibleSubtitles.indexWhere(
+          (t) => t.id == widget.selectedSubtitle.id,
+        );
+        if (index != -1 && _scrollController.hasClients) {
+          const itemHeight = 56.0;
+          final offset = index * itemHeight;
+          final maxScroll = _scrollController.position.maxScrollExtent;
+          _scrollController.jumpTo(offset > maxScroll ? maxScroll : offset);
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Container(
+        color: const Color(0xFF1E1E1E),
+        child: Column(
+          children: [
+            const TabBar(
+              indicatorColor: Color(0xFFFFD700),
+              labelColor: Color(0xFFFFD700),
+              unselectedLabelColor: Colors.white70,
+              tabs: [
+                Tab(text: '字幕选择'),
+                Tab(text: '样式设置'),
               ],
             ),
-          ),
-          if (showSubtitles) ...[
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Row(
+            Expanded(
+              child: TabBarView(
                 children: [
-                  Text(
-                    '可用字幕',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  _buildTrackSelectionTab(),
+                  _buildStyleSettingsTab(),
                 ],
               ),
             ),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: visibleSubtitles.length,
-                itemBuilder: (context, index) {
-                  return _buildSubtitleOption(visibleSubtitles[index]);
-                },
-              ),
-            ),
           ],
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                const Text(
-                  '外挂字幕',
-                  style: TextStyle(color: Colors.white, fontSize: 14),
-                ),
-                const Spacer(),
-                const Icon(Icons.input, size: 16, color: Colors.white70),
-                const SizedBox(width: 4),
-                GestureDetector(
-                  onTap: () {
-                    // TODO: Import subtitle
-                  },
-                  child: const Text(
-                    '导入',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
+  Widget _buildTrackSelectionTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              const Text(
+                '显示字幕',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              const Spacer(),
+              Switch(
+                value: widget.showSubtitles,
+                onChanged: widget.onToggleShowSubtitles,
+                activeTrackColor: const Color(0xFFFFD700),
+              ),
+            ],
+          ),
+        ),
+        if (widget.showSubtitles) ...[
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Row(
+              children: [
+                Text(
+                  '可用字幕',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _visibleSubtitles.length,
+              itemBuilder: (context, index) {
+                return _buildSubtitleOption(_visibleSubtitles[index]);
+              },
+            ),
+          ),
+        ],
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              const Text(
+                '外挂字幕',
+                style: TextStyle(color: Colors.white, fontSize: 14),
+              ),
+              const Spacer(),
+              const Icon(Icons.input, size: 16, color: Colors.white70),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () {
+                  // TODO: Import subtitle
+                },
+                child: const Text(
+                  '导入',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStyleSettingsTab() {
+    if (!widget.showSubtitles) {
+      return const Center(
+        child: Text(
+          '请先开启字幕显示',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(24.0),
+      children: [
+        _buildSlider(
+          label: '字体大小',
+          value: widget.fontSize,
+          min: 20.0,
+          max: 80.0,
+          onChanged: widget.onFontSizeChanged,
+          displayFormat: (v) => v.toInt().toString(),
+        ),
+        const SizedBox(height: 32),
+        _buildSlider(
+          label: '垂直位置',
+          value: widget.bottomPadding,
+          min: 0.0,
+          max: 200.0,
+          onChanged: widget.onBottomPaddingChanged,
+          displayFormat: (v) => v.toInt().toString(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSlider({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required ValueChanged<double> onChanged,
+    required String Function(double) displayFormat,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+            Text(
+              displayFormat(value),
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SliderTheme(
+          data: SliderThemeData(
+            activeTrackColor: const Color(0xFFFFD700),
+            inactiveTrackColor: Colors.white24,
+            thumbColor: Colors.white,
+            overlayColor: const Color(0xFFFFD700).withValues(alpha: 0.2),
+            trackHeight: 4.0,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
+          ),
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSubtitleOption(SubtitleTrack track) {
-    final isSelected = track == selectedSubtitle;
+    final isSelected = track.id == widget.selectedSubtitle.id;
     return ListTile(
       title: Text(
         _getTrackName(track),
@@ -112,11 +273,12 @@ class SubtitlePanel extends StatelessWidget {
       trailing: isSelected
           ? const Icon(Icons.check, color: Color(0xFFFFD700), size: 16)
           : null,
-      onTap: () => onSubtitleSelected(track),
+      onTap: () => widget.onSubtitleSelected(track),
     );
   }
 
   String _getTrackName(SubtitleTrack track) {
+    if (track.id == 'auto') return '自动';
     if (track.title != null && track.title!.isNotEmpty) {
       return track.title!;
     }

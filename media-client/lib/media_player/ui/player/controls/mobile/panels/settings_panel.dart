@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import '../../../../../core/state/playback_state.dart';
+import 'intro_outro_settings_panel.dart';
 
 class SettingsPanel extends StatelessWidget {
   final PlaybackSettings settings;
@@ -58,7 +59,110 @@ class SettingsPanel extends StatelessWidget {
                     color: Colors.white70,
                   ),
                   onTap: () {
-                    // TODO: Implement Intro/Outro settings dialog
+                    // 打开片头片尾设置面板
+                    final isLandscape = MediaQuery.of(context).orientation ==
+                        Orientation.landscape;
+
+                    if (isLandscape) {
+                      // 横屏时：在侧边栏内推入新页面（不全屏，保留侧边栏宽度）
+                      // 由于 SettingsPanel 本身是在 Drawer/EndDrawer 或 SidePanel 中，
+                      // 直接 Navigator.push 会覆盖整个屏幕（如果 Context 是根路由的）。
+                      // 但这里需要在当前侧边栏容器内切换内容。
+                      // 简单方案：使用 Navigator 嵌套或简单的状态切换。
+                      // 考虑到代码结构，这里我们使用 Navigator.push，但配合自定义 Route
+                      // 或者更简单的：弹出一个新的 Right Side Dialog。
+                      // 修正：直接使用 showGeneralDialog 弹出一个覆盖在右侧的面板，
+                      // 类似于多级菜单，宽度与 SettingsPanel 一致。
+                      showGeneralDialog(
+                        context: context,
+                        barrierDismissible: true,
+                        barrierLabel: 'Dismiss',
+                        pageBuilder: (ctx, anim1, anim2) {
+                          return Align(
+                            alignment: Alignment.centerRight,
+                            child: Material(
+                              color: const Color(0xFF1E1E1E),
+                              child: SizedBox(
+                                width: 300, // 与侧边栏宽度一致
+                                height: double.infinity,
+                                child: Scaffold(
+                                  backgroundColor: Colors.transparent,
+                                  appBar: AppBar(
+                                    backgroundColor: Colors.transparent,
+                                    elevation: 0,
+                                    leading: IconButton(
+                                      icon: const Icon(Icons.arrow_back,
+                                          color: Colors.white),
+                                      onPressed: () => Navigator.of(ctx).pop(),
+                                    ),
+                                    title: const Text(
+                                      '片头片尾设置',
+                                      style: TextStyle(
+                                          color: Colors.white, fontSize: 16),
+                                    ),
+                                  ),
+                                  body: IntroOutroSettingsPanel(
+                                    settings: settings,
+                                    onChanged: onSettingsChanged,
+                                    onSave: () => Navigator.of(ctx).pop(),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        transitionBuilder: (ctx, anim1, anim2, child) {
+                          return SlideTransition(
+                            position: Tween(
+                              begin: const Offset(1, 0),
+                              end: Offset.zero,
+                            ).animate(anim1),
+                            child: child,
+                          );
+                        },
+                      );
+                    } else {
+                      // 竖屏时弹出底部抽屉
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: const Color(0xFF1E1E1E),
+                        isScrollControlled: true,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(16)),
+                        ),
+                        builder: (ctx) => SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.6,
+                          child: Column(
+                            children: [
+                              AppBar(
+                                backgroundColor: Colors.transparent,
+                                elevation: 0,
+                                title: const Text(
+                                  '片头片尾设置',
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                                automaticallyImplyLeading: false,
+                                actions: [
+                                  IconButton(
+                                    icon: const Icon(Icons.close,
+                                        color: Colors.white),
+                                    onPressed: () => Navigator.of(ctx).pop(),
+                                  ),
+                                ],
+                              ),
+                              Expanded(
+                                child: IntroOutroSettingsPanel(
+                                  settings: settings,
+                                  onChanged: onSettingsChanged,
+                                  onSave: () => Navigator.of(ctx).pop(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
                   },
                 ),
                 _buildSectionHeader('播放方式'),

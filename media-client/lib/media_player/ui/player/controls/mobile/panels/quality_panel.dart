@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
 /// 画质选择面板。
-class QualityPanel extends StatelessWidget {
+class QualityPanel extends StatefulWidget {
   /// 可用画质轨道列表。
   final List<VideoTrack> qualities;
 
@@ -20,11 +20,52 @@ class QualityPanel extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    // 过滤播放器默认的 auto/no 选项，仅展示真实画质。
-    final visibleQualities = qualities
-        .where((track) => track.id != 'auto' && track.id != 'no')
+  State<QualityPanel> createState() => _QualityPanelState();
+}
+
+class _QualityPanelState extends State<QualityPanel> {
+  final ScrollController _scrollController = ScrollController();
+  late List<VideoTrack> _visibleQualities;
+
+  @override
+  void didUpdateWidget(QualityPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.qualities != oldWidget.qualities) {
+      _visibleQualities = widget.qualities
+          .where((track) => track.id != 'no')
+          .toList(growable: false);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // 过滤播放器默认的 no 选项，保留 auto 和真实画质。
+    _visibleQualities = widget.qualities
+        .where((track) => track.id != 'no')
         .toList(growable: false);
+
+    // 初始滚动到选中项
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final index =
+          _visibleQualities.indexWhere((t) => t.id == widget.currentQuality.id);
+      if (index != -1 && _scrollController.hasClients) {
+        const itemHeight = 56.0;
+        final offset = index * itemHeight;
+        final maxScroll = _scrollController.position.maxScrollExtent;
+        _scrollController.jumpTo(offset > maxScroll ? maxScroll : offset);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       // 移除固定宽度，由父组件控制
       color: const Color(0xFF1E1E1E),
@@ -43,7 +84,7 @@ class QualityPanel extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: visibleQualities.isEmpty
+            child: _visibleQualities.isEmpty
                 ? const Center(
                     child: Text(
                       '暂无可用画质',
@@ -51,10 +92,12 @@ class QualityPanel extends StatelessWidget {
                     ),
                   )
                 : ListView.builder(
-                    itemCount: visibleQualities.length,
+                    controller: _scrollController,
+                    itemCount: _visibleQualities.length,
                     itemBuilder: (context, index) {
-                      final quality = visibleQualities[index];
-                      final isSelected = quality.id == currentQuality.id;
+                      final quality = _visibleQualities[index];
+                      // 使用 ID 对比确保选中状态正确
+                      final isSelected = quality.id == widget.currentQuality.id;
                       return ListTile(
                         title: Text(
                           _getTrackName(quality),
@@ -70,7 +113,7 @@ class QualityPanel extends StatelessWidget {
                         trailing: isSelected
                             ? const Icon(Icons.check, color: Color(0xFFFFD700))
                             : null,
-                        onTap: () => onQualitySelected(quality),
+                        onTap: () => widget.onQualitySelected(quality),
                       );
                     },
                   ),
@@ -81,6 +124,7 @@ class QualityPanel extends StatelessWidget {
   }
 
   String _getTrackName(VideoTrack track) {
+    if (track.id == 'auto') return '自动';
     if (track.title != null && track.title!.isNotEmpty) {
       return track.title!;
     }
