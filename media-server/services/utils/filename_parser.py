@@ -173,31 +173,76 @@ class FilenameParser:
 
         # 基于路径选择更可靠的剧名
         generic_dirs = {"test", "sample", "samples", "temp", "tmp", "下载", "新建文件夹"}
+        
+        # 常见元数据关键词（用于识别非标题目录）
+        metadata_keywords = [
+            r'4k', r'2160p', r'1080p', r'720p', r'480p',
+            r'60fps', r'120fps', r'fps',
+            r'hdr', r'dv', r'dolby', r'vision', r'atmos',
+            r'web', r'bluray', r'remux', r'h265', r'x265', r'hevc',
+            r'普码', r'高码率', r'杜比', r'视界', r'版本', r'特效',
+        ]
+
         def usable_dir(name: str) -> Optional[str]:
             n = norm(name)
             if not n:
                 return None
             if n.lower() in generic_dirs:
                 return None
+                
+            # 检查是否为纯元数据目录
+            n_clean_check = n.lower()
+            for kw in metadata_keywords:
+                n_clean_check = re.sub(kw, '', n_clean_check)
+            n_clean_check = re.sub(r'[\s\.\-\(\)\[\]]+', '', n_clean_check)
+            # 如果去除了元数据关键词后剩下的字符太少（且没有中文），则认为是元数据目录
+            if len(n_clean_check) < 2 and not re.search(r'[\u4e00-\u9fff]', n_clean_check):
+                 return None
+
             # 去除季/发布组标识
             n2 = re.sub(r'[Ss]\d{1,2}|第\d+季', ' ', n)
             n2 = re.sub(r'\b(iq|blacktv|pandaqt|panda|amzn|amazon|nf|netflix|disney\+|disney|appletv\+|appletv|paramount|hbo|max|hulu)\b', ' ', n2, flags=re.IGNORECASE)
+            
+            # 去除元数据词汇，避免它们干扰标题识别
+            for kw in metadata_keywords:
+                 n2 = re.sub(kw, ' ', n2, flags=re.IGNORECASE)
+
             n2 = re.sub(r'\b(19|20)\d{2}\b', ' ', n2)
             n2 = re.sub(r'\s+', ' ', n2).strip()
             return n2 or None
 
         parent_title = usable_dir(input.parent_hint or '')
         grand_title = usable_dir(input.grandparent_hint or '')
+        
         # 优先中文主标题（避免被英文与发布组污染）
         cn_parts = re.findall(r'[\u4e00-\u9fff]+', normalized)
         if cn_parts:
             title_clean = max(cn_parts, key=len)
+
         # 剧集场景：优先使用父/祖父目录作为剧名
+        # 策略优化：如果父目录包含标题，且祖父目录也包含标题，
+        # 优先选择包含年份的那个（通常是系列根目录），或者长度更合理的那个
         if season_hint is not None or episode_hint is not None:
-            candidate = parent_title or grand_title
+             # 检查目录是否包含年份 pattern: Title (Year)
+            parent_has_year = bool(re.search(r'[\(\[\s](19|20)\d{2}[\)\]]', input.parent_hint or ''))
+            grand_has_year = bool(re.search(r'[\(\[\s](19|20)\d{2}[\)\]]', input.grandparent_hint or ''))
+            
+            candidate = None
+            if grand_title and grand_has_year:
+                candidate = grand_title
+            elif parent_title and parent_has_year:
+                candidate = parent_title
+            elif parent_title:
+                candidate = parent_title
+            elif grand_title:
+                candidate = grand_title
+
             if candidate:
                 cn_cand = re.findall(r'[\u4e00-\u9fff]+', candidate)
-                title_clean = (max(cn_cand, key=len) if cn_cand else candidate)
+                if cn_cand:
+                     title_clean = max(cn_cand, key=len)
+                else:
+                     title_clean = candidate
         # 兜底：若标题为空，使用父/祖父目录或规范化文件名
         if not title_clean:
             title_clean = parent_title or grand_title or normalized
@@ -263,3 +308,4 @@ class FilenameParser:
                 'quality_tags': quality_tags
             }
         )
+

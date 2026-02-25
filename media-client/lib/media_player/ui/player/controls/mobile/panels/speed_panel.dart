@@ -7,10 +7,14 @@ class SpeedPanel extends ConsumerWidget {
   final double currentSpeed;
   final ValueChanged<double> onSpeedChanged;
 
+  /// 是否在选择倍速后自动关闭面板。
+  final bool closeOnSelect;
+
   const SpeedPanel({
     super.key,
     required this.currentSpeed,
     required this.onSpeedChanged,
+    this.closeOnSelect = true,
   });
 
   /// 根据视频特性动态调整可用的倍速选项
@@ -72,7 +76,12 @@ class SpeedPanel extends ConsumerWidget {
               final speed = availableSpeeds[index];
               final isSelected = (speed - currentSpeed).abs() < 0.01;
               return GestureDetector(
-                onTap: () => onSpeedChanged(speed),
+                onTap: () {
+                  onSpeedChanged(speed);
+                  if (closeOnSelect) {
+                    Navigator.of(context).maybePop();
+                  }
+                },
                 child: Container(
                   margin:
                       const EdgeInsets.symmetric(vertical: 4, horizontal: 16),

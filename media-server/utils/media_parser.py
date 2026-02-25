@@ -38,6 +38,10 @@ class MediaParser:
             "电视剧",
             "外语",
             "华语",
+            "普码",
+            "高码率",
+            "杜比视界",
+            "杜比",
         }
 
         self._ignore_title_tokens = {
@@ -50,6 +54,9 @@ class MediaParser:
             "sd",
             "sdr",
             "hdr",
+            "hdr10",
+            "hdr10+",
+            "hdr10plus",
             "webrip",
             "webdl",
             "web-dl",
@@ -65,6 +72,12 @@ class MediaParser:
             "dd",
             "ac3",
             "eac3",
+            "dv",
+            "dolby",
+            "vision",
+            "fps",
+            "60fps",
+            "120fps",
             "mp4",
             "mkv",
             "avi",
@@ -72,6 +85,14 @@ class MediaParser:
             "2160p",
             "720p",
             "4k",
+            "普码",
+            "高码率",
+            "高码",
+            "低码",
+            "码率",
+            "杜比",
+            "视界",
+            "杜比视界",
         }
 
     def _extract_title_head_from_bracketed_segment(self, segment: str) -> Optional[str]:
@@ -149,6 +170,23 @@ class MediaParser:
             options["expected_title"] = [expected_title]
         return options
 
+    def _is_technical_token(self, token: str) -> bool:
+        if not token:
+            return True
+        if token in self._ignore_title_tokens or token in self._ignore_dir_names:
+            return True
+        if re.fullmatch(r"\d+", token):
+            return True
+        if re.fullmatch(r"\d{3,4}p", token):
+            return True
+        if re.fullmatch(r"\d{1,3}fps", token):
+            return True
+        if re.fullmatch(r"(?:hdr|sdr|dv|dolby|vision)(?:\d+)?(?:fps)?", token):
+            return True
+        if re.fullmatch(r"(?:hdr|sdr|dv|dolby|vision)[a-z0-9+]+", token):
+            return True
+        return False
+
     def _is_ignorable_segment(self, segment: str) -> bool:
         if not segment:
             return True
@@ -163,16 +201,11 @@ class MediaParser:
         tokens = re.findall(r"[\u4e00-\u9fff]+|[a-z0-9]+", norm)
         if tokens:
             has_cjk = any("\u4e00" <= t[0] <= "\u9fff" for t in tokens)
-            if not has_cjk and all(
-                (t in self._ignore_title_tokens)
-                or (t in self._ignore_dir_names)
-                or re.fullmatch(r"\d+", t)
-                for t in tokens
-            ):
+            if not has_cjk and all(self._is_technical_token(t) for t in tokens):
                 return True
 
             if all(t in self._ignore_title_tokens for t in tokens if "\u4e00" <= t[0] <= "\u9fff") and any(
-                t in self._ignore_title_tokens for t in tokens
+                self._is_technical_token(t) for t in tokens
             ):
                 return True
 
