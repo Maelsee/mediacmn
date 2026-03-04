@@ -24,6 +24,7 @@ class MetadataPayload(BaseModel):
     user_id: int
     file_ids: List[int]
     storage_id: Optional[int] = None
+    scan_task_id: Optional[str] = None
 
 class PersistPayload(BaseModel):
     user_id: int
@@ -43,6 +44,7 @@ class PersistBatchItemPayload(BaseModel):
 class PersistBatchPayload(BaseModel):
     user_id: int
     items: List[PersistBatchItemPayload]
+    scan_task_id: Optional[str] = None
 
 
 class DeletePayload(BaseModel):
@@ -192,12 +194,14 @@ async def create_metadata_task(
     file_ids: List[int],
     storage_id: Optional[int] = None,
     priority: TaskPriority = TaskPriority.NORMAL,
-    idempotency_key: Optional[str] = None
+    idempotency_key: Optional[str] = None,
+    scan_task_id: Optional[str] = None,
 ) -> str:
     payload = MetadataPayload(
         user_id=user_id,
         file_ids=file_ids,
-        storage_id = storage_id
+        storage_id=storage_id,
+        scan_task_id=scan_task_id,
     ).model_dump()
     if idempotency_key:
         payload["idempotency_key"] = idempotency_key
@@ -231,11 +235,13 @@ async def create_persist_batch_task(
     items: List[Dict],
     *,
     priority: TaskPriority = TaskPriority.NORMAL,
-    idempotency_key: Optional[str] = None
+    idempotency_key: Optional[str] = None,
+    scan_task_id: Optional[str] = None,
 ) -> str:
     payload = PersistBatchPayload(
         user_id=user_id,
         items=items,
+        scan_task_id=scan_task_id,
     ).model_dump()
     if idempotency_key:
         payload["idempotency_key"] = idempotency_key

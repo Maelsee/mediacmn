@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:media_client/source_library/tasks/task_provider.dart';
+import '../core/api_client.dart';
 
 class StorageBrowserPage extends ConsumerStatefulWidget {
   final int storageId;
@@ -73,7 +73,6 @@ class _StorageBrowserPageState extends ConsumerState<StorageBrowserPage> {
         setState(() {
           _selectedPaths.clear();
         });
-        ref.read(tasksProvider.notifier).showTray();
       }
     } catch (e) {
       if (mounted) {

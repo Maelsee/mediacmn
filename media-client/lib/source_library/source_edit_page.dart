@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'tasks/task_provider.dart';
+import '../core/api_client.dart';
 import 'source_models.dart';
 
 class SourceEditPage extends ConsumerStatefulWidget {

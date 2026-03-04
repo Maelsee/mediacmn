@@ -4,7 +4,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config.dart';
 import 'playback_history/local_playback_store.dart';
-import '../source_library/tasks/task_models.dart';
 import '../source_library/source_models.dart';
 import '../media_library/media_models.dart';
 
@@ -284,19 +283,7 @@ class ApiClient {
     throw Exception('禁用存储失败');
   }
 
-  /// 获取任务组状态
-  Future<List<ScanTask>> getGroup(String groupId) async {
-    final res = await _client.get(
-      _u('/api/scan/groups/$groupId'),
-      headers: _headers(),
-    );
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final items = (data['tasks'] as List).cast<Map<String, dynamic>>();
-      return items.map(ScanTask.fromJson).toList();
-    }
-    throw Exception('获取任务组失败');
-  }
+  /// 获取任务组状态（任务托盘下线后不再使用）
 
   /// 创建存储配置
   Future<SourceCreateResponse> createSource(
@@ -316,18 +303,7 @@ class ApiClient {
     throw Exception('创建存储失败');
   }
 
-  /// 获取指定存储的任务列表
-  Future<List<ScanTask>> getTasksBySource(String sourceId) async {
-    final res = await _client.get(
-      _u('/api/tasks?sources=$sourceId'),
-      headers: _headers(),
-    );
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
-      return list.map(ScanTask.fromJson).toList();
-    }
-    throw Exception('获取任务列表失败');
-  }
+  /// 获取指定存储的任务列表（已废弃，任务托盘下线后不再使用）
 
   /// 获取扫描任务状态
   Future<Map<String, dynamic>> getScanTaskStatus(String taskId) async {

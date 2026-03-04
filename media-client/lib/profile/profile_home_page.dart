@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:media_client/source_library/tasks/task_provider.dart';
+import 'package:media_client/core/api_client.dart';
 import 'package:media_client/core/playback_history/providers.dart';
 import 'package:media_client/media_library/recent_provider.dart';
 

@@ -8,6 +8,7 @@ from dramatiq import actor  # 保持导入同步 actor，但支持异步函数
 from core.config import get_settings
 from .state_store import get_state_store, TaskStatus, TaskPriority
 from core.logging import init_logging
+from services.task.scan_progress import init_scan_progress, update_scan_progress
 
 import logging
 init_logging(get_settings())
@@ -29,31 +30,35 @@ async def scan_worker(task_id: str, payload: Dict[str, Any]) -> None:  # 函数�
     store = get_state_store()
 
     try:
-        # 直接 await 异步逻辑（无需事件循环）
         await store.update_status(task_id, TaskStatus.RUNNING)
 
-        # 延迟导入异步扫描引擎
         from services.scan.unified_scan_engine import get_unified_scan_engine
         eng = await get_unified_scan_engine()
 
-        # 异步进度回调
+        user_id = payload.get("user_id")
+        storage_id = payload.get("storage_id")
+        scan_path = payload.get("scan_path")
+        logger.info(f"📂 开始扫描：用户 {user_id}，存储 {storage_id}，路径 '{scan_path}'")
+
+        if user_id is not None:
+            try:
+                await init_scan_progress(int(user_id), task_id)
+            except Exception as e:
+                logger.error(f"初始化扫描进度失败 task_id={task_id} user_id={user_id}: {e}", exc_info=True)
+
         async def _progress(scanned: int, media_found: int):
             try:
                 await store.update_status(task_id, TaskStatus.RUNNING, updated_at=_now())
+                if user_id is not None:
+                    await update_scan_progress(int(user_id), task_id, scanned=scanned)
             except Exception as e:
                 logger.error(f"任务 {task_id} 进度更新失败：{e}", exc_info=True)
-
-        # 执行异步扫描（直接 await） 
-        user_id=payload.get("user_id")
-        storage_id=payload.get("storage_id")
-        scan_path=payload.get("scan_path")
-        logger.info(f"📂 开始扫描：用户 {user_id}，存储 {storage_id}，路径 '{scan_path}'")
 
         res = await eng.scan_storage(
             user_id=user_id,
             storage_id=storage_id,
             scan_path=scan_path,
-            progress_cb=_progress
+            progress_cb=_progress,
         )
         # logger.info(f"扫描结果：{res}")
         logger.info(f"扫描任务 {task_id} 完成：新文件 {len(res.new_file_ids)} 个，已扫描文件 {res.total_files} 个，需要删除文件 {len(res.to_delete_ids)} 个")
@@ -64,12 +69,26 @@ async def scan_worker(task_id: str, payload: Dict[str, Any]) -> None:  # 函数�
             TaskStatus.SUCCESS,
             finished_at=_now(),
             updated_at=_now(),
-            result=json.dumps({
-                "new_file_count": len(res.new_file_ids),
-                "total_files": res.total_files,
-                "media_files": res.media_files
-            })
+            result=json.dumps(
+                {
+                    "new_file_count": len(res.new_file_ids),
+                    "total_files": res.total_files,
+                    "media_files": res.media_files,
+                }
+            ),
         )
+
+        if user_id is not None:
+            try:
+                pending_update = len(res.new_file_ids or []) + len(res.updated_files or [])
+                await update_scan_progress(
+                    int(user_id),
+                    task_id,
+                    scanned=res.total_files,
+                    pending_update=pending_update,
+                )
+            except Exception as e:
+                logger.error(f"更新扫描进度摘要失败 task_id={task_id} user_id={user_id}: {e}", exc_info=True)
 
         # --------------------------
         # 任务链：创建后续任务（删除对齐 + 元数据提取）
@@ -118,7 +137,8 @@ async def scan_worker(task_id: str, payload: Dict[str, Any]) -> None:  # 函数�
                     file_ids=res.all_file_ids,
                     storage_id=storage_id,
                     priority=TaskPriority.NORMAL,
-                    idempotency_key=idempotency_key
+                    idempotency_key=idempotency_key,
+                    scan_task_id=task_id,
                 )
                 logger.info(f"扫描任务 {task_id} 已创建元数据任务：{idempotency_key}（{len(res.all_file_ids)} 个文件）")
             except Exception as e:
@@ -178,7 +198,9 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
         BATCH_SIZE = 100  # 批次大小：每100条创建一次持久化任务
         batch_number = 1  # 批次号，用于幂等性key唯一标识
 
-        async for result in metadata_enricher.iter_enrich_multiple_files(file_ids=file_ids, user_id=user_id, max_concurrency=20):
+        async for result in metadata_enricher.iter_enrich_multiple_files(
+            file_ids=file_ids, user_id=user_id, max_concurrency=20
+        ):
             if not result.get("success") or not result.get("contract_payload") or result.get("file_id") not in file_ids:
                 logger.warning(f"⚠️ 跳过无效元数据结果：file_id={result.get('file_id')}, contract_payload={bool(result.get('contract_payload'))}")
                 continue
@@ -237,6 +259,7 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
                     await create_persist_batch_task(
                         user_id=user_id,
                         items=batch_items,
+                        scan_task_id=payload.get("scan_task_id"),
                         idempotency_key=idempotency_key,
                     )
                     persist_task_count += len(batch_items)
@@ -265,6 +288,7 @@ async def metadata_worker(task_id: str, payload: Dict[str, Any]) -> None:
                 await create_persist_batch_task(
                     user_id=user_id,
                     items=batch_items,
+                    scan_task_id=payload.get("scan_task_id"),
                     idempotency_key=idempotency_key,
                 )
                 persist_task_count += len(batch_items)
@@ -414,6 +438,17 @@ async def persist_batch_worker(task_id: str, payload: Dict[str, Any]) -> None:
             updated_at=_now(),
             result=json.dumps(result),
         )
+
+        scan_task_id = payload.get("scan_task_id")
+        user_id = payload.get("user_id")
+        if scan_task_id and user_id is not None and items:
+            try:
+                await update_scan_progress(int(user_id), scan_task_id, updated_delta=len(items))
+            except Exception as e:
+                logger.error(
+                    f"更新扫描进度已更新数量失败 scan_task_id={scan_task_id} user_id={user_id}: {e}",
+                    exc_info=True,
+                )
 
     except Exception as e:
         error_msg = str(e)

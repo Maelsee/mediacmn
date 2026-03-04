@@ -8,19 +8,24 @@
 - 完整的错误处理和重试机制
 """
 
+import asyncio
+import json
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import redis.asyncio as redis
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlmodel import select
 
-from core.security import get_current_subject, get_user_id
+from core.security import get_current_subject, get_current_subject_or_query, get_user_id, verify_token
 from core.db import AsyncSessionLocal
-from models.storage_models import StorageConfig,WebdavStorageConfig,SmbStorageConfig
+from core.config import get_settings
+from models.storage_models import StorageConfig, WebdavStorageConfig, SmbStorageConfig
 from services.task import producer
 from services.task.state_store import TaskPriority, get_state_store
+from services.task.scan_progress import get_scan_progress, CHANNEL_NAME
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -58,6 +63,14 @@ class TaskStatusResponse(BaseModel):
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     payload: Optional[Dict[str, Any]] = None
+
+
+class ScanProgressResponse(BaseModel):
+    scan_job_id: str
+    status: str
+    scanned_count: int
+    pending_update_count: int
+    updated_count: int
 
 
 # ============================================
@@ -208,3 +221,101 @@ async def get_scan_task_status(
         error_message=task.get("error_message") or None,
         payload=payload
     )
+
+
+@router.get("/progress/{task_id}", response_model=ScanProgressResponse)
+async def get_scan_progress_api(
+    task_id: str,
+    current_user: str = Depends(get_current_subject),
+):
+    user_id = get_user_id(current_user)
+    data = await get_scan_progress(user_id, task_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="进度不存在")
+    return ScanProgressResponse(
+        scan_job_id=data["scan_job_id"],
+        status=data["status"],
+        scanned_count=data["scanned_count"],
+        pending_update_count=data["pending_update_count"],
+        updated_count=data["updated_count"],
+    )
+
+
+async def _authenticate_websocket(websocket: WebSocket) -> int:
+    auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        qp = websocket.query_params
+        token = qp.get("token") or qp.get("access_token") or qp.get("t")
+    if not token:
+        await websocket.close(code=4401)
+        raise WebSocketDisconnect(code=4401)
+    payload = verify_token(token)
+    subject = payload.get("sub")
+    if not subject:
+        await websocket.close(code=4401)
+        raise WebSocketDisconnect(code=4401)
+    return get_user_id(str(subject))
+
+
+@router.websocket("/ws/progress")
+async def scan_progress_ws(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        user_id = await _authenticate_websocket(websocket)
+    except WebSocketDisconnect:
+        return
+
+    settings = get_settings()
+    redis_client = redis.from_url(
+        settings.REDIS_URL,
+        db=settings.REDIS_DB,
+        decode_responses=True,
+    )
+    pubsub = redis_client.pubsub()
+    await pubsub.subscribe(CHANNEL_NAME)
+
+    subscribed_job_ids: set[str] = set()
+
+    async def receiver() -> None:
+        while True:
+            msg = await websocket.receive_text()
+            try:
+                data = json.loads(msg)
+            except json.JSONDecodeError:
+                continue
+            if data.get("type") == "subscribe":
+                ids = data.get("job_ids") or []
+                subscribed_job_ids.clear()
+                for i in ids:
+                    subscribed_job_ids.add(str(i))
+
+    async def sender() -> None:
+        async for message in pubsub.listen():
+            if message["type"] != "message":
+                continue
+            try:
+                event = json.loads(message["data"])
+            except Exception:
+                continue
+            event_user_id = event.get("user_id")
+            if event_user_id is None or int(event_user_id) != int(user_id):
+                continue
+            job_id = str(event.get("job_id") or "")
+            if subscribed_job_ids and job_id not in subscribed_job_ids:
+                continue
+            await websocket.send_text(json.dumps(event, ensure_ascii=False))
+
+    try:
+        await asyncio.gather(receiver(), sender())
+    except WebSocketDisconnect:
+        pass
+    finally:
+        try:
+            await pubsub.unsubscribe(CHANNEL_NAME)
+            await pubsub.close()
+        except Exception:
+            pass
+        await redis_client.close()

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../source_library/tasks/task_provider.dart';
+import '../core/api_client.dart';
 import 'media_models.dart';
 import 'widgets/media_card.dart';
 

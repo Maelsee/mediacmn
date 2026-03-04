@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../source_library/tasks/task_provider.dart';
+import '../core/api_client.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});

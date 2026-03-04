@@ -4,12 +4,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:media_client/profile/profile_home_page.dart';
-import 'source_library/tasks/task_provider.dart';
-import 'source_library/tasks/task_tray.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'media_library/media_home_page.dart';
-import 'media_library/media_provider.dart';
 import 'source_library/sources_provider.dart';
 
 class AppShell extends StatefulWidget {
@@ -59,22 +56,7 @@ class MediaLibraryPage extends ConsumerStatefulWidget {
 class _MediaLibraryPageState extends ConsumerState<MediaLibraryPage> {
   @override
   Widget build(BuildContext context) {
-    // 监听任务状态，完成时刷新媒体库
-    ref.listen(tasksProvider, (previous, next) {
-      final wasScanning = previous?.currentGroup != null &&
-          previous?.running.isNotEmpty == true;
-      final isScanning =
-          next.currentGroup != null && next.running.isNotEmpty == true;
-
-      if (wasScanning && !isScanning) {
-        // 扫描完成，刷新媒体主页
-        ref.invalidate(mediaHomeProvider);
-      }
-    });
-
-    final tasks = ref.watch(tasksProvider);
     final ready = ref.watch(libraryReadyProvider);
-    final isScanning = tasks.currentGroup != null && tasks.running.isNotEmpty;
     return Scaffold(
       appBar: !ready
           ? null
@@ -94,21 +76,13 @@ class _MediaLibraryPageState extends ConsumerState<MediaLibraryPage> {
                   icon: const Icon(Icons.tune),
                 ),
                 IconButton(
-                  onPressed: isScanning
-                      ? null
-                      : () async {
-                          await ref
-                              .read(tasksProvider.notifier)
-                              .triggerGlobalScan();
-                        },
+                  onPressed: () {},
                   icon: const Icon(Icons.refresh),
                 ),
               ],
             ),
       body: Column(
         children: [
-          if (tasks.currentGroup != null && tasks.showTray && ready)
-            const TaskTray(),
           const Expanded(child: MediaLibraryHomePage()),
         ],
       ),

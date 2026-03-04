@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'tasks/task_provider.dart';
+import '../core/api_client.dart';
 import 'sources_provider.dart';
 
 class SourceWebDavFormPage extends ConsumerStatefulWidget {
@@ -289,15 +289,7 @@ class _SourceWebDavFormPageState extends ConsumerState<SourceWebDavFormPage> {
             context,
           ).showSnackBar(SnackBar(content: Text('保存成功：${res.id}')));
           await ref.read(sourcesProvider.notifier).load();
-          if (res.taskId != null) {
-            ref
-                .read(tasksProvider.notifier)
-                .showSingleSourceTask(sourceId: res.id, taskId: res.taskId!);
-            ref.read(tasksProvider.notifier).showTray();
-          }
-          await ref.read(tasksProvider.notifier).refreshGroup();
           if (mounted) {
-            // context.pop();
             context.go('/sources');
           }
         }

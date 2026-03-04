@@ -4,9 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'sources_provider.dart';
 import 'source_models.dart';
-import 'tasks/task_provider.dart';
-// import 'source_edit_page.dart';
-// import 'source_webdav_form_page.dart';
+import '../core/api_client.dart';
 
 class SourcesHomePage extends ConsumerWidget {
   const SourcesHomePage({super.key});
@@ -188,9 +186,6 @@ class _SourceCard extends StatelessWidget {
                       messenger.showSnackBar(
                         const SnackBar(content: Text('扫描任务已开始')),
                       );
-
-                      // Show task tray
-                      ref.read(tasksProvider.notifier).showTray();
                     } catch (e) {
                       messenger.showSnackBar(
                         SnackBar(content: Text('扫描失败: $e')),

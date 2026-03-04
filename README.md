@@ -149,12 +149,7 @@ English: production uses `docker-compose.prod.yml`, with env vars provided by `d
 cp deploy/.env.prod.example deploy/.env.prod
 ```
 
-你需要在 `deploy/.env.prod` 中至少设置（请使用强密码/强随机密钥）：
 
-- `DOMAIN`
-- `POSTGRES_PASSWORD`、`REDIS_PASSWORD`
-- `JWT_SECRET_KEY`、`MASTER_KEY`、`URL_SIGNING_SECRET`
-- `DATABASE_URL`、`REDIS_URL`、`SCRAPER_CACHE_REDIS_URL`
 
 ### 2) 启动 / Start
 
@@ -162,10 +157,6 @@ cp deploy/.env.prod.example deploy/.env.prod
 docker compose --env-file deploy/.env.prod -f docker-compose.prod.yml up -d --build
 ```
 
-当前仓库的 Caddy 配置为 HTTP，监听 `6069` 并转发到 `api:8000`（见 `deploy/Caddyfile`）：
-
-- API：`http://<DOMAIN>:6069/api/...`
-- Docs：`http://<DOMAIN>:6069/api/docs`
 
 ## 测试与质量检查 / Testing & Quality
 
@@ -200,15 +191,20 @@ English:
 3. Trigger scan/enrichment jobs (executed asynchronously by workers)
 4. Browse and play in the client, with server-side playback progress tracking
 
-## 安全提示 / Security Notes
+## 前端 APP 截图
 
-- 不要提交任何 `.env`、备份 SQL、日志、包含密码的配置文件到仓库
-- 生产环境务必使用强随机密钥与强密码，并限制数据库/Redis 仅内网可达
+图 1：媒体库页面（最近观看 + 按类型分区展示）
 
-- Never commit `.env`, SQL backups, logs, or any secrets
-- Use strong random secrets/passwords in production and keep DB/Redis private
+![媒体库页面](docs/screenshots/app_library.jpg)
 
-## 说明 / Notes
+图 2：详情页面（海报背景 + 剧集信息 + 剧情简介 + 演职员）
 
-- `media-client/README.md` 与 `media-server/DEVELOPMENT.md` 属于本地开发记录/日志（可用于追溯实现细节），本 README 提供“面向使用与部署”的总入口。
-- `media-client/README.md` and `media-server/DEVELOPMENT.md` are local development logs; this README is the high-level, usage/deployment-oriented entry point.
+![详情页面](docs/screenshots/app_detail.jpg)
+
+图 3：播放器页面（横屏播放，支持进度拖动、手势操作、字幕/音轨/选集）
+
+![播放器页面](docs/screenshots/app_player.jpg)
+
+图 4：播放器设置页面（连续播放/单集循环/不循环，画面比例与画面大小调节）
+
+![播放器设置页面](docs/screenshots/app_player_settings.jpg)
