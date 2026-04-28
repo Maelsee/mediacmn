@@ -6,6 +6,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, EmailStr
 
 
+
 class RefreshTokenRequest(BaseModel):
     """刷新令牌请求模型"""
     refresh_token: str = Field(description="刷新令牌")

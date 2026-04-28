@@ -110,6 +110,45 @@ class Settings(BaseSettings):
     PERSIST_BUCKET_ENABLED: bool = Field(default=True, description="是否启用按类型/源/用户分桶批量提交")
 
 
+    # DanmuApi 配置
+    DANMU_API_BASE_URL: str = Field(
+        default="http://127.0.0.1:9321",
+        description="DanmuApi 服务地址"
+    )
+    DANMU_API_TOKEN: str = Field(
+        default="112",
+        description="DanmuApi 访问令牌"
+    )
+    DANMU_API_TIMEOUT: int = Field(
+        default=30,
+        description="DanmuApi 请求超时时间(秒)"
+    )
+
+    # 弹幕匹配配置
+    DANMU_CONFIDENCE_THRESHOLD: float = Field(
+        default=0.7,
+        description="自动匹配置信度阈值"
+    )
+    DANMU_CACHE_TTL: int = Field(
+        default=604800,  # 7天
+        description="弹幕缓存时间(秒)"
+    )
+    DANMU_SEARCH_CACHE_TTL: int = Field(
+        default=3600,  # 1小时
+        description="搜索结果缓存时间(秒)"
+    )
+
+    # Redis 缓存配置（如果需要单独的缓存 Redis）
+    DANMU_REDIS_URL: str = Field(
+        default="redis://:redis123@localhost:10002/1",
+        description="弹幕缓存 Redis 地址"
+    )
+    DANMU_REDIS_ENABLED: bool = Field(
+        default=True,
+        description="是否启用弹幕缓存"
+    )
+
+
     # 允许 CORS_ORIGINS 以逗号分隔或 JSON 列表形式配置
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

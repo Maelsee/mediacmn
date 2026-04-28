@@ -98,6 +98,7 @@ def create_app() -> FastAPI:
     from api.routes_playback import router as playback_router
     from api.routes_tmdb import router as tmdb_router
     # from api.routes_collections import router as collections_router
+    from api.routes_danmu import router as danmu_router
 
 
     api_router = APIRouter()
@@ -112,6 +113,8 @@ def create_app() -> FastAPI:
     api_router.include_router(scan_router, prefix="/scan", tags=["scan"])  # 新的统一扫描路由
     api_router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])  # 任务生产者API
     # api_router.include_router(scraper_router, prefix="/scraper", tags=["scraper"])
+    api_router.include_router(danmu_router, prefix="/danmu", tags=["弹幕"])
+        
     app.include_router(api_router, prefix="/api")
 
     def custom_openapi():
