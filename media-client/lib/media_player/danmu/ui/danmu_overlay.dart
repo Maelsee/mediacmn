@@ -25,7 +25,8 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
     super.initState();
     _ticker = createTicker((duration) {
       if (!mounted) return;
-      setState(() => _elapsed = duration.inMilliseconds / 1000.0);
+      _elapsed = duration.inMilliseconds / 1000.0;
+      setState(() {});
     });
     _ticker.start();
   }
@@ -44,10 +45,12 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
         : null;
     if (engine == null || !danmuState.enabled) return const SizedBox.shrink();
 
-    // 订阅播放器位置更新
+    // 从播放器获取当前播放位置
     final position = ref.watch(playbackProvider).position;
     final positionSeconds = position.inMilliseconds / 1000.0;
-    engine.onPositionUpdate(positionSeconds);
+
+    // 在 Ticker 回调中同步更新引擎（位置 + 帧渲染）
+    engine.updateFrame(positionSeconds, _elapsed);
 
     return IgnorePointer(
       child: Opacity(

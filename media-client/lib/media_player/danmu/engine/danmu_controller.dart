@@ -27,6 +27,9 @@ class DanmuController extends ChangeNotifier {
   // 帧调度
   Timer? _frameTimer;
 
+  // 当前播放位置（由 DanmuOverlay 在 Ticker 回调中更新）
+  double _currentPosition = 0;
+
   // ---- 公开 API ----
 
   bool get enabled => _enabled;
@@ -34,6 +37,7 @@ class DanmuController extends ChangeNotifier {
   int get activeCount => _activeItems.length;
   int get totalCount => _allComments.length;
   List<DanmuItem> get activeItems => _activeItems;
+  double get currentPosition => _currentPosition;
 
   void init({required double viewWidth, required double viewHeight}) {
     _trackManager = DanmuTrackManager(
@@ -75,24 +79,35 @@ class DanmuController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 播放器位置更新回调（每帧调用）
-  void onPositionUpdate(double positionSeconds) {
+  /// 每帧更新：由 DanmuOverlay 的 Ticker 回调驱动
+  ///
+  /// [positionSeconds] 当前播放位置（秒）
+  /// [elapsedSeconds]  当前 Ticker elapsed 时间（秒）
+  void updateFrame(double positionSeconds, double elapsedSeconds) {
     if (!_enabled || _trackManager == null) return;
+
+    _currentPosition = positionSeconds;
 
     // 1. 检查是否需要加载下一分片
     _maybeLoadNextSegment(positionSeconds);
 
     // 2. 清除已过期的弹幕
     _activeItems.removeWhere(
-        (item) => !item.isVisible(positionSeconds, _trackManager!.viewWidth));
+        (item) => !item.isVisible(elapsedSeconds, _trackManager!.viewWidth));
 
     // 3. 用二分查找找到当前时间窗口内应发射的弹幕
-    _fireNewDanmu(positionSeconds);
+    _fireNewDanmu(positionSeconds, elapsedSeconds);
 
     notifyListeners();
   }
 
-  void _fireNewDanmu(double position) {
+  /// 旧接口兼容：仅更新位置，不触发帧逻辑
+  void onPositionUpdate(double positionSeconds) {
+    _currentPosition = positionSeconds;
+    _maybeLoadNextSegment(positionSeconds);
+  }
+
+  void _fireNewDanmu(double position, double elapsed) {
     if (_activeItems.length >= _maxVisible) return;
 
     // 查找 [position - 0.1, position + 0.1] 范围内的弹幕
@@ -117,7 +132,10 @@ class DanmuController extends ChangeNotifier {
       if (_activeItems.any((a) => a.comment.cid == comment.cid)) continue;
 
       final item = DanmuItem(comment);
-      item.x = _trackManager!.viewWidth + _speed * comment.time;
+      // 初始位置：屏幕右边缘
+      item.x = _trackManager!.viewWidth;
+      // 记录发射时的 Ticker elapsed，用于渲染时计算位移
+      item.firedAtElapsed = elapsed;
       final allocated = _trackManager!.allocate(item, position, _speed);
       if (allocated >= 0) {
         _activeItems.add(item);

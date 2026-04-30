@@ -17,7 +17,7 @@ class DanmuComment {
       color: p.length > 2 ? (int.tryParse(p[2]) ?? 16777215) : 16777215,
       source: p.length > 3 ? p[3] : '',
       content: json['m'] as String? ?? '',
-      cid: json['cid'] as int? ?? 0,
+      cid: (json['cid'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -52,8 +52,8 @@ class DanmuData {
     required this.loadMode, required this.segmentList});
 
   factory DanmuData.fromJson(Map<String, dynamic> json) => DanmuData(
-    episodeId: json['episode_id'] as int? ?? 0,
-    count: json['count'] as int? ?? 0,
+    episodeId: (json['episode_id'] as num?)?.toInt() ?? 0,
+    count: (json['count'] as num?)?.toInt() ?? 0,
     comments: (json['comments'] as List?)
         ?.map((e) => DanmuComment.fromJson(e as Map<String, dynamic>))
         .toList() ?? const [],
@@ -81,13 +81,13 @@ class DanmuSource {
     required this.shift, required this.imageUrl});
 
   factory DanmuSource.fromJson(Map<String, dynamic> json) => DanmuSource(
-    episodeId: json['episodeId'] as int? ?? 0,
-    animeId: json['animeId'] as int? ?? 0,
+    episodeId: (json['episodeId'] as num?)?.toInt() ?? 0,
+    animeId: (json['animeId'] as num?)?.toInt() ?? 0,
     animeTitle: json['animeTitle'] as String? ?? '',
     episodeTitle: json['episodeTitle'] as String? ?? '',
     type: json['type'] as String? ?? '',
     typeDescription: json['typeDescription'] as String? ?? '',
-    shift: json['shift'] as int? ?? 0,
+    shift: (json['shift'] as num?)?.toInt() ?? 0,
     imageUrl: json['imageUrl'] as String? ?? '',
   );
 }
@@ -138,12 +138,12 @@ class DanmuSearchItem {
 
   factory DanmuSearchItem.fromJson(Map<String, dynamic> json) =>
     DanmuSearchItem(
-      animeId: json['animeId'] as int? ?? 0,
+      animeId: (json['animeId'] as num?)?.toInt() ?? 0,
       animeTitle: json['animeTitle'] as String? ?? '',
       type: json['type'] as String? ?? '',
       typeDescription: json['typeDescription'] as String? ?? '',
       imageUrl: json['imageUrl'] as String? ?? '',
-      episodeCount: json['episodeCount'] as int? ?? 0,
+      episodeCount: (json['episodeCount'] as num?)?.toInt() ?? 0,
       rating: (json['rating'] as num?)?.toDouble() ?? 0,
     );
 }
@@ -161,7 +161,7 @@ class DanmuBangumi {
     required this.seasons, required this.episodes});
 
   factory DanmuBangumi.fromJson(Map<String, dynamic> json) => DanmuBangumi(
-    animeId: json['animeId'] as int? ?? 0,
+    animeId: (json['animeId'] as num?)?.toInt() ?? 0,
     animeTitle: json['animeTitle'] as String? ?? '',
     type: json['type'] as String? ?? '',
     imageUrl: json['imageUrl'] as String? ?? '',
@@ -184,7 +184,7 @@ class DanmuSeason {
   factory DanmuSeason.fromJson(Map<String, dynamic> json) => DanmuSeason(
     id: json['id'] as String? ?? '',
     name: json['name'] as String? ?? '',
-    episodeCount: json['episodeCount'] as int? ?? 0,
+    episodeCount: (json['episodeCount'] as num?)?.toInt() ?? 0,
   );
 }
 
@@ -199,11 +199,14 @@ class DanmuEpisode {
 
   factory DanmuEpisode.fromJson(Map<String, dynamic> json) => DanmuEpisode(
     seasonId: json['seasonId'] as String? ?? '',
-    episodeId: json['episodeId'] as int? ?? 0,
+    episodeId: (json['episodeId'] as num?)?.toInt() ?? 0,
     episodeTitle: json['episodeTitle'] as String? ?? '',
     episodeNumber: json['episodeNumber'] as String? ?? '',
   );
 }
+
+int _toInt(dynamic v) =>
+    v is num ? v.toInt() : int.tryParse('$v') ?? 0;
 
 class DanmuBinding {
   final int id;
@@ -220,10 +223,10 @@ class DanmuBinding {
     required this.offset, required this.isManual});
 
   factory DanmuBinding.fromJson(Map<String, dynamic> json) => DanmuBinding(
-    id: json['id'] as int? ?? 0,
+    id: _toInt(json['id']),
     fileId: json['file_id'] as String? ?? '',
-    episodeId: (json['episode_id'] as num?)?.toInt() ?? 0,
-    animeId: (json['anime_id'] as num?)?.toInt() ?? 0,
+    episodeId: _toInt(json['episode_id']),
+    animeId: _toInt(json['anime_id']),
     animeTitle: json['anime_title'] as String? ?? '',
     episodeTitle: json['episode_title'] as String? ?? '',
     offset: (json['offset'] as num?)?.toDouble() ?? 0,

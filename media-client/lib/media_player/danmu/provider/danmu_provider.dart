@@ -89,6 +89,12 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
     state = state.copyWith(enabled: true, loading: true);
     try {
       final result = await _api.danmuAutoMatch(_fileId);
+      // ignore: avoid_print
+      print('[Danmu] match result: isMatched=${result.isMatched}, '
+          'sources=${result.sources.length}, '
+          'bestMatch=${result.bestMatch?.animeTitle}, '
+          'danmuData=${result.danmuData != null ? '${result.danmuData!.count} comments' : 'null'}, '
+          'binding=${result.binding != null}');
       final engine = DanmuController();
       if (result.danmuData != null) {
         engine.loadDanmuData(result.danmuData!);
@@ -104,7 +110,9 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
         totalDanmuCount: result.danmuData?.count ?? 0,
         binding: result.binding,
       );
-    } catch (e) {
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[Danmu] enable error: $e\n$st');
       state = state.copyWith(loading: false, error: e.toString());
     }
   }

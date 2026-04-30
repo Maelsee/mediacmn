@@ -19,10 +19,14 @@ extension DanmuApi on ApiClient {
       body: jsonEncode(payload),
     );
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw Exception('弹幕匹配失败');
+      throw Exception('弹幕匹配失败: ${res.statusCode} ${res.body}');
     }
-    return DanmuMatchResult.fromJson(
-        jsonDecode(res.body) as Map<String, dynamic>);
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    // ignore: avoid_print
+    print('[Danmu API] match/auto response keys: ${json.keys.toList()}');
+    // ignore: avoid_print
+    print('[Danmu API] sources count: ${(json['sources'] as List?)?.length}');
+    return DanmuMatchResult.fromJson(json);
   }
 
   /// 搜索弹幕

@@ -1,10 +1,12 @@
 ## 弹幕api
 post /api/danmu/match/auto
 参数：
-    title: str = Field(..., description="视频标题")
+    title: Optional[str] = Field(..., description="视频标题")
     season: Optional[int] = Field(default=None, description="季数")
     episode: Optional[int] = Field(default=None, description="集数")
     file_id: Optional[str] = Field(default=None, description="文件ID")
+    
+返回数据：
 ```json
 {
   "is_matched": true,

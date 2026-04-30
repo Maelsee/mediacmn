@@ -97,6 +97,7 @@ async def auto_match(
             episode=episode,
             file_id=request.file_id,
         )
+        logger.info(f"Auto match result: {result}") 
         return AutoMatchResponse(**result)
 
     except DanmuApiTimeoutError as e:
