@@ -1,11 +1,14 @@
+
 """
 弹幕业务服务
 
 本模块提供弹幕相关的核心业务逻辑，包括：
 - 自动匹配
 - 手动搜索
+- 番剧详情获取
 - 弹幕获取
 - 弹幕合并
+- 绑定管理
 """
 from __future__ import annotations
 
@@ -35,7 +38,7 @@ class DanmuServiceError(Exception):
 
 class DanmuMatchResult:
     """匹配结果"""
-    
+
     def __init__(
         self,
         is_matched: bool,
@@ -47,7 +50,7 @@ class DanmuMatchResult:
         self.confidence = confidence
         self.sources = sources
         self.best_match = best_match
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "isMatched": self.is_matched,
@@ -60,155 +63,199 @@ class DanmuMatchResult:
 class DanmuService:
     """
     弹幕业务服务
-    
+
     提供弹幕相关的核心业务逻辑，整合 DanmuApiProvider、缓存服务和绑定服务。
+
+    手动匹配完整流程：
+    ┌──────────────────────────────────────────────────────────────────┐
+    │  Step 1: search(keyword)                                        │
+    │    → 返回 animeId 列表                                           │
+    │                                                                  │
+    │  Step 2: get_bangumi_detail(animeId)                            │
+    │    → 返回 seasons + episodes 列表                                │
+    │    → 前端展示剧集列表供用户选择                                    │
+    │                                                                  │
+    │  Step 3: create_binding(fileId, episodeId, ...)                 │
+    │    → 绑定文件与弹幕源                                            │
+    │                                                                  │
+    │  Step 4: get_danmu(episodeId)                                   │
+    │    → 获取弹幕数据                                                │
+    └──────────────────────────────────────────────────────────────────┘
     """
-    
+
     # 匹配置信度阈值
     CONFIDENCE_THRESHOLD = 0.7
-    
+
     def __init__(self) -> None:
         """初始化弹幕服务"""
         settings = get_settings()
-        self._confidence_threshold = getattr(settings, "DANMU_CONFIDENCE_THRESHOLD", 0.5)
-        logger.info(f"DanmuService initialized with confidence threshold: {self._confidence_threshold}")
-    
+        self._confidence_threshold = getattr(
+            settings, "DANMU_CONFIDENCE_THRESHOLD", self.CONFIDENCE_THRESHOLD
+        )
+        logger.info(f"DanmuService initialized (confidence_threshold={self._confidence_threshold})")
+
     # ==================== 自动匹配 ====================
-    
+
     async def auto_match(
         self,
         title: str,
         season: Optional[int] = None,
         episode: Optional[int] = None,
         file_id: Optional[str] = None,
-        # file_name: Optional[str] = None,
-    ) -> DanmuMatchResult:
+        file_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         自动匹配弹幕源
-        
-        根据视频标题、季数、集数等信息自动匹配弹幕源。
-        
+
+        优先检查已有绑定，然后调用 danmu_api 的 match 接口。
+
         Args:
             title: 视频标题
             season: 季数
             episode: 集数
-            file_id: 文件 ID（用于检查绑定）
+            file_id: 文件 ID
             file_name: 文件名
-            
+
         Returns:
-            匹配结果
+            匹配结果字典，包含 is_matched、confidence、sources、 best_match、binding、danmu_data(get_danmu返回的弹幕数据)
         """
-        file_name = f"{title} S{season}E{episode}" if season is not None and episode is not None else title
-        logger.info(f"Auto matching danmu for: {title}, season={season}, episode={episode}, file_name = {file_name}")
-        # # 1. 如果有 file_id，先检查是否有绑定
+        logger.info(f"Auto matching danmu for: {title} S{season or '?'}E{episode or '?'}")
+
+        # 1. 检查已有绑定
         # if file_id:
         #     binding = await danmu_binding_service.get_binding(file_id)
         #     if binding:
         #         logger.info(f"Found existing binding for file: {file_id}")
-        #         return DanmuMatchResult(
-        #             is_matched=True,
-        #             confidence=1.0,
-        #             sources=[{
-        #                 "episodeId": binding["episodeId"],
-        #                 "animeTitle": binding["animeTitle"],
-        #                 "episodeTitle": binding["episodeTitle"],
-        #                 "platform": binding["platform"],
-        #                 "offset": binding["offset"],
-        #                 "isBound": True,
+        #         return {
+        #             "is_matched": True,
+        #             "confidence": 1.0,
+        #             "sources": [{
+        #                 "episodeId": binding.get("episode_id"),
+        #                 "animeId": binding.get("anime_id"),
+        #                 "animeTitle": binding.get("anime_title"),
+        #                 "episodeTitle": binding.get("episode_title"),
+        #                 "type": binding.get("type", ""),
+        #                 "typeDescription": binding.get("typeDescription", ""),
+        #                 "shift": binding.get("offset", 0),
+        #                 "imageUrl": binding.get("imageUrl", ""),
         #             }],
-        #             best_match={
-        #                 "episodeId": binding["episodeId"],
-        #                 "animeTitle": binding["animeTitle"],
-        #                 "episodeTitle": binding["episodeTitle"],
-        #                 "platform": binding["platform"],
-        #                 "offset": binding["offset"],
+        #             "best_match": {
+        #                 "episodeId": binding.get("episode_id"),
+        #                 "animeId": binding.get("anime_id"),
+        #                 "animeTitle": binding.get("anime_title"),
+        #                 "episodeTitle": binding.get("episode_title"),
+        #                 "type": binding.get("type", ""),
+        #                 "typeDescription": binding.get("typeDescription", ""),
+        #                 "shift": binding.get("offset", 0),
+        #                 "imageUrl": binding.get("imageUrl", ""),
         #             },
-        #         )
-        
-        # # 2. 检查缓存
-        # if file_id:
-        #     cached_result = await danmu_cache_service.get_match_result(file_id)
-        #     if cached_result:
-        #         logger.info(f"Found cached match result for file: {file_id}")
-        #         return DanmuMatchResult(
-        #             is_matched=cached_result.get("isMatched", False),
-        #             confidence=cached_result.get("confidence", 0),
-        #             sources=cached_result.get("sources", []),
-        #             best_match=cached_result.get("bestMatch"),
-        #         )
-        
-        # 3. 调用 danmu_api 进行匹配
+        #         }
+
+        # 2. 构造匹配用的文件名
+        match_name = title or ""
+        if season is not None:
+            match_name += f" S{season:02d}"
+        if episode is not None:
+            match_name += f"E{episode:02d}"
+        # match_name += ".mp4"
+        logger.info(f"file_name:{match_name}")
+
+        # 3. 检查缓存
+        # cache_key = hashlib.md5(match_name.encode()).hexdigest()
+        # cached = await danmu_cache_service.get_match_result(cache_key)
+        # if cached:
+        #     logger.info(f"Found cached match result for: {match_name}")
+        #     return cached
+
+        # 4. 调用 danmu_api match 接口
         try:
-            match_result = await danmu_api_provider.match(
+            result = await danmu_api_provider.match(
                 title=title,
-                season=season,
-                episode=episode,
-                file_name=file_name,
+                file_name=match_name,
             )
-            
-            # 解析匹配结果
-            is_matched = match_result.get("isMatched", False)
-            matches = match_result.get("matches", [])
-            confidence = match_result.get("confidence", 0)
-            
-            # 构建源列表
+
+            is_matched = result.get("isMatched", False)
+            raw_matches = result.get("matches", [])
             sources = []
-            for match in matches:
-                source = {
-                    "episodeId": match.get("episodeId", 0),
-                    "animeId": match.get("animeId", 0),
-                    "animeTitle": match.get("animeTitle", ""),
-                    "episodeTitle": match.get("episodeTitle", ""),
-                    "type": match.get("type", ""),
-                    "typeDescription": match.get("typeDescription", ""),
-                    "shift": match.get("shift", 0),
-                    "imageUrl": match.get("imageUrl", "")
-                }
-                sources.append(source)
+            for m in raw_matches:
+                sources.append({
+                    "episodeId": m.get("episodeId"),
+                    "animeId": m.get("animeId"),
+                    "animeTitle": m.get("animeTitle"),
+                    "episodeTitle": m.get("episodeTitle"),
+                    "type": m.get("type", ""),
+                    "typeDescription": m.get("typeDescription", ""),
+                    "shift": m.get("shift", 0),
+                    "imageUrl": m.get("imageUrl", ""),
+                })
+
+            best_match = sources[0] if sources else None
+            confidence = 1.0 if is_matched else (0.8 if sources else 0.0)
+
+            match_result = {
+                "is_matched": is_matched,
+                "confidence": confidence,
+                "sources": sources,
+                "best_match": best_match,
+            }
+
+            # 缓存结果
+            # await danmu_cache_service.set_match_result(cache_key, match_result)
+
+            # 高置信度 + 有 file_id → 自动绑定 + 获取弹幕（一步到位）
+            if is_matched and confidence >= self._confidence_threshold and file_id and best_match:
+                episode_id = str(best_match.get("episodeId", ""))
+                if episode_id:
+                    try:
+                        binding = await danmu_binding_service.create_binding(
+                            file_id=file_id,
+                            episode_id=episode_id,
+                            anime_id=str(best_match.get("animeId", "")),
+                            anime_title=best_match.get("animeTitle", ""),
+                            episode_title=best_match.get("episodeTitle", ""),
+                            type=best_match.get("type", ""),
+                            typeDescription=best_match.get("typeDescription", ""),
+                            imageUrl=best_match.get("imageUrl", ""),
+                            # platform=best_match.get("platform", ""),
+                            is_manual=False,
+                            match_confidence=confidence,
+                            # source_info=best_match,  # 保存完整匹配信息（type/imageUrl/shift等）
+                        )
+                        logger.info(f"Auto match: bounding={binding}")
+                        match_result["binding"] = binding
+
+                        # 直接获取弹幕数据
+                        danmu_data = await self.get_danmu(
+                            episode_id=episode_id,
+                            file_id=file_id,
+                            load_mode="segment",
+                        )
+                        match_result["danmu_data"] = danmu_data
+                        logger.info(
+                            f"Auto match: auto-bound file={file_id} -> episode={episode_id}, "
+                            f"danmu loaded ({danmu_data.get('count', 0)} comments)"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Auto match: auto-bind failed, returning match only: {e}")
+
+            return match_result
             """
-            "episodeId": 10002,
-            "animeId": 236379,
-            "animeTitle": "生万物(2025)【电视剧】from 360",
-            "episodeTitle": "【qiyi】 第1集",
-            "type": "电视剧",
-            "typeDescription": "电视剧",
-            "shift": 0,
-            "imageUrl": "https://p.ssl.qhimg.com/d/dy_e6051d436a91031e7d1a1d3297128edc.jpg"
+            match_result结构：
+
+            
             """
-            
-            # 确定最佳匹配
-            best_match = None
-            if sources:
-                best_match = sources[0]
-                if is_matched and confidence >= self._confidence_threshold:
-                    logger.info(f"Auto match succeeded with confidence: {confidence}")
-            
-            result = DanmuMatchResult(
-                is_matched=is_matched and confidence >= self._confidence_threshold,
-                confidence=confidence,
-                sources=sources,
-                best_match=best_match,
-            )
-            
-            # # 缓存结果
-            # if file_id:
-            #     await danmu_cache_service.set_match_result(file_id, result.to_dict())
-            
-            return result
-            
-        except DanmuApiTimeoutError as e:
-            logger.error(f"Match request timeout: {e}")
-            return DanmuMatchResult(is_matched=False, confidence=0, sources=[])
-            
-        except DanmuApiUpstreamError as e:
-            logger.error(f"Match upstream error: {e}")
-            return DanmuMatchResult(is_matched=False, confidence=0, sources=[])
-            
+
         except DanmuApiError as e:
-            logger.error(f"Match error: {e}")
-            return DanmuMatchResult(is_matched=False, confidence=0, sources=[])
-    
+            logger.error(f"Auto match error: {e}")
+            return {
+                "is_matched": False,
+                "confidence": 0.0,
+                "sources": [],
+                "best_match": None,
+            }
+
     # ==================== 手动搜索 ====================
+
     async def search(
         self,
         keyword: str,
@@ -217,23 +264,26 @@ class DanmuService:
     ) -> Dict[str, Any]:
         """
         手动搜索弹幕源
-        
+
+        前端手动匹配 Step 1：用户输入关键词搜索番剧。
+        返回的每一项包含 animeId，前端用 animeId 调用 get_bangumi_detail 获取集数。
+
         Args:
             keyword: 搜索关键词
             search_type: 搜索类型 (anime/episodes)
             limit: 返回结果数量限制
-            
+
         Returns:
             搜索结果
         """
         logger.info(f"Searching danmu with keyword: {keyword}, type: {search_type}")
-        
+
         # 检查缓存
         cached = await danmu_cache_service.get_search_result(keyword)
         if cached:
             logger.info(f"Found cached search result for: {keyword}")
             return cached
-        
+
         try:
             if search_type == "anime":
                 result = await danmu_api_provider.search_anime(keyword, limit)
@@ -241,19 +291,19 @@ class DanmuService:
             else:
                 result = await danmu_api_provider.search_episodes(keyword, limit=limit)
                 items = result.get("episodes", [])
-            
+
             search_result = {
                 "keyword": keyword,
                 "type": search_type,
                 "items": items,
                 "hasMore": result.get("hasMore", False),
             }
-            
+
             # 缓存结果
             await danmu_cache_service.set_search_result(keyword, search_result)
-            
+
             return search_result
-            
+
         except DanmuApiError as e:
             logger.error(f"Search error: {e}")
             return {
@@ -263,112 +313,166 @@ class DanmuService:
                 "hasMore": False,
                 "error": str(e),
             }
-    
+
+    # ==================== 番剧详情 ====================
+
+    async def get_bangumi_detail(
+        self,
+        anime_id: str,
+    ) -> Dict[str, Any]:
+        """
+        获取番剧详情（含所有季和剧集列表）
+
+        前端手动匹配 Step 2：用户选择搜索结果中的某个番剧后，
+        用 animeId 调用此方法获取该番剧的所有季和剧集列表。
+
+        danmu_api 接口: GET /api/v2/bangumi/{animeId}
+        返回格式:
+        {
+            "bangumi": {
+                "animeId": 333038,
+                "animeTitle": "哈哈哈哈哈第五季",
+                "type": "综艺",
+                "seasons": [
+                    { "id": "season-333038", "name": "Season 1", "episodeCount": 38 }
+                ],
+                "episodes": [
+                    {
+                        "seasonId": "season-333038",
+                        "episodeId": 10036,
+                        "episodeTitle": "先导片...",
+                        "episodeNumber": "1"
+                    }
+                ]
+            }
+        }
+
+        Args:
+            anime_id: 番剧 ID (animeId)
+
+        Returns:
+            番剧详情，包含 seasons 和 episodes
+        """
+        logger.info(f"Getting bangumi detail for animeId: {anime_id}")
+
+        # 检查缓存
+        # cached = await danmu_cache_service.get_bangumi_detail(anime_id)
+        # if cached:
+        #     logger.info(f"Found cached bangumi detail for: {anime_id}")
+        #     return cached
+
+        try:
+            result = await danmu_api_provider.get_bangumi_detail(anime_id)
+
+            detail = {
+                "animeId": result.get("animeId", anime_id),
+                "animeTitle": result.get("animeTitle", ""),
+                "type": result.get("type", ""),
+                "typeDescription": result.get("typeDescription", ""),
+                "imageUrl": result.get("imageUrl", ""),
+                "episodeCount": result.get("episodeCount", 0),
+                "seasons": result.get("seasons", []),
+                "episodes": result.get("episodes", []),
+            }
+
+            # 缓存结果
+            # await danmu_cache_service.set_bangumi_detail(anime_id, detail)
+
+            return detail
+
+        except DanmuApiError as e:
+            logger.error(f"Get bangumi detail error: {e}")
+            raise
+
     # ==================== 弹幕获取 ====================
-    
+
     async def get_danmu(
         self,
         episode_id: str,
         file_id: Optional[str] = None,
         load_mode: str = "segment",
         next_segment: Optional[Dict[str, Any]] = None,
+        anime_id: Optional[str] = None,
+        anime_title: Optional[str] = None,
+        episode_title: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         获取弹幕数据
-        
+
+        如果传入 file_id，会自动查询或创建绑定关系（一步到位）。
+        首次获取弹幕时无需单独调用 bind 接口。
+
         Args:
-            episode_id: 剧集 I
-            file_id: 文件 ID（用于获取偏移量）
+            episode_id: 剧集 ID
+            file_id: 文件 ID（用于获取偏移量，同时自动创建绑定）
             load_mode: 加载模式（full/segment）
             next_segment: 下一个分片信息（load_mode=segment 时可选）
-            
+            anime_id: 番剧 ID（首次绑定时使用）
+            anime_title: 番剧标题（首次绑定时使用）
+            episode_title: 剧集标题（首次绑定时使用）
+
         Returns:
-            分片数据
             弹幕数据
         """
         logger.info(f"Getting danmu for episode: {episode_id}")
-        
-        # 获取偏移量
-        offset = 0.0
-        # if file_id:
-        #     binding = await danmu_binding_service.get_binding(file_id)
-        #     if binding:
-        #         offset = binding.get("offset", 0.0)
-        
-        normalized_mode = load_mode if load_mode in {"full", "segment"} else "full"
-        # cacheable = (
-        #     normalized_mode == "full"
-        #     and from_time is None
-        #     and to_time is None
-        #     and segment_index is None
-        # )
 
-        # # 检查缓存（仅全量模式）
-        # if cacheable:
-        #     cached = await danmu_cache_service.get_danmu(episode_id)
-        #     if cached:
-        #         logger.info(f"Found cached danmu for episode: {episode_id}")
-        #         cached["episode_id"] = cached.get("episode_id") or cached.get("episodeId") or episode_id
-        #         cached["load_mode"] = "full"
-        #         if offset != 0:
-        #             cached["comments"] = self._apply_offset(cached.get("comments", []), offset)
-        #         return cached
-        
-        # 从 danmu_api 获取
-        try:
-            if next_segment:
-                # result = await danmu_api_provider.get_segment_comment(next_segment) # 请求下一分片数据
-                """
-                "count": int(result.get("count", len(parsed)) or len(parsed)),
-                "comments": parsed,
-                "success": bool(result.get("success", True)),
-                "errorCode": int(result.get("errorCode", 0) or 0),
-                "errorMessage": str(result.get("errorMessage", "") or ""),
-                """
+        # 获取偏移量，无绑定时自动创建
+        offset = 0.0
+        created_binding = None
+        if file_id:
+            binding = await danmu_binding_service.get_binding(file_id)
+            if binding:
+                offset = binding.get("offset", 0.0)
             else:
-                # 第一次请求弹幕数据，分片模式：所有分片数据+第一分片数据的弹幕；全量模式：所有弹幕数据
-                result = await danmu_api_provider.get_danmu(
-                    episode_id=episode_id,
-                    load_mode=normalized_mode,
-                    duration=True,
-                    format="json"
-                )
-                """
-                "episodeId": episode_id,
-                "videoDuration": video_duration,
-                "segmentList": segment_list,
-                "count": len(segment_list)/len(comments),
-                "comments": [],
-                """
+                # 自动创建绑定（无需前端单独调用 bind 接口）
+                try:
+                    created_binding = await danmu_binding_service.create_binding(
+                        file_id=file_id,
+                        episode_id=episode_id,
+                        anime_id=anime_id,
+                        anime_title=anime_title,
+                        episode_title=episode_title,
+                        is_manual=anime_id is not None,  # 有元数据说明是手动选择的
+                    )
+                    logger.info(f"Auto-created binding: file={file_id} -> episode={episode_id}")
+                except Exception as e:
+                    logger.warning(f"Auto-create binding failed: {e}")
+
+
+        normalized_mode = load_mode if load_mode in {"full", "segment"} else "full"
+
+        try:
+            # 第一次请求弹幕数据
+            # segment 模式：返回所有分片描述 + 第一分片弹幕
+            # full 模式：返回全部弹幕
+            result = await danmu_api_provider.get_danmu(
+                episode_id=episode_id,
+                load_mode=normalized_mode,
+                duration=True,
+                format="json",
+            )
 
             danmu_data = await self._build_danmu_payload(
                 source_result=result,
                 episode_id=episode_id,
                 offset=offset,
-                load_mode=normalized_mode
+                load_mode=normalized_mode,
+                is_next_segment=bool(next_segment),
             )
-            """
-            danmu_data:
-            {
-                "episode_id": episode_id,
-                "segments": Dict[str, Any],
-                "count": int,
-                "comments": comments,
-                "offset": offset,
-                "video_duration": video_duration,
-                # "load_mode": "full",
-            }
-            """
 
-            # if cacheable:
-            #     await danmu_cache_service.set_danmu(episode_id, danmu_data)
+            # 首次自动创建的绑定信息附加到返回数据中
+            if created_binding:
+                danmu_data["binding"] = created_binding
+
+            # 缓存结果
+            await danmu_cache_service.set_binding(file_id, danmu_data)
 
             return danmu_data
-            
+
         except DanmuApiError as e:
             logger.error(f"Get danmu error: {e}")
             return {
-                "episode_id": episode_id,
+                "episode_id": int(episode_id),
                 "count": 0,
                 "comments": [],
                 "error": str(e),
@@ -383,131 +487,142 @@ class DanmuService:
         """获取下一个分片弹幕"""
         return await danmu_api_provider.get_segment_comment(next_segment, format=format)
 
-
-
-    async def get_danmu_from_url(
-        self,
-        video_url: str,
-        file_id: Optional[str] = None,
-        load_mode: str = "full",
-        segment_index: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        """通过视频 URL 获取弹幕，支持全量与分片模式。"""
-        logger.info("Getting danmu from url")
-        offset = 0.0
-        if file_id:
-            binding = await danmu_binding_service.get_binding(file_id)
-            if binding:
-                offset = binding.get("offset", 0.0)
-
-        normalized_mode = load_mode if load_mode in {"full", "segment"} else "full"
-        try:
-            result = await danmu_api_provider.get_danmu_from_url(
-                video_url=video_url,
-                load_mode=normalized_mode,
-                duration=True,
-            )
-            danmu_data = await self._build_danmu_payload(
-                source_result=result,
-                episode_id="url",
-                offset=offset,
-                load_mode=normalized_mode,
-                segment_index=segment_index,
-            )
-            danmu_data["source_url"] = video_url
-            return danmu_data
-        except DanmuApiError as e:
-            logger.error(f"Get danmu from url error: {e}")
-            return {
-                "episode_id": "url",
-                "count": 0,
-                "comments": [],
-                "error": str(e),
-                "load_mode": normalized_mode,
-                "source_url": video_url,
-            }
-    
-    async def get_danmu_by_file(
-        self,
-        file_id: str,
-        from_time: Optional[int] = None,
-        to_time: Optional[int] = None,
-        load_mode: str = "full",
-        segment_index: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        """
-        根据文件 ID 获取弹幕
-        
-        先查询绑定关系，再获取弹幕数据。
-        
-        Args:
-            file_id: 文件 ID
-            from_time: 开始时间（秒）
-            to_time: 结束时间（秒）
-            load_mode: 加载模式（full/segment）
-            segment_index: 分片索引（load_mode=segment 时可选）
-            
-        Returns:
-            弹幕数据
-        """
-        logger.info(f"Getting danmu for file: {file_id}")
-        
-        # 查询绑定
-        binding = await danmu_binding_service.get_binding(file_id)
-        if not binding:
-            return {
-                "fileId": file_id,
-                "count": 0,
-                "comments": [],
-                "error": "No binding found for this file",
-            }
-        
-        episode_id = binding["episodeId"]
-        offset = binding.get("offset", 0.0)
-        
-        # 获取弹幕
-        danmu_data = await self.get_danmu(
-            episode_id=episode_id,
-            from_time=from_time,
-            to_time=to_time,
-            file_id=file_id,
-            load_mode=load_mode,
-            segment_index=segment_index,
-        )
-        
-        danmu_data["fileId"] = file_id
-        danmu_data["binding"] = binding
-        
-        return danmu_data
-
     async def _build_danmu_payload(
         self,
-        *,
         source_result: Dict[str, Any],
         episode_id: str,
         offset: float,
-        load_mode: str
+        load_mode: str,
+        is_next_segment: bool = False,
     ) -> Dict[str, Any]:
-        """构建统一弹幕返回结构，兼容全量与分片模式。"""
+        """
+        构建弹幕响应数据
+
+        将 danmu_api 返回的原始数据转换为前端需要的格式。
+        """
+        if is_next_segment:
+            # 下一分片数据
+            comments = source_result.get("comments", [])
+            # parsed = self._parse_comments(comments)
+            parsed = comments
+            return {
+                "episode_id": int(episode_id),
+                "count": len(parsed),
+                "comments": parsed,
+                "offset": offset,
+                "load_mode": load_mode,
+            }
+
+        # 首次请求数据
         video_duration = int(source_result.get("videoDuration", 0) or 0)
-        
-        segment_list = source_result.get("segmentList", []) or []
-        comments = source_result.get("comments", []) or []
-        payload: Dict[str, Any] = {
-            "episode_id": episode_id,
-            "count": len(comments),
-            "comments": comments,
+        comments = source_result.get("comments", [])
+        segment_list = source_result.get("segmentList", [])
+
+        if load_mode == "segment" and isinstance(comments, dict):
+            # segment 模式：comments 是一个 dict，key 是分片索引
+            # 取第一个分片的弹幕
+            first_segment_comments = []
+            for key in sorted(comments.keys(), key=lambda x: int(x) if str(x).isdigit() else 0):
+                first_segment_comments = comments[key]
+                break
+            # parsed = self._parse_comments(first_segment_comments)
+            parsed = first_segment_comments
+        else:
+            # full 模式：comments 是列表
+            # parsed = self._parse_comments(comments)
+            parsed = comments
+
+        # 应用偏移量
+        # if offset != 0:
+            # parsed = self._apply_offset(parsed, offset)
+
+        return {
+            "episode_id": int(episode_id),
+            "count": source_result.get("count", len(parsed)),
+            "comments": parsed,
             "offset": offset,
             "video_duration": video_duration,
-            "segment_list": segment_list,
             "load_mode": load_mode,
+            "segment_list": segment_list,
         }
 
-        return payload
+    # def _parse_comments(self, raw_comments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    #     """
+    #     解析弹幕数据
 
-    
+    #     danmu_api 返回的弹幕格式:
+    #     { "p": "12.5,1,25,16777215,0,0,xxxx", "m": "弹幕内容" }
+    #     或
+    #     { "time": 12.5, "type": 1, "color": "#FFFFFF", "content": "弹幕内容" }
+
+    #     转换为前端统一格式:
+    #     { "id": "xxx", "time": 12500, "content": "弹幕内容", "color": "#FFFFFF", "type": "scroll" }
+    #     """
+    #     parsed = []
+    #     for i, c in enumerate(raw_comments):
+    #         if not isinstance(c, dict):
+    #             continue
+
+    #         # 格式1: p 字段格式 (弹弹play 标准格式)
+    #         p_str = c.get("p", "")
+    #         if p_str and isinstance(p_str, str):
+    #             parts = p_str.split(",")
+    #             if len(parts) >= 4:
+    #                 time_ms = int(float(parts[0]) * 1000)
+    #                 danmu_type_int = int(parts[1])
+    #                 color_int = int(parts[3])
+
+    #                 # 类型映射: 1=滚动, 4=底部, 5=顶部
+    #                 type_map = {1: "scroll", 4: "bottom", 5: "top"}
+    #                 danmu_type = type_map.get(danmu_type_int, "scroll")
+
+    #                 # 颜色转换
+    #                 color = f"#{color_int:06X}"
+
+    #                 parsed.append({
+    #                     "id": c.get("cid", f"{i}"),
+    #                     "time": time_ms,
+    #                     "content": c.get("m", ""),
+    #                     "color": color,
+    #                     "type": danmu_type,
+    #                 })
+    #                 continue
+
+    #         # 格式2: 直接字段格式
+    #         time_val = c.get("time", 0)
+    #         if isinstance(time_val, (int, float)):
+    #             time_ms = int(time_val * 1000) if time_val < 100000 else int(time_val)
+    #         else:
+    #             time_ms = 0
+
+    #         type_val = c.get("type", 1)
+    #         if isinstance(type_val, int):
+    #             type_map = {1: "scroll", 4: "bottom", 5: "top"}
+    #             danmu_type = type_map.get(type_val, "scroll")
+    #         else:
+    #             danmu_type = str(type_val) if type_val else "scroll"
+
+    #         parsed.append({
+    #             "id": c.get("id", c.get("cid", f"{i}")),
+    #             "time": time_ms,
+    #             "content": c.get("content", c.get("m", c.get("text", ""))),
+    #             "color": c.get("color", "#FFFFFF"),
+    #             "type": danmu_type,
+    #         })
+
+    #     return parsed
+
+    # def _apply_offset(self, comments: List[Dict[str, Any]], offset: float) -> List[Dict[str, Any]]:
+    #     """应用时间偏移量"""
+    #     if not offset:
+    #         return comments
+    #     offset_ms = int(offset * 1000)
+    #     for c in comments:
+    #         c["time"] = max(0, c.get("time", 0) + offset_ms)
+    #     return comments
+
     # ==================== 弹幕合并 ====================
-    
+
     async def merge_danmu(
         self,
         episode_ids: List[str],
@@ -515,106 +630,77 @@ class DanmuService:
         to_time: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        合并多个弹幕源
-        
+        合并多个弹幕源的弹幕
+
         Args:
             episode_ids: 剧集 ID 列表
-            from_time: 开始时间（秒）
-            to_time: 结束时间（秒）
-            
+            from_time: 开始时间(秒)
+            to_time: 结束时间(秒)
+
         Returns:
             合并后的弹幕数据
         """
         logger.info(f"Merging danmu from {len(episode_ids)} sources")
-        
+
         all_comments = []
         sources = []
-        
-        for episode_id in episode_ids:
+
+        for eid in episode_ids:
             try:
-                result = await self.get_danmu(
-                    episode_id=episode_id,
-                    from_time=from_time,
-                    to_time=to_time,
+                result = await danmu_api_provider.get_danmu(
+                    episode_id=eid,
+                    load_mode="full",
+                    duration=False,
+                    format="json",
                 )
-                
                 comments = result.get("comments", [])
-                all_comments.extend(comments)
-                
+                # parsed = self._parse_comments(comments)
+                parsed = comments
+
+                # 时间过滤
+                if from_time is not None or to_time is not None:
+                    from_ms = (from_time or 0) * 1000
+                    to_ms = (to_time or 999999) * 1000
+                    parsed = [c for c in parsed if from_ms <= c.get("time", 0) <= to_ms]
+
+                all_comments.extend(parsed)
                 sources.append({
-                    "episodeId": episode_id,
-                    "count": len(comments),
+                    "episodeId": eid,
+                    "count": len(parsed),
                 })
-                
-            except Exception as e:
-                logger.error(f"Failed to get danmu from {episode_id}: {e}")
-        
-        # 去重
-        unique_comments = self._deduplicate_comments(all_comments)
-        
+
+            except DanmuApiError as e:
+                logger.warning(f"Failed to get danmu for episode {eid}: {e}")
+                sources.append({
+                    "episodeId": eid,
+                    "count": 0,
+                    "error": str(e),
+                })
+
         # 按时间排序
-        unique_comments.sort(key=lambda x: x.get("time", 0))
-        
+        all_comments.sort(key=lambda x: x.get("time", 0))
+
         return {
-            "count": len(unique_comments),
-            "comments": unique_comments,
+            "count": len(all_comments),
+            "comments": all_comments,
             "sources": sources,
         }
-    
-    def _deduplicate_comments(
-        self,
-        comments: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """
-        弹幕去重
-        
-        基于内容和时间进行去重。
-        """
-        seen = set()
-        unique = []
-        
-        for comment in comments:
-            # 使用内容和时间作为去重键
-            key = (
-                comment.get("content", ""),
-                comment.get("time", 0) // 1000,  # 精确到秒
-            )
-            
-            if key not in seen:
-                seen.add(key)
-                unique.append(comment)
-        
-        return unique
-    
-    def _apply_offset(
-        self,
-        comments: List[Dict[str, Any]],
-        offset: float,
-    ) -> List[Dict[str, Any]]:
-        """
-        应用时间偏移量
-        
-        Args:
-            comments: 弹幕列表
-            offset: 偏移量（秒）
-            
-        Returns:
-            调整后的弹幕列表
-        """
-        if offset == 0:
-            return comments
-        
-        offset_ms = int(offset * 1000)
-        
-        for comment in comments:
-            original_time = comment.get("time", 0)
-            comment["time"] = max(0, original_time + offset_ms)
-        
-        return comments
-    
+
     # ==================== 绑定管理 ====================
-    
-    async def bind(
+
+    async def get_binding(self, file_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取文件的弹幕绑定
+
+        Args:
+            file_id: 文件 ID
+
+        Returns:
+            绑定信息，如果不存在返回 None
+        """
+        return await danmu_binding_service.get_binding(file_id)
+
+    async def create_binding(
         self,
         file_id: str,
         episode_id: str,
@@ -626,7 +712,7 @@ class DanmuService:
     ) -> Dict[str, Any]:
         """
         创建绑定
-        
+
         Args:
             file_id: 文件 ID
             episode_id: 剧集 ID
@@ -635,7 +721,7 @@ class DanmuService:
             episode_title: 剧集标题
             platform: 弹幕平台
             offset: 时间偏移量
-            
+
         Returns:
             绑定信息
         """
@@ -649,19 +735,19 @@ class DanmuService:
             offset=offset,
             is_manual=True,
         )
-    
+
     async def unbind(self, file_id: str) -> bool:
         """
         解除绑定
-        
+
         Args:
             file_id: 文件 ID
-            
+
         Returns:
             是否成功
         """
         return await danmu_binding_service.delete_binding(file_id)
-    
+
     async def update_offset(
         self,
         file_id: str,
@@ -669,25 +755,26 @@ class DanmuService:
     ) -> Optional[Dict[str, Any]]:
         """
         更新偏移量
-        
+
         Args:
             file_id: 文件 ID
             offset: 新的偏移量
-            
+
         Returns:
             更新后的绑定信息
         """
         return await danmu_binding_service.update_offset(file_id, offset)
-    
+        
+
     # ==================== 平台管理 ====================
-    
-    async def get_platforms(self) -> List[Dict[str, Any]]:
-        """获取支持的平台列表"""
-        return await danmu_api_provider.get_platforms()
-    
-    async def check_platform_status(self, platform: str) -> Dict[str, Any]:
-        """检查平台状态"""
-        return await danmu_api_provider.check_platform_status(platform)
+
+    # async def get_platforms(self) -> List[Dict[str, Any]]:
+    #     """获取支持的平台列表"""
+    #     return await danmu_api_provider.get_platforms()
+
+    # async def check_platform_status(self, platform: str) -> Dict[str, Any]:
+    #     """检查平台状态"""
+    #     return await danmu_api_provider.check_platform_status(platform)
 
 
 # 全局单例

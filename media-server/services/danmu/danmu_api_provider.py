@@ -293,7 +293,7 @@ class DanmuApiProvider:
         Returns:
             匹配结果，包含是否匹配成功和候选列表
         """
-        logger.info(f"Matching danmu for: {title}, season={season}, episode={episode}")
+        # logger.info(f"Matching danmu for: {title}, season={season}, episode={episode}")
         
         # 构建匹配请求
         request_data = {
@@ -359,36 +359,88 @@ class DanmuApiProvider:
         
         return 0.3
     
+
     # ==================== 详情接口 ====================
-    
+
     async def get_bangumi_detail(
         self,
         anime_id: str,
     ) -> Dict[str, Any]:
         """
-        获取番剧详情
-        
+        获取番剧详情（含所有季和剧集列表）
+
+        danmu_api 接口: GET /api/v2/bangumi/{animeId}
+
+        返回格式:
+        {
+            "errorCode": 0,
+            "success": true,
+            "bangumi": {
+                "animeId": 333038,
+                "bangumiId": "333038",
+                "animeTitle": "哈哈哈哈哈第五季(2025)【综艺】from 听风",
+                "imageUrl": "http://...",
+                "isOnAir": true,
+                "airDay": 1,
+                "isFavorited": true,
+                "rating": 0,
+                "type": "综艺",
+                "typeDescription": "综艺",
+                "seasons": [
+                    {
+                        "id": "season-333038",
+                        "airDate": "2025-01-01T00:00:00Z",
+                        "name": "Season 1",
+                        "episodeCount": 38
+                    }
+                ],
+                "episodes": [
+                    {
+                        "seasonId": "season-333038",
+                        "episodeId": 10036,
+                        "episodeTitle": "【qiyi】 先导片王鹤棣刘耀文看恐怖片吓疯",
+                        "episodeNumber": "1",
+                        "airDate": "2025-01-01T00:00:00Z"
+                    },
+                    {
+                        "seasonId": "season-333038",
+                        "episodeId": 10037,
+                        "episodeTitle": "【qiyi】 第1期黄晓明黄子韬"黑脸"练舞",
+                        "episodeNumber": "2",
+                        "airDate": "2025-01-01T00:00:00Z"
+                    }
+                ]
+            }
+        }
+
         Args:
-            anime_id: 番剧 ID
-            
+            anime_id: 番剧 ID (animeId)
+
         Returns:
-            番剧详情，包含剧集列表
+            番剧详情，包含 seasons 和 episodes 列表
         """
         logger.info(f"Getting bangumi detail: {anime_id}")
-        
+
         result = await self._request("GET", f"/api/v2/bangumi/{anime_id}")
-        
+
+        # danmu_api 返回的数据在 bangumi 字段下
+        bangumi = result.get("bangumi", result)
+
         return {
-            "animeId": result.get("animeId", anime_id),
-            "animeTitle": result.get("animeTitle", ""),
-            "type": result.get("type", ""),
-            "typeDescription": result.get("typeDescription", ""),
-            "imageUrl": result.get("imageUrl", ""),
-            "startDate": result.get("startDate", ""),
-            "episodeCount": result.get("episodeCount", 0),
-            "episodes": result.get("episodes", []),
+            "animeId": bangumi.get("animeId", anime_id),
+            "animeTitle": bangumi.get("animeTitle", ""),
+            "type": bangumi.get("type", ""),
+            "typeDescription": bangumi.get("typeDescription", ""),
+            "imageUrl": bangumi.get("imageUrl", ""),
+            "startDate": bangumi.get("startDate", ""),
+            "episodeCount": bangumi.get("episodeCount", 0),
+            "isOnAir": bangumi.get("isOnAir", False),
+            "rating": bangumi.get("rating", 0),
+            "seasons": bangumi.get("seasons", []),
+            "episodes": bangumi.get("episodes", []),
         }
-    
+
+
     # ==================== 弹幕获取接口 ====================
     
     async def get_danmu(
@@ -458,6 +510,7 @@ class DanmuApiProvider:
             json_data=segment_payload,
         )
         comments = result.get("comments", [])
+        # logger.info(f"Getting segment comment: {comments}")
         # parsed = self._parse_comments(comments if isinstance(comments, list) else [])
         parsed = comments if isinstance(comments, list) else []
         return {
@@ -510,128 +563,50 @@ class DanmuApiProvider:
             "comments": parsed,
         }
     
-    def _parse_comments(self, comments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        解析弹幕数据为统一格式
-        
-        danmu_api 返回的弹幕格式：
-        {
-            "cid": "弹幕ID",
-            "p": "时间,类型,颜色,字号,发送者",
-            "m": "弹幕内容"
-        }
-        
-        统一格式：
-        {
-            "id": "弹幕ID",
-            "time": 时间(毫秒),
-            "content": "弹幕内容",
-            "color": "#FFFFFF",
-            "type": "scroll|top|bottom",
-            "fontSize": 25,
-            "source": "平台名称"
-        }
-        """
-        parsed = []
-        
-        for comment in comments:
-            try:
-                cid = comment.get("cid", "")
-                p = comment.get("p", "").split(",")
-                m = comment.get("m", "")
-                
-                if len(p) < 3:
-                    continue
-                
-                time_seconds = float(p[0])
-                danmu_type = int(p[1])
-                color = int(p[2])
-                font_size = 25
-                source_token = ""
-                if len(p) >= 4:
-                    if p[3].isdigit():
-                        font_size = int(p[3])
-                        source_token = p[4] if len(p) > 4 else ""
-                    else:
-                        source_token = p[3]
-                if len(p) >= 5 and not source_token:
-                    source_token = p[4]
 
-                source = source_token.strip()
-                if source.startswith("[") and source.endswith("]"):
-                    source = source[1:-1]
-                
-                # 转换弹幕类型
-                type_map = {
-                    1: "scroll",   # 滚动弹幕
-                    2: "scroll",   # 滚动弹幕
-                    3: "scroll",   # 滚动弹幕
-                    4: "bottom",   # 底部弹幕
-                    5: "top",      # 顶部弹幕
-                    6: "scroll",   # 逆向弹幕（当作滚动处理）
-                    7: "scroll",   # 精准定位弹幕
-                    8: "scroll",   # 高级弹幕
-                }
-                
-                parsed.append({
-                    "id": cid,
-                    "time": int(time_seconds * 1000),  # 转换为毫秒
-                    "content": m,
-                    "color": f"#{color:06X}",
-                    "type": type_map.get(danmu_type, "scroll"),
-                    "font_size": float(font_size),
-                    "source": source or comment.get("source", "unknown"),
-                })
-                
-            except (ValueError, IndexError) as e:
-                logger.warning(f"Failed to parse comment: {comment}, error: {e}")
-                continue
-        
-        return parsed
-    
     # ==================== 平台状态接口 ====================
     
-    async def get_platforms(self) -> List[Dict[str, Any]]:
-        """
-        获取支持的平台列表
+    # async def get_platforms(self) -> List[Dict[str, Any]]:
+    #     """
+    #     获取支持的平台列表
         
-        Returns:
-            平台列表
-        """
-        platforms = []
-        for platform_id, platform_name in self.PLATFORM_NAMES.items():
-            platforms.append({
-                "id": platform_id,
-                "name": platform_name,
-                "enabled": True,
-            })
-        return platforms
+    #     Returns:
+    #         平台列表
+    #     """
+    #     platforms = []
+    #     for platform_id, platform_name in self.PLATFORM_NAMES.items():
+    #         platforms.append({
+    #             "id": platform_id,
+    #             "name": platform_name,
+    #             "enabled": True,
+    #         })
+    #     return platforms
     
-    async def check_platform_status(self, platform: str) -> Dict[str, Any]:
-        """
-        检查平台状态
+    # async def check_platform_status(self, platform: str) -> Dict[str, Any]:
+    #     """
+    #     检查平台状态
         
-        Args:
-            platform: 平台 ID
+    #     Args:
+    #         platform: 平台 ID
             
-        Returns:
-            平台状态信息
-        """
-        # 简单的健康检查，尝试搜索该平台的内容
-        try:
-            # 使用一个简单的搜索来检查平台是否可用
-            result = await self.search_anime("test", limit=1)
-            return {
-                "platform": platform,
-                "available": True,
-                "latency": 0,
-            }
-        except Exception as e:
-            return {
-                "platform": platform,
-                "available": False,
-                "error": str(e),
-            }
+    #     Returns:
+    #         平台状态信息
+    #     """
+    #     # 简单的健康检查，尝试搜索该平台的内容
+    #     try:
+    #         # 使用一个简单的搜索来检查平台是否可用
+    #         result = await self.search_anime("test", limit=1)
+    #         return {
+    #             "platform": platform,
+    #             "available": True,
+    #             "latency": 0,
+    #         }
+    #     except Exception as e:
+    #         return {
+    #             "platform": platform,
+    #             "available": False,
+    #             "error": str(e),
+    #         }
     
     # ==================== 生命周期管理 ====================
     

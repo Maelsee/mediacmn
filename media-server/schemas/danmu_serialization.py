@@ -1,3 +1,4 @@
+
 """
 弹幕数据模型
 
@@ -30,7 +31,7 @@ class DanmuLoadMode(str, Enum):
     """弹幕加载模式"""
     FULL = "full"          # 全量
     SEGMENT = "segment"    # 分段
-    
+
 class DanmuFormat(str, Enum):
     """弹幕数据格式"""
     JSON = "json"          # JSON 格式
@@ -46,15 +47,15 @@ class NextSegmentInput(BaseModel):
     url: str
 
 
-class DanmuComment(BaseModel):
-    """单条弹幕"""
-    id: str = Field(..., description="弹幕唯一标识")
-    time: int = Field(..., description="出现时间(毫秒)")
-    content: str = Field(..., description="弹幕内容")
-    color: str = Field(default="#FFFFFF", description="弹幕颜色")
-    type: DanmuType = Field(default=DanmuType.SCROLL, description="弹幕类型")
-    font_size: float = Field(default=1.0, description="字体大小比例")
-    source: Optional[str] = Field(default=None, description="来源平台")
+# class DanmuComment(BaseModel):
+#     """单条弹幕"""
+#     id: str = Field(..., description="弹幕唯一标识")
+#     time: int = Field(..., description="出现时间(毫秒)")
+#     content: str = Field(..., description="弹幕内容")
+#     color: str = Field(default="#FFFFFF", description="弹幕颜色")
+#     type: DanmuType = Field(default=DanmuType.SCROLL, description="弹幕类型")
+#     font_size: float = Field(default=1.0, description="字体大小比例")
+#     source: Optional[str] = Field(default=None, description="来源平台")
 
 
 class DanmuData(BaseModel):
@@ -66,11 +67,16 @@ class DanmuData(BaseModel):
     video_duration: int = Field(default=0, description="视频时长(秒)")
     load_mode: DanmuLoadMode = Field(default=DanmuLoadMode.FULL, description="加载模式")
     segment_list: List[Dict[str, Any]] = Field(default_factory=list, description="分片描述列表")
-    # segment_index: Optional[int] = Field(default=None, description="当前分片索引")
-    # segment_meta: Optional[Dict[str, Any]] = Field(default=None, description="当前分片元信息")
-    # source_url: Optional[str] = Field(default=None, description="来源视频 URL")
-
-
+    binding: Optional["BindingInfo"] = Field(default=None, description="自动创建的绑定信息（首次获取弹幕时返回）")
+# class DanmuData(BaseModel):
+#     """弹幕数据"""
+#     episode_id: int = Field(..., description="剧集ID")
+#     count: int = Field(default=0, description="弹幕数量")
+#     comments: List[Dict[str, Any]] = Field(default_factory=list, description="弹幕列表")
+#     offset: float = Field(default=0.0, description="时间偏移量")
+#     video_duration: int = Field(default=0, description="视频时长(秒)")
+#     load_mode: DanmuLoadMode = Field(default=DanmuLoadMode.FULL, description="加载模式")
+#     segment_list: List[Dict[str, Any]] = Field(default_factory=list, description="分片描述列表")
 
 # ==================== 匹配相关模型 ====================
 
@@ -85,14 +91,12 @@ class DanmuSource(BaseModel):
     shift: float = Field(default=0, description="时间偏移量")
     imageUrl: str = Field(default="", description="封面图URL")
 
-
 class AutoMatchRequest(BaseModel):
     """自动匹配请求"""
     title: str = Field(..., description="视频标题")
     season: Optional[int] = Field(default=None, description="季数")
     episode: Optional[int] = Field(default=None, description="集数")
     file_id: Optional[str] = Field(default=None, description="文件ID")
-    # file_name: Optional[str] = Field(default=None, description="文件名")
 
 
 class AutoMatchResponse(BaseModel):
@@ -101,6 +105,8 @@ class AutoMatchResponse(BaseModel):
     confidence: float = Field(default=0.0, description="匹配置信度")
     sources: List[DanmuSource] = Field(default_factory=list, description="匹配结果列表")
     best_match: Optional[DanmuSource] = Field(default=None, description="最佳匹配")
+    binding: Optional["BindingInfo"] = Field(default=None, description="自动绑定信息（高置信度时返回）")
+    danmu_data: Optional["DanmuData"] = Field(default=None, description="弹幕数据（高置信度自动绑定时返回）")
 
 
 # ==================== 搜索相关模型 ====================
@@ -113,12 +119,18 @@ class SearchRequest(BaseModel):
 
 
 class SearchAnimeItem(BaseModel):
-    """动漫搜索结果项"""
-    anime_id: str = Field(..., description="番剧ID")
-    anime_title: str = Field(..., description="番剧标题")
-    anime_type: Optional[str] = Field(default=None, description="类型")
-    episode_count: Optional[int] = Field(default=None, description="集数")
-    platform: Optional[str] = Field(default=None, description="平台")
+    """动漫搜索结果项 — 对应 danmu_api /api/v2/search/anime 返回的 animes 数组元素"""
+    animeId: int = Field(..., description="番剧ID")
+    bangumiId: Optional[str] = Field(default=None, description="番剧ID(字符串)")
+    animeTitle: str = Field(..., description="番剧标题")
+    type: Optional[str] = Field(default=None, description="类型(动漫/电视剧/综艺等)")
+    typeDescription: Optional[str] = Field(default=None, description="类型描述")
+    imageUrl: Optional[str] = Field(default=None, description="封面图URL")
+    startDate: Optional[str] = Field(default=None, description="开播日期")
+    episodeCount: Optional[int] = Field(default=None, description="总集数")
+    rating: Optional[float] = Field(default=None, description="评分")
+    isFavorited: Optional[bool] = Field(default=None, description="是否收藏")
+    source: Optional[str] = Field(default=None, description="来源平台")
 
 
 class SearchEpisodeItem(BaseModel):
@@ -137,6 +149,53 @@ class SearchResponse(BaseModel):
     type: SearchType = Field(..., description="搜索类型")
     items: List[Any] = Field(default_factory=list, description="搜索结果")
     has_more: bool = Field(default=False, description="是否有更多结果")
+
+
+# ==================== 番剧详情相关模型 ====================
+
+class BangumiSeason(BaseModel):
+    """番剧季信息"""
+    id: str = Field(..., description="季ID (如 season-333038)")
+    airDate: Optional[str] = Field(default=None, description="播出日期")
+    name: str = Field(default="", description="季名称")
+    episodeCount: Optional[int] = Field(default=None, description="该季集数")
+
+
+class BangumiEpisode(BaseModel):
+    """番剧剧集信息 — 对应 danmu_api /api/v2/bangumi/:animeId 返回的 episodes 数组元素"""
+    seasonId: str = Field(default="", description="所属季ID")
+    episodeId: int = Field(..., description="剧集ID (用于获取弹幕)")
+    episodeTitle: str = Field(default="", description="剧集标题")
+    episodeNumber: str = Field(default="", description="集数编号")
+    airDate: Optional[str] = Field(default=None, description="播出日期")
+
+
+class BangumiDetail(BaseModel):
+    """番剧详情 — 对应 danmu_api /api/v2/bangumi/:animeId 返回的 bangumi 对象"""
+    animeId: int = Field(..., description="番剧ID")
+    bangumiId: Optional[str] = Field(default=None, description="番剧ID(字符串)")
+    animeTitle: str = Field(default="", description="番剧标题")
+    imageUrl: Optional[str] = Field(default=None, description="封面图URL")
+    isOnAir: Optional[bool] = Field(default=None, description="是否在播")
+    airDay: Optional[int] = Field(default=None, description="每周几更新")
+    isFavorited: Optional[bool] = Field(default=None, description="是否收藏")
+    rating: Optional[float] = Field(default=None, description="评分")
+    type: Optional[str] = Field(default=None, description="类型")
+    typeDescription: Optional[str] = Field(default=None, description="类型描述")
+    seasons: List[BangumiSeason] = Field(default_factory=list, description="季列表")
+    episodes: List[BangumiEpisode] = Field(default_factory=list, description="剧集列表")
+
+
+class BangumiDetailResponse(BaseModel):
+    """番剧详情响应"""
+    animeId: int = Field(..., description="番剧ID")
+    animeTitle: str = Field(default="", description="番剧标题")
+    type: Optional[str] = Field(default=None, description="类型")
+    typeDescription: Optional[str] = Field(default=None, description="类型描述")
+    imageUrl: Optional[str] = Field(default=None, description="封面图URL")
+    episodeCount: Optional[int] = Field(default=None, description="总集数")
+    seasons: List[BangumiSeason] = Field(default_factory=list, description="季列表")
+    episodes: List[BangumiEpisode] = Field(default_factory=list, description="剧集列表")
 
 
 # ==================== 绑定相关模型 ====================
@@ -180,11 +239,14 @@ class BindingInfo(BaseModel):
     anime_id: Optional[str] = None
     anime_title: Optional[str] = None
     episode_title: Optional[str] = None
-    platform: Optional[str] = None
+    type: Optional[str] = None
+    typeDescription: Optional[str] = None
+    imageUrl: Optional[str] = None
     offset: float = 0.0
     is_manual: bool = False
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    match_confidence: Optional[float] = None
+    # created_at: Optional[str] = None
+    # updated_at: Optional[str] = None
 
 
 # ==================== 平台相关模型 ====================
@@ -229,7 +291,7 @@ class MergeDanmuRequest(BaseModel):
 class MergeDanmuResponse(BaseModel):
     """合并弹幕响应"""
     count: int = Field(default=0, description="弹幕总数")
-    comments: List[DanmuComment] = Field(default_factory=list, description="弹幕列表")
+    comments: List[Dict[str, Any]] = Field(default_factory=list, description="弹幕列表")
     sources: List[Dict[str, Any]] = Field(default_factory=list, description="来源信息")
 
 

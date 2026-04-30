@@ -1,7 +1,15 @@
+
 """
 弹幕 API 路由
 
 提供弹幕相关的 REST API 接口。
+
+手动匹配完整流程：
+  1. POST /danmaku/search          → 关键词搜索，返回 animeId 列表
+  2. GET  /danmaku/bangumi/{animeId} → 根据 animeId 获取番剧详情（含所有集数）
+  3. 前端用户选择某一集的 episodeId
+  4. POST /danmaku/match/bind       → 绑定 file_id + episodeId
+  5. GET  /danmaku/{episodeId}      → 获取弹幕数据
 """
 from __future__ import annotations
 
@@ -20,6 +28,9 @@ from schemas.danmu_serialization import (
     BindResponse,
     UpdateOffsetRequest,
     BindingInfo,
+    BangumiDetailResponse,
+    BangumiSeason,
+    BangumiEpisode,
     DanmuData,
     DanmuLoadMode,
     MergeDanmuRequest,
@@ -41,23 +52,6 @@ router = APIRouter()
 # ==================== 匹配接口 ====================
 
 
-# def _normalize_danmu_source(raw: dict) -> dict:
-#     """兼容驼峰字段，转换为响应模型的下划线字段。"""
-#     return {
-#         "episode_id": str(raw.get("episode_id") or raw.get("episodeId") or ""),
-#         "anime_id": (
-#             str(raw.get("anime_id") or raw.get("animeId"))
-#             if (raw.get("anime_id") is not None or raw.get("animeId") is not None)
-#             else None
-#         ),
-#         "anime_title": raw.get("anime_title") or raw.get("animeTitle"),
-#         "episode_title": raw.get("episode_title") or raw.get("episodeTitle"),
-#         "platform": raw.get("platform"),
-#         "similarity": float(raw.get("similarity") or 0),
-#         "count": raw.get("count"),
-#         "is_bound": bool(raw.get("is_bound") or raw.get("isBound") or False),
-#     }
-
 @router.post(
     "/match/auto",
     response_model=AutoMatchResponse,
@@ -70,7 +64,7 @@ async def auto_match(
 ) -> AutoMatchResponse:
     """
     自动匹配弹幕源
-    
+
     根据视频元数据自动查找对应的弹幕源。
     如果文件已有绑定，直接返回绑定信息。
     """
@@ -80,28 +74,27 @@ async def auto_match(
             season=request.season,
             episode=request.episode,
             file_id=request.file_id,
-            # file_name=request.file_name,
         )
-        
-        return AutoMatchResponse(
-            is_matched=result.is_matched,
-            confidence=result.confidence,
-            sources=[
-                DanmuSource(**source) for source in result.sources
-            ],
-            best_match=DanmuSource(**result.best_match) if result.best_match else None,
-        )
-        
+        # logger.info(f"Auto match result: {result}")
+        return AutoMatchResponse(**result)
+
+    except DanmuApiTimeoutError as e:
+        raise HTTPException(status_code=504, detail=str(e))
+    except DanmuApiError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         logger.error(f"Auto match error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== 搜索接口 ====================
+
+
 @router.post(
-    "/match/search",
+    "/search",
     response_model=SearchResponse,
-    summary="手动搜索弹幕",
-    description="根据关键词搜索弹幕源",
+    summary="手动搜索弹幕源",
+    description="根据关键词搜索番剧，返回匹配的番剧列表（含 animeId）",
 )
 async def search_danmu(
     request: SearchRequest,
@@ -109,8 +102,24 @@ async def search_danmu(
 ) -> SearchResponse:
     """
     手动搜索弹幕源
-    
-    根据关键词搜索动漫或剧集。
+
+    前端手动匹配第一步：用户输入关键词搜索番剧。
+    返回的每一项都包含 animeId，前端用 animeId 调用 /bangumi/{animeId} 获取集数列表。
+
+    danmu_api 接口: GET /api/v2/search/anime?keyword={keyword}
+    返回格式:
+    {
+        "animes": [
+            {
+                "animeId": 294046,
+                "animeTitle": "哈哈哈哈哈第6季(2026)【综艺】from 360",
+                "type": "综艺",
+                "episodeCount": 25,
+                "source": "360",
+                ...
+            }
+        ]
+    }
     """
     try:
         result = await danmu_service.search(
@@ -118,24 +127,194 @@ async def search_danmu(
             search_type=request.type.value,
             limit=request.limit,
         )
-        
         return SearchResponse(
             keyword=result.get("keyword", request.keyword),
             type=request.type,
             items=result.get("items", []),
             has_more=result.get("hasMore", False),
         )
-        
+
     except DanmuApiTimeoutError as e:
         raise HTTPException(status_code=504, detail=str(e))
     except DanmuApiError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
-        logger.error(f"Search error: {e}")
+        logger.error(f"Search danmu error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== 番剧详情接口 ====================
+
+
+@router.get(
+    "/bangumi/{anime_id}",
+    response_model=BangumiDetailResponse,
+    summary="获取番剧详情",
+    description="根据 animeId 获取番剧详情，包含所有季和剧集列表",
+)
+async def get_bangumi_detail(
+    anime_id: int = Path(..., description="番剧ID (animeId)"),
+    _: str = Depends(get_current_subject),
+) -> BangumiDetailResponse:
+    """
+    获取番剧详情
+
+    前端手动匹配第二步：用户选择搜索结果中的某个番剧后，
+    用 animeId 调用此接口获取该番剧的所有季和剧集列表。
+    前端展示剧集列表供用户选择具体某一集。
+
+    danmu_api 接口: GET /api/v2/bangumi/{animeId}
+    返回格式:
+    {
+        "bangumi": {
+            "animeId": 333038,
+            "animeTitle": "哈哈哈哈哈第五季",
+            "type": "综艺",
+            "seasons": [
+                { "id": "season-333038", "name": "Season 1", "episodeCount": 38 }
+            ],
+            "episodes": [
+                {
+                    "seasonId": "season-333038",
+                    "episodeId": 10036,
+                    "episodeTitle": "先导片...",
+                    "episodeNumber": "1"
+                }
+            ]
+        }
+    }
+
+    前端拿到 episodes 列表后，用户选择某一集的 episodeId，
+    然后调用 POST /danmaku/match/bind 绑定，再调用 GET /danmaku/{episodeId} 获取弹幕。
+    """
+    try:
+        result = await danmu_service.get_bangumi_detail(str(anime_id))
+
+        # 解析 seasons
+        raw_seasons = result.get("seasons", [])
+        seasons = []
+        for s in raw_seasons:
+            seasons.append(BangumiSeason(
+                id=s.get("id", ""),
+                airDate=s.get("airDate"),
+                name=s.get("name", ""),
+                episodeCount=s.get("episodeCount"),
+            ))
+
+        # 解析 episodes
+        raw_episodes = result.get("episodes", [])
+        episodes = []
+        for ep in raw_episodes:
+            episodes.append(BangumiEpisode(
+                seasonId=ep.get("seasonId", ""),
+                episodeId=int(ep.get("episodeId", 0)),
+                episodeTitle=ep.get("episodeTitle", ""),
+                episodeNumber=str(ep.get("episodeNumber", "")),
+                airDate=ep.get("airDate"),
+            ))
+
+        return BangumiDetailResponse(
+            animeId=int(result.get("animeId", anime_id)),
+            animeTitle=result.get("animeTitle", ""),
+            type=result.get("type"),
+            typeDescription=result.get("typeDescription"),
+            imageUrl=result.get("imageUrl"),
+            episodeCount=result.get("episodeCount"),
+            seasons=seasons,
+            episodes=episodes,
+        )
+
+    except DanmuApiTimeoutError as e:
+        raise HTTPException(status_code=504, detail=str(e))
+    except DanmuApiError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.error(f"Get bangumi detail error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== 弹幕获取接口 ====================
+
+
+@router.get(
+    "/{episode_id}",
+    response_model=DanmuData,
+    summary="获取弹幕数据",
+    description="根据 episodeId 获取弹幕数据，支持全量和分段模式",
+)
+async def get_danmu(
+    episode_id: int = Path(..., description="剧集ID (episodeId)"),
+    file_id: Optional[str] = Query(default=None, description="文件ID"),
+    load_mode: DanmuLoadMode = Query(default=DanmuLoadMode.SEGMENT, description="加载模式"),
+    anime_id: Optional[str] = Query(default=None, description="番剧ID（首次自动绑定时使用）"),
+    anime_title: Optional[str] = Query(default=None, description="番剧标题（首次自动绑定时使用）"),
+    episode_title: Optional[str] = Query(default=None, description="剧集标题（首次自动绑定时使用）"),
+    _: str = Depends(get_current_subject),
+) -> DanmuData:
+    """
+    获取弹幕数据
+
+    传入 file_id 时自动查询或创建绑定关系，无需单独调用 bind 接口。
+    首次获取弹幕时可通过 anime_id/anime_title/episode_title 传递绑定元数据。
+
+    load_mode=segment: 返回分片描述列表 + 第一分片弹幕（推荐，性能更好）
+    load_mode=full: 返回全部弹幕数据
+    """
+    try:
+        result = await danmu_service.get_danmu(
+            episode_id=str(episode_id),
+            file_id=file_id,
+            load_mode=load_mode.value,
+            anime_id=anime_id,
+            anime_title=anime_title,
+            episode_title=episode_title,
+        )
+        return DanmuData(**result)
+
+    except DanmuApiTimeoutError as e:
+        raise HTTPException(status_code=504, detail=str(e))
+    except DanmuApiError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.error(f"Get danmu error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/{episode_id}/next-segment",
+    summary="获取下一分片弹幕",
+    description="根据分片信息获取下一分片的弹幕数据",
+)
+async def get_next_segment(
+    segment: NextSegmentInput,
+    episode_id: int = Path(..., description="剧集ID"),
+    format: DanmuFormat = Query(default=DanmuFormat.JSON, description="数据格式"),
+    _: str = Depends(get_current_subject),
+) -> dict:
+    """
+    获取下一分片弹幕
+
+    当 load_mode=segment 时，前端播放到分片边界时调用此接口获取下一分片弹幕。
+    segment 信息来自 get_danmu 返回的 segment_list。
+    """
+    try:
+        result = await danmu_service.get_next_segment(
+            next_segment=segment.model_dump(),
+            format=format.value,
+        )
+        return result
+
+    except DanmuApiTimeoutError as e:
+        raise HTTPException(status_code=504, detail=str(e))
+    except DanmuApiError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.error(f"Get next segment error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==================== 绑定接口 ====================
+
 
 @router.post(
     "/match/bind",
@@ -149,11 +328,12 @@ async def create_binding(
 ) -> BindResponse:
     """
     创建弹幕绑定
-    
-    将视频文件与指定的弹幕源绑定，后续可直接通过文件ID获取弹幕。
+
+    前端手动匹配第三步：用户选择某一集后，调用此接口将 file_id 与 episodeId 绑定。
+    绑定后下次播放同一文件时，可直接通过 file_id 获取弹幕。
     """
     try:
-        result = await danmu_service.bind(
+        result = await danmu_service.create_binding(
             file_id=request.file_id,
             episode_id=request.episode_id,
             anime_id=request.anime_id,
@@ -162,9 +342,8 @@ async def create_binding(
             platform=request.platform,
             offset=request.offset,
         )
-        
         return BindResponse(**result)
-        
+
     except Exception as e:
         logger.error(f"Create binding error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -174,7 +353,7 @@ async def create_binding(
     "/match/bind/{file_id}",
     response_model=BindingInfo,
     summary="获取绑定信息",
-    description="获取指定文件的弹幕绑定信息",
+    description="获取视频文件的弹幕绑定信息",
 )
 async def get_binding(
     file_id: str = Path(..., description="文件ID"),
@@ -182,19 +361,18 @@ async def get_binding(
 ) -> BindingInfo:
     """
     获取绑定信息
-    
-    获取指定文件的弹幕绑定信息。
+
+    播放视频时，先通过 file_id 查询是否已有弹幕绑定。
+    如果有绑定，直接用绑定的 episodeId 获取弹幕。
     """
-    from services.danmu.danmu_binding_service import danmu_binding_service
-    
     try:
-        result = await danmu_binding_service.get_binding(file_id)
-        
+        result = await danmu_service.get_binding(file_id)
+
         if not result:
             raise HTTPException(status_code=404, detail="Binding not found")
-        
+
         return BindingInfo(**result)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -214,20 +392,20 @@ async def delete_binding(
 ) -> SuccessResponse:
     """
     解除绑定
-    
+
     解除视频文件与弹幕源的绑定。
     """
     try:
         success = await danmu_service.unbind(file_id)
-        
+
         if not success:
             raise HTTPException(status_code=404, detail="Binding not found")
-        
+
         return SuccessResponse(
             code=0,
             message="Binding deleted successfully",
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -237,31 +415,28 @@ async def delete_binding(
 
 @router.patch(
     "/match/bind/{file_id}/offset",
-    response_model=BindResponse,
+    response_model=BindingInfo,
     summary="更新偏移量",
     description="更新弹幕时间偏移量",
 )
 async def update_offset(
-    request: UpdateOffsetRequest,
     file_id: str = Path(..., description="文件ID"),
+    request: UpdateOffsetRequest = ...,
     _: str = Depends(get_current_subject),
-) -> BindResponse:
+) -> BindingInfo:
     """
     更新偏移量
-    
-    更新弹幕时间偏移量，用于调整弹幕与视频的同步。
+
+    当弹幕与视频不同步时，用户可手动调整偏移量。
     """
     try:
-        result = await danmu_service.update_offset(
-            file_id=file_id,
-            offset=request.offset,
-        )
-        
+        result = await danmu_service.update_offset(file_id, request.offset)
+
         if not result:
             raise HTTPException(status_code=404, detail="Binding not found")
-        
-        return BindResponse(**result)
-        
+
+        return BindingInfo(**result)
+
     except HTTPException:
         raise
     except Exception as e:
@@ -269,158 +444,23 @@ async def update_offset(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== 弹幕获取接口 ====================
-
-@router.get(
-    "/by-url",
-    response_model=DanmuData,
-    summary="按 URL 获取弹幕",
-    description="根据视频 URL 获取弹幕数据，支持全量或分片模式",
-)
-async def get_danmu_from_url(
-    url: str = Query(..., description="视频页面 URL"),
-    file_id: Optional[str] = Query(default=None, description="文件ID(用于获取偏移量)"),
-    load_mode: DanmuLoadMode = Query(default=DanmuLoadMode.FULL, description="加载模式"),
-    segment_index: Optional[int] = Query(default=None, ge=0, description="分片索引(load_mode=segment 时可选)"),
-    _: str = Depends(get_current_subject),
-) -> DanmuData:
-    """按视频 URL 获取弹幕。"""
-    try:
-        result = await danmu_service.get_danmu_from_url(
-            video_url=url,
-            file_id=file_id,
-            load_mode=load_mode.value,
-            segment_index=segment_index,
-        )
-        return DanmuData(**result)
-    except DanmuApiTimeoutError as e:
-        raise HTTPException(status_code=504, detail=str(e))
-    except DanmuApiError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except Exception as e:
-        logger.error(f"Get danmu from url error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get(
-    "/{episode_id}",
-    response_model=DanmuData,
-    summary="获取弹幕",
-    description="获取指定剧集的弹幕数据",
-)
-async def get_danmu(
-    episode_id: str = Path(..., description="剧集ID"),
-    # from_time: Optional[int] = Query(default=None, ge=0, description="开始时间(秒)"),
-    # to_time: Optional[int] = Query(default=None, ge=0, description="结束时间(秒)"),
-    file_id: Optional[str] = Query(default=None, description="文件ID(用于获取偏移量)"),
-    load_mode: DanmuLoadMode = Query(default=DanmuLoadMode.SEGMENT, description="加载模式"),
-    # segment_index: Optional[int] = Query(default=None, ge=0, description="分片索引(load_mode=segment 时可选)"),
-    # next_segment: NextSegmentInput = Query(default_factory=NextSegmentInput, description="获取下一个分片弹幕数据"),
-    format: DanmuFormat = Query(default=DanmuFormat.JSON, description="数据格式(json/xml)"),
-    _: str = Depends(get_current_subject),
-) -> DanmuData:
-    """
-    获取弹幕
-    
-    获取指定剧集的弹幕数据，支持分段获取。
-    """
-    try:
-        result = await danmu_service.get_danmu(
-            episode_id=episode_id,
-            # from_time=from_time,
-            # to_time=to_time,
-            file_id=file_id,
-            load_mode=load_mode.value,
-            # next_segment=next_segment,
-        )
-        
-        return DanmuData(**result)
-        
-    except DanmuApiTimeoutError as e:
-        raise HTTPException(status_code=504, detail=str(e))
-    except DanmuApiError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except Exception as e:
-        logger.error(f"Get danmu error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post(
-    "/next-segment",
-    # response_model=NextSegmentInput,
-    summary="获取下一个分片弹幕",
-    description="根据当前分片获取下一个分片的弹幕数据",
-)
-async def get_next_segment(
-    request: NextSegmentInput,
-    format: DanmuFormat = Query(default=DanmuFormat.JSON, description="数据格式(json/xml)"),
-    _: str = Depends(get_current_subject),
-) -> Dict[str, Any]:
-    """
-    获取下一个分片弹幕
-    
-    根据当前分片获取下一个分片的弹幕数据。
-    """
-    try:
-        result = await danmu_service.get_next_segment(
-            next_segment=request.model_dump(),
-            format=format.value,
-        )
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Get next segment error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get(
-    "/file/{file_id}",
-    response_model=DanmuData,
-    summary="按文件获取弹幕",
-    description="根据文件ID获取弹幕数据",
-)
-async def get_danmu_by_file(
-    file_id: str = Path(..., description="文件ID"),
-    from_time: Optional[int] = Query(default=None, ge=0, description="开始时间(秒)"),
-    to_time: Optional[int] = Query(default=None, ge=0, description="结束时间(秒)"),
-    load_mode: DanmuLoadMode = Query(default=DanmuLoadMode.FULL, description="加载模式"),
-    segment_index: Optional[int] = Query(default=None, ge=0, description="分片索引(load_mode=segment 时可选)"),
-    _: str = Depends(get_current_subject),
-) -> DanmuData:
-    """
-    按文件获取弹幕
-    
-    根据文件ID获取弹幕数据，自动使用绑定的弹幕源。
-    """
-    try:
-        result = await danmu_service.get_danmu_by_file(
-            file_id=file_id,
-            from_time=from_time,
-            to_time=to_time,
-            load_mode=load_mode.value,
-            segment_index=segment_index,
-        )
-        
-        return DanmuData(**result)
-        
-    except Exception as e:
-        logger.error(f"Get danmu by file error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# ==================== 批量获取接口 ====================
 
 
 @router.post(
-    "/merge",
+    "/batch",
     response_model=MergeDanmuResponse,
-    summary="合并弹幕",
-    description="合并多个弹幕源",
+    summary="批量获取弹幕",
+    description="合并获取多个弹幕源的弹幕数据",
 )
-async def merge_danmu(
+async def get_batch_danmu(
     request: MergeDanmuRequest,
     _: str = Depends(get_current_subject),
 ) -> MergeDanmuResponse:
     """
-    合并弹幕
-    
-    合并多个弹幕源的数据，自动去重和排序。
+    批量获取弹幕
+
+    合并多个 episodeId 的弹幕数据。
     """
     try:
         result = await danmu_service.merge_danmu(
@@ -428,61 +468,61 @@ async def merge_danmu(
             from_time=request.from_time,
             to_time=request.to_time,
         )
-        
         return MergeDanmuResponse(**result)
-        
+
     except Exception as e:
-        logger.error(f"Merge danmu error: {e}")
+        logger.error(f"Get batch danmu error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== 平台管理接口 ====================
-
-@router.get(
-    "/platforms",
-    response_model=list[PlatformInfo],
-    summary="获取平台列表",
-    description="获取支持的弹幕平台列表",
-)
-async def get_platforms(
-    _: str = Depends(get_current_subject),
-) -> list[PlatformInfo]:
-    """
-    获取平台列表
-    
-    获取支持的弹幕平台列表。
-    """
-    try:
-        platforms = await danmu_service.get_platforms()
-        return [PlatformInfo(**p) for p in platforms]
-        
-    except Exception as e:
-        logger.error(f"Get platforms error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# ==================== 平台接口 ====================
 
 
-@router.get(
-    "/platforms/{platform}/status",
-    response_model=PlatformStatus,
-    summary="获取平台状态",
-    description="检查指定平台的可用状态",
-)
-async def get_platform_status(
-    platform: str = Path(..., description="平台ID"),
-    _: str = Depends(get_current_subject),
-) -> PlatformStatus:
-    """
-    获取平台状态
-    
-    检查指定弹幕平台的可用状态。
-    """
-    try:
-        result = await danmu_service.check_platform_status(platform)
-        return PlatformStatus(**result)
-        
-    except Exception as e:
-        logger.error(f"Get platform status error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# @router.get(
+#     "/platforms",
+#     response_model=list[PlatformInfo],
+#     summary="获取平台列表",
+#     description="获取支持的弹幕平台列表",
+# )
+# async def get_platforms(
+#     _: str = Depends(get_current_subject),
+# ) -> list[PlatformInfo]:
+#     """
+#     获取平台列表
+
+#     获取支持的弹幕平台列表。
+#     """
+#     try:
+#         platforms = await danmu_service.get_platforms()
+#         return [PlatformInfo(**p) for p in platforms]
+
+#     except Exception as e:
+#         logger.error(f"Get platforms error: {e}")
+#         raise HTTPException(status_code=500, detail=str(e))
+
+
+# @router.get(
+#     "/platforms/{platform}/status",
+#     response_model=PlatformStatus,
+#     summary="获取平台状态",
+#     description="检查指定平台的可用状态",
+# )
+# async def get_platform_status(
+#     platform: str = Path(..., description="平台ID"),
+#     _: str = Depends(get_current_subject),
+# ) -> PlatformStatus:
+#     """
+#     获取平台状态
+
+#     检查指定弹幕平台的可用状态。
+#     """
+#     try:
+#         result = await danmu_service.check_platform_status(platform)
+#         return PlatformStatus(**result)
+
+#     except Exception as e:
+#         logger.error(f"Get platform status error: {e}")
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==================== 健康检查 ====================
@@ -495,13 +535,13 @@ async def get_platform_status(
 async def health_check() -> dict:
     """
     健康检查
-    
+
     检查弹幕服务的健康状态。
     """
     from services.danmu.danmu_cache_service import danmu_cache_service
-    
+
     cache_stats = await danmu_cache_service.get_cache_stats()
-    
+
     return {
         "status": "healthy",
         "cache": cache_stats,

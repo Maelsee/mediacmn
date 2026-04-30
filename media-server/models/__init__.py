@@ -42,6 +42,11 @@ from .media_models import (  # noqa: F401
 )
 
 # ============================================
+# 弹幕绑定模型
+# ============================================
+from .danmu_models import DanmuBinding, DanmuBindingHistory  # noqa: F401
+
+# ============================================
 # 存储配置模型（新的统一组织）
 # ============================================
 from .storage_models import (  # noqa: F401
