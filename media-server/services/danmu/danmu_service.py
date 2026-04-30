@@ -12,12 +12,13 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import hashlib
 
 import logging
 logger = logging.getLogger(__name__)
 
+from core.db import get_async_session_context
 
 from core.config import get_settings
 from services.danmu.danmu_api_provider import (
@@ -29,7 +30,9 @@ from services.danmu.danmu_api_provider import (
 )
 from services.danmu.danmu_cache_service import danmu_cache_service
 from services.danmu.danmu_binding_service import danmu_binding_service
-
+from models.media_models import MediaCore
+from models.media_models import SeriesExt, SeasonExt, EpisodeExt
+from models.media_models import FileAsset
 
 class DanmuServiceError(Exception):
     """弹幕服务异常"""
@@ -253,6 +256,69 @@ class DanmuService:
                 "sources": [],
                 "best_match": None,
             }
+
+    # ==================== 获取文件信息 ====================
+    async def get_file_info(
+        self,
+        file_id: str,
+        current_subject: str,
+    ) -> Tuple[Optional[str], Optional[int], Optional[int]]:
+        """
+        根据file_id获取文件对应的媒体信息（系列标题、季数、集数）
+
+        表关系：
+          FileAsset(core_id) → MediaCore(episode)
+            → EpisodeExt(series_core_id, season_number, episode_number)
+              → MediaCore(series, title)
+
+        Args:
+            file_id: 文件资源 ID（file_asset.id 的字符串形式）
+            current_subject: 当前用户
+
+        Returns:
+            (系列标题, 季数, 集数) — 找不到时对应字段为 None
+        """
+        logger.info(f"Get file info request: {file_id}")
+        try:
+            async with get_async_session_context() as session:
+                from sqlmodel import select
+
+                # 1. FileAsset(id=file_id) → core_id
+                file_stmt = select(FileAsset).where(
+                    FileAsset.id == int(file_id)
+                )
+                file_asset = (await session.exec(file_stmt)).first()
+                if not file_asset or not file_asset.core_id:
+                    return None, None, None
+
+                # 2. MediaCore(core_id) → 确认是 episode 类型
+                core_stmt = select(MediaCore).where(
+                    MediaCore.id == file_asset.core_id
+                )
+                episode_core = (await session.exec(core_stmt)).first()
+                if not episode_core:
+                    return None, None, None
+
+                # 3. EpisodeExt(core_id) → series_core_id, season_number, episode_number
+                ep_stmt = select(EpisodeExt).where(
+                    EpisodeExt.core_id == episode_core.id
+                )
+                episode_ext = (await session.exec(ep_stmt)).first()
+                if not episode_ext:
+                    return None, None, None
+
+                # 4. MediaCore(series_core_id) → 系列标题
+                series_stmt = select(MediaCore).where(
+                    MediaCore.id == episode_ext.series_core_id
+                )
+                series_core = (await session.exec(series_stmt)).first()
+                series_title = series_core.title if series_core else None
+
+                return series_title, episode_ext.season_number, episode_ext.episode_number
+        except Exception as e:
+            logger.error(f"Get file info error: {e}")
+            return None, None, None
+            
 
     # ==================== 手动搜索 ====================
 

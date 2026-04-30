@@ -78,10 +78,9 @@ class DanmuState {
 class DanmuNotifier extends StateNotifier<DanmuState> {
   final ApiClient _api;
   final String _fileId;
-  final String _title;
   DanmuController? _engine;
 
-  DanmuNotifier(this._api, this._fileId, this._title) : super(const DanmuState());
+  DanmuNotifier(this._api, this._fileId) : super(const DanmuState());
 
   DanmuController? get engine => _engine;
 

@@ -4,14 +4,14 @@ import '../models/danmu_models.dart';
 
 extension DanmuApi on ApiClient {
   /// 自动匹配弹幕
-  Future<DanmuMatchResult> danmuAutoMatch(String title,
-      {String? fileId, int? season, int? episode}) async {
+  Future<DanmuMatchResult> danmuAutoMatch(String fileId,
+      {String? title, int? season, int? episode}) async {
     final payload = <String, dynamic>{
-      'title': title,
+      'file_id': fileId,
     };
-    if (fileId != null) payload['file_id'] = fileId;
-    if (season != null) payload['season'] = season;
-    if (episode != null) payload['episode'] = episode;
+    // if (title != null) payload['title'] = title;
+    // if (season != null) payload['season'] = season;
+    // if (episode != null) payload['episode'] = episode;
 
     final res = await client.post(
       u('/api/danmu/match/auto'),

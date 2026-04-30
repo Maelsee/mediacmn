@@ -92,11 +92,16 @@ class DanmuSource(BaseModel):
     imageUrl: str = Field(default="", description="封面图URL")
 
 class AutoMatchRequest(BaseModel):
-    """自动匹配请求"""
-    title: str = Field(..., description="视频标题")
+    """自动匹配请求
+
+    两种调用方式：
+    1. 直接传 title（可选 season/episode）
+    2. 传 file_id，后端自动从数据库解析 title/season/episode
+    """
+    title: Optional[str] = Field(default=None, description="视频标题（与 file_id 二选一）")
     season: Optional[int] = Field(default=None, description="季数")
     episode: Optional[int] = Field(default=None, description="集数")
-    file_id: Optional[str] = Field(default=None, description="文件ID")
+    file_id: Optional[str] = Field(default=None, description="文件ID（与 title 二选一）")
 
 
 class AutoMatchResponse(BaseModel):

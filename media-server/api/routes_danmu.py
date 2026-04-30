@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-
+from core.db import get_async_session
 from core.security import get_current_subject
 from core.logging import logger
 from schemas.danmu_serialization import (
@@ -65,18 +65,38 @@ async def auto_match(
     """
     自动匹配弹幕源
 
-    根据视频元数据自动查找对应的弹幕源。
-    如果文件已有绑定，直接返回绑定信息。
+    支持两种调用方式：
+    1. 传 title（可选 season/episode）直接匹配
+    2. 传 file_id，后端从数据库自动解析 title/season/episode
     """
     logger.info(f"Auto match request: {request}")
+
+    title = request.title
+    season = request.season
+    episode = request.episode
+
+    # 如果没有传 title 但传了 file_id，从数据库自动解析
+    if not title and request.file_id:
+        try:
+            title, season, episode = await danmu_service.get_file_info(
+                file_id=request.file_id,
+                current_subject=_,
+            )
+            logger.info(f"Auto match resolved from file_id: title={title}, season={season}, episode={episode}")
+        except Exception as e:
+            logger.error(f"Get file info error: {e}")
+            raise HTTPException(status_code=500, detail=f"无法获取文件信息: {e}")
+
+    if not title:
+        raise HTTPException(status_code=400, detail="缺少必要参数：title 或 file_id")
+
     try:
         result = await danmu_service.auto_match(
-            title=request.title,
-            season=request.season,
-            episode=request.episode,
+            title=title,
+            season=season,
+            episode=episode,
             file_id=request.file_id,
         )
-        # logger.info(f"Auto match result: {result}")
         return AutoMatchResponse(**result)
 
     except DanmuApiTimeoutError as e:
