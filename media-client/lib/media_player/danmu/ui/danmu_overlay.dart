@@ -19,13 +19,30 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
     with SingleTickerProviderStateMixin {
   late final Ticker _ticker;
   double _elapsed = 0;
+  double _lastViewWidth = 0;
+  double _lastViewHeight = 0;
 
   @override
   void initState() {
     super.initState();
+    // ignore: avoid_print
+    print('[Danmu] Overlay initState, fileId=${widget.fileId}');
     _ticker = createTicker((duration) {
       if (!mounted) return;
       _elapsed = duration.inMilliseconds / 1000.0;
+
+      // 在 ticker 回调中更新引擎（build 外部，安全调用 notifyListeners）
+      final danmuState = ref.read(danmuProvider(widget.fileId));
+      if (danmuState.enabled) {
+        final engine =
+            ref.read(danmuProvider(widget.fileId).notifier).engine;
+        if (engine != null) {
+          final position = ref.read(playbackProvider).position;
+          final positionSeconds = position.inMilliseconds / 1000.0;
+          engine.updateFrame(positionSeconds, _elapsed);
+        }
+      }
+
       setState(() {});
     });
     _ticker.start();
@@ -33,6 +50,8 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
 
   @override
   void dispose() {
+    // ignore: avoid_print
+    print('[Danmu] Overlay dispose, fileId=${widget.fileId}');
     _ticker.dispose();
     super.dispose();
   }
@@ -43,31 +62,33 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
     final engine = danmuState.enabled
         ? ref.read(danmuProvider(widget.fileId).notifier).engine
         : null;
-    if (engine == null || !danmuState.enabled) return const SizedBox.shrink();
 
-    // 从播放器获取当前播放位置
-    final position = ref.watch(playbackProvider).position;
-    final positionSeconds = position.inMilliseconds / 1000.0;
-
-    // 在 Ticker 回调中同步更新引擎（位置 + 帧渲染）
-    engine.updateFrame(positionSeconds, _elapsed);
+    if (engine == null || !danmuState.enabled) {
+      return const SizedBox.shrink();
+    }
 
     return IgnorePointer(
       child: Opacity(
         opacity: engine.opacity,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            engine.init(
-              viewWidth: constraints.maxWidth,
-              viewHeight: constraints.maxHeight,
-            );
+            final w = constraints.maxWidth;
+            final h = constraints.maxHeight;
+            // 只在尺寸变化时重新初始化轨道管理器
+            if (w != _lastViewWidth || h != _lastViewHeight) {
+              _lastViewWidth = w;
+              _lastViewHeight = h;
+              engine.init(viewWidth: w, viewHeight: h);
+              // ignore: avoid_print
+              print('[Danmu] Overlay init tracks: ${w}x$h');
+            }
             return CustomPaint(
-              size: Size(constraints.maxWidth, constraints.maxHeight),
+              size: Size(w, h),
               painter: DanmuRenderer(
                 items: engine.activeItems,
                 elapsed: _elapsed,
-                viewWidth: constraints.maxWidth,
-                viewHeight: constraints.maxHeight,
+                viewWidth: w,
+                viewHeight: h,
               ),
             );
           },

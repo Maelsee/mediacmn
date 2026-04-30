@@ -134,10 +134,15 @@ class _DanmuBangumiPageState extends ConsumerState<_DanmuBangumiPage> {
   }
 
   void _selectEpisode(DanmuEpisode episode) {
+    // ignore: avoid_print
+    print('[Danmu] selectEpisode: episodeId=${episode.episodeId}, '
+        'title=${episode.episodeTitle}');
     ref
         .read(danmuProvider(widget.fileId).notifier)
         .selectEpisode(episode.episodeId);
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    // pop bangumi page + search page，回到播放器
+    Navigator.of(context).pop(); // pop bangumi page
+    Navigator.of(context).pop(); // pop search page
   }
 
   @override

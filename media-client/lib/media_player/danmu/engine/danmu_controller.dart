@@ -29,6 +29,8 @@ class DanmuController extends ChangeNotifier {
 
   // 当前播放位置（由 DanmuOverlay 在 Ticker 回调中更新）
   double _currentPosition = 0;
+  int _frameCount = 0;
+  int _lastLogActiveCount = -1;
 
   // ---- 公开 API ----
 
@@ -45,6 +47,9 @@ class DanmuController extends ChangeNotifier {
       viewHeight: viewHeight * _area,
       itemHeight: _fontSize + 12,
     );
+    // ignore: avoid_print
+    print('[Danmu] Controller init: view=${viewWidth}x$viewHeight, '
+        'maxTracks=${_trackManager!.maxTracks}');
   }
 
   /// 加载初始弹幕数据
@@ -56,6 +61,12 @@ class DanmuController extends ChangeNotifier {
     _currentSegmentIndex = 0;
     _sortedByTime = List.of(_allComments)
       ..sort((a, b) => a.time.compareTo(b.time));
+    // ignore: avoid_print
+    print('[Danmu] Controller loadDanmuData: count=${data.comments.length}, '
+        'segments=${data.segmentList.length}, '
+        'sorted=${_sortedByTime.length}, '
+        'firstTime=${_sortedByTime.isNotEmpty ? _sortedByTime.first.time : "N/A"}, '
+        'lastTime=${_sortedByTime.isNotEmpty ? _sortedByTime.last.time : "N/A"}');
     notifyListeners();
   }
 
@@ -87,6 +98,7 @@ class DanmuController extends ChangeNotifier {
     if (!_enabled || _trackManager == null) return;
 
     _currentPosition = positionSeconds;
+    _frameCount++;
 
     // 1. 检查是否需要加载下一分片
     _maybeLoadNextSegment(positionSeconds);
@@ -97,6 +109,16 @@ class DanmuController extends ChangeNotifier {
 
     // 3. 用二分查找找到当前时间窗口内应发射的弹幕
     _fireNewDanmu(positionSeconds, elapsedSeconds);
+
+    // 定期或状态变化时打印日志
+    if (_frameCount % 300 == 0 || _activeItems.length != _lastLogActiveCount) {
+      _lastLogActiveCount = _activeItems.length;
+      // ignore: avoid_print
+      print('[Danmu] updateFrame: pos=${positionSeconds.toStringAsFixed(1)}s, '
+          'elapsed=${elapsedSeconds.toStringAsFixed(1)}s, '
+          'active=${_activeItems.length}, sorted=${_sortedByTime.length}, '
+          'segments=${_segments.length}');
+    }
 
     notifyListeners();
   }
@@ -139,6 +161,12 @@ class DanmuController extends ChangeNotifier {
       final allocated = _trackManager!.allocate(item, position, _speed);
       if (allocated >= 0) {
         _activeItems.add(item);
+        // ignore: avoid_print
+        print('[Danmu] fire: cid=${comment.cid}, '
+            'time=${comment.time.toStringAsFixed(1)}s, '
+            'pos=${position.toStringAsFixed(1)}s, '
+            'track=${(allocated / (_fontSize + 12)).floor()}, '
+            'active=${_activeItems.length}');
       }
       if (_activeItems.length >= _maxVisible) break;
     }

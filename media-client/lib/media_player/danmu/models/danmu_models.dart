@@ -51,18 +51,27 @@ class DanmuData {
     required this.comments, required this.videoDuration,
     required this.loadMode, required this.segmentList});
 
-  factory DanmuData.fromJson(Map<String, dynamic> json) => DanmuData(
-    episodeId: (json['episode_id'] as num?)?.toInt() ?? 0,
-    count: (json['count'] as num?)?.toInt() ?? 0,
-    comments: (json['comments'] as List?)
+  factory DanmuData.fromJson(Map<String, dynamic> json) {
+    final comments = (json['comments'] as List?)
         ?.map((e) => DanmuComment.fromJson(e as Map<String, dynamic>))
-        .toList() ?? const [],
-    videoDuration: (json['video_duration'] as num?)?.toDouble() ?? 0,
-    loadMode: json['load_mode'] as String? ?? 'full',
-    segmentList: (json['segment_list'] as List?)
+        .toList() ?? const [];
+    final segments = (json['segment_list'] as List?)
         ?.map((e) => DanmuSegment.fromJson(e as Map<String, dynamic>))
-        .toList() ?? const [],
-  );
+        .toList() ?? const [];
+    // ignore: avoid_print
+    print('[Danmu] DanmuData.fromJson: episode_id=${json['episode_id']}, '
+        'count=${json['count']}, comments=${comments.length}, '
+        'segments=${segments.length}, '
+        'firstComment=${comments.isNotEmpty ? "time=${comments.first.time}, content=${comments.first.content.substring(0, comments.first.content.length.clamp(0, 20))}" : "N/A"}');
+    return DanmuData(
+      episodeId: (json['episode_id'] as num?)?.toInt() ?? 0,
+      count: (json['count'] as num?)?.toInt() ?? 0,
+      comments: comments,
+      videoDuration: (json['video_duration'] as num?)?.toDouble() ?? 0,
+      loadMode: json['load_mode'] as String? ?? 'full',
+      segmentList: segments,
+    );
+  }
 }
 
 class DanmuSource {

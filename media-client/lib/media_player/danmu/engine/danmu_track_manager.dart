@@ -21,6 +21,9 @@ class DanmuTrackManager {
       _trackFreeAt.add(0);
       _trackY.add(i * itemHeight);
     }
+    // ignore: avoid_print
+    print('[Danmu] TrackManager: view=${viewWidth}x$viewHeight, '
+        'maxTracks=$maxTracks, itemHeight=$itemHeight');
   }
 
   /// 为弹幕分配轨道，返回 y 坐标，-1 表示无可用轨道（丢弃）
@@ -35,6 +38,8 @@ class DanmuTrackManager {
         return _trackY[i];
       }
     }
+    // ignore: avoid_print
+    print('[Danmu] allocate FAIL: all $maxTracks tracks busy, discarding');
     return -1; // 所有轨道满载，丢弃
   }
 

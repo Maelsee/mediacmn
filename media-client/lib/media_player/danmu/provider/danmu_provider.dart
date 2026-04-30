@@ -130,6 +130,9 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
 
   /// 选择不同的源
   Future<void> selectSource(DanmuSource source) async {
+    // ignore: avoid_print
+    print('[Danmu] selectSource: episodeId=${source.episodeId}, '
+        'title=${source.animeTitle}, episode=${source.episodeTitle}');
     state = state.copyWith(loading: true, selectedSource: source);
     try {
       final data = await _api.getDanmuByEpisode(source.episodeId, _fileId);
@@ -159,6 +162,8 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
 
   /// 手动选择 bangumi episode
   Future<void> selectEpisode(int episodeId) async {
+    // ignore: avoid_print
+    print('[Danmu] selectEpisode: episodeId=$episodeId');
     state = state.copyWith(loading: true);
     try {
       final data = await _api.getDanmuByEpisode(episodeId, _fileId);
@@ -178,6 +183,9 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
   /// 分片加载回调
   Future<void> _loadSegment(DanmuSegment segment) async {
     try {
+      // ignore: avoid_print
+      print('[Danmu] loadSegment: type=${segment.type}, '
+          'start=${segment.segmentStart}, end=${segment.segmentEnd}');
       final episodeId = state.danmuData?.episodeId;
       final result = await _api.danmuNextSegment(segment, episodeId: episodeId);
       _engine?.onSegmentLoaded(result.comments);
