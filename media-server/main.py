@@ -133,14 +133,6 @@ def create_app() -> FastAPI:
             "email": "support@example.com",
         }
         info["license"] = {"name": "MIT"}
-        components = schema.setdefault("components", {})
-        security_schemes = components.setdefault("securitySchemes", {})
-        security_schemes["BearerAuth"] = {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-        }
-        schema["security"] = [{"BearerAuth": []}]
         app.openapi_schema = schema
         return app.openapi_schema
 

@@ -12,6 +12,7 @@ class MobileBottomBar extends StatefulWidget {
   final VoidCallback onQuality;
   final VoidCallback onSubtitles;
   final VoidCallback onAudios;
+  final VoidCallback onDanmu;
   final String speedText;
   final String qualityText;
 
@@ -28,6 +29,7 @@ class MobileBottomBar extends StatefulWidget {
     required this.onQuality,
     required this.onSubtitles,
     required this.onAudios,
+    required this.onDanmu,
     required this.speedText,
     required this.qualityText,
   });
@@ -81,6 +83,8 @@ class _MobileBottomBarState extends State<MobileBottomBar> {
               ),
               const Spacer(),
               _buildTextButton('字幕', widget.onSubtitles),
+              const SizedBox(width: 16),
+              _buildTextButton('弹幕', widget.onDanmu),
               const SizedBox(width: 16),
               _buildTextButton('音轨', widget.onAudios),
               const SizedBox(width: 16),

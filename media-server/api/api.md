@@ -1,5 +1,10 @@
 ## 弹幕api
-/api/danmu/match/auto
+post /api/danmu/match/auto
+参数：
+    title: str = Field(..., description="视频标题")
+    season: Optional[int] = Field(default=None, description="季数")
+    episode: Optional[int] = Field(default=None, description="集数")
+    file_id: Optional[str] = Field(default=None, description="文件ID")
 ```json
 {
   "is_matched": true,
@@ -68,7 +73,13 @@
   }
 }
 ```
-/api/danmu/search
+post /api/danmu/search
+参数：
+{
+  "keyword": "string",
+  "type": "anime",
+  "limit": 20
+}
 ```json
 {
   "keyword": "万物生",
@@ -92,7 +103,11 @@
   "has_more": false
 }
 ```
-/api/danmu/bangumi/{anime_id}
+get /api/danmu/bangumi/{anime_id}
+参数：
+{
+  "anime_id": "string"
+}
 ```json
 {
   "animeId": 235508,
@@ -121,7 +136,13 @@
   ]
 }
 ```
-/api/danmu/{episode_id}
+get /api/danmu/{episode_id}
+参数：
+{
+  "episode_id": "string",
+  "file_id": "string",
+  "load_mode": "segment"或"full"
+}
 ```json
 {
   "episode_id": 10168,
@@ -148,7 +169,19 @@
   "binding": null
 }
 ```
-/api/danmu/{episode_id}/next-segment
+post /api/danmu/{episode_id}/next-segment
+参数：
+{
+  "segment": {
+    "type": "string",
+    "segment_start": int,
+    "segment_end": int,
+    "url": "string"
+  },
+  "episode_id": optional("string"),
+  "format": optional("json"/"xml")
+}
+
 ```json
 {
   "count": 1590,

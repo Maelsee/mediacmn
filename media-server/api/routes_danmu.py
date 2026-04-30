@@ -68,6 +68,7 @@ async def auto_match(
     根据视频元数据自动查找对应的弹幕源。
     如果文件已有绑定，直接返回绑定信息。
     """
+    logger.info(f"Auto match request: {request}")
     try:
         result = await danmu_service.auto_match(
             title=request.title,
@@ -153,7 +154,7 @@ async def search_danmu(
     description="根据 animeId 获取番剧详情，包含所有季和剧集列表",
 )
 async def get_bangumi_detail(
-    anime_id: int = Path(..., description="番剧ID (animeId)"),
+    anime_id: str = Path(..., description="番剧ID (animeId)"),
     _: str = Depends(get_current_subject),
 ) -> BangumiDetailResponse:
     """
@@ -188,7 +189,7 @@ async def get_bangumi_detail(
     然后调用 POST /danmaku/match/bind 绑定，再调用 GET /danmaku/{episodeId} 获取弹幕。
     """
     try:
-        result = await danmu_service.get_bangumi_detail(str(anime_id))
+        result = await danmu_service.get_bangumi_detail(anime_id)
 
         # 解析 seasons
         raw_seasons = result.get("seasons", [])
@@ -243,7 +244,7 @@ async def get_bangumi_detail(
     description="根据 episodeId 获取弹幕数据，支持全量和分段模式",
 )
 async def get_danmu(
-    episode_id: int = Path(..., description="剧集ID (episodeId)"),
+    episode_id: str = Path(..., description="剧集ID (episodeId)"),
     file_id: Optional[str] = Query(default=None, description="文件ID"),
     load_mode: DanmuLoadMode = Query(default=DanmuLoadMode.SEGMENT, description="加载模式"),
     anime_id: Optional[str] = Query(default=None, description="番剧ID（首次自动绑定时使用）"),
@@ -262,7 +263,7 @@ async def get_danmu(
     """
     try:
         result = await danmu_service.get_danmu(
-            episode_id=str(episode_id),
+            episode_id=episode_id,
             file_id=file_id,
             load_mode=load_mode.value,
             anime_id=anime_id,
@@ -287,7 +288,7 @@ async def get_danmu(
 )
 async def get_next_segment(
     segment: NextSegmentInput,
-    episode_id: int = Path(..., description="剧集ID"),
+    episode_id: str = Path(..., description="剧集ID"),
     format: DanmuFormat = Query(default=DanmuFormat.JSON, description="数据格式"),
     _: str = Depends(get_current_subject),
 ) -> dict:

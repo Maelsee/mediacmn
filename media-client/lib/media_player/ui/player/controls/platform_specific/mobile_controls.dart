@@ -17,6 +17,8 @@ import '../mobile/panels/subtitle_panel.dart';
 import '../mobile/panels/audio_panel.dart';
 import '../mobile/panels/speed_panel.dart';
 import '../mobile/panels/quality_panel.dart';
+import '../../../../danmu/ui/danmu_panel.dart';
+import '../../../../danmu/ui/danmu_search_page.dart';
 
 typedef PanelBuilder = Widget Function(
     PlaybackState state, PlaybackNotifier notifier);
@@ -153,6 +155,14 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             title: widget.state.title ?? '',
             onBack: () => Navigator.of(context).maybePop(),
             onSettings: () => _openPanel(context, _buildSettingsPanel),
+            onDanmuSearch: widget.state.fileId != null
+                ? () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => DanmuSearchPage(
+                          fileId: widget.state.fileId.toString()),
+                    ));
+                  }
+                : null,
             onPip: () async {
               // 仅当系统与设备支持画中画时才触发。
               final available = await widget.floating.isPipAvailable;
@@ -192,6 +202,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             onQuality: () => _openPanel(context, _buildQualityPanel),
             onSubtitles: () => _openPanel(context, _buildSubtitlePanel),
             onAudios: () => _openPanel(context, _buildAudioPanel),
+            onDanmu: () {
+              if (widget.state.fileId != null) {
+                _openPanel(context, _buildDanmuPanel);
+              }
+            },
             speedText: '${widget.state.speed}x',
             qualityText: _getQualityText(),
           ),
@@ -459,6 +474,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       currentQuality: state.selectedVideoTrack ?? VideoTrack.auto(),
       onQualitySelected: notifier.setVideoTrack,
     );
+  }
+
+  Widget _buildDanmuPanel(PlaybackState state, PlaybackNotifier notifier) {
+    return DanmuPanel(fileId: state.fileId!.toString());
   }
 }
 

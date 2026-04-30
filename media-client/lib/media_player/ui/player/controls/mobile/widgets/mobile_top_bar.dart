@@ -5,6 +5,7 @@ class MobileTopBar extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onSettings;
   final VoidCallback onPip;
+  final VoidCallback? onDanmuSearch;
 
   const MobileTopBar({
     super.key,
@@ -12,6 +13,7 @@ class MobileTopBar extends StatelessWidget {
     required this.onBack,
     required this.onSettings,
     required this.onPip,
+    this.onDanmuSearch,
   });
 
   @override
@@ -53,6 +55,12 @@ class MobileTopBar extends StatelessWidget {
               onPressed: onPip,
               tooltip: '小窗播放',
             ),
+            if (onDanmuSearch != null)
+              IconButton(
+                icon: const Icon(Icons.search, color: Colors.white),
+                onPressed: onDanmuSearch,
+                tooltip: '搜索弹幕',
+              ),
             IconButton(
               icon: const Icon(Icons.settings_outlined, color: Colors.white),
               onPressed: onSettings,

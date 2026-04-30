@@ -12,6 +12,7 @@ import '../controls/platform_specific/mobile_controls.dart';
 import '../controls/platform_specific/web_controls.dart';
 import '../overlays/error_overlay.dart';
 import '../overlays/loading_overlay.dart';
+import '../../../danmu/ui/danmu_overlay.dart';
 
 class _DelayedLoadingOverlay extends StatefulWidget {
   /// 是否处于初始化/切集加载中。
@@ -208,6 +209,9 @@ class CommonPlayerLayout extends ConsumerWidget {
             ),
             if (state.error != null)
               Positioned.fill(child: ErrorOverlay(message: state.error!)),
+            if (state.fileId != null)
+              Positioned.fill(
+                  child: DanmuOverlay(fileId: state.fileId!.toString())),
             if (showControls || state.isLocked)
               Positioned.fill(
                 child: _buildControlsLayer(

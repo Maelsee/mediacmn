@@ -18,6 +18,8 @@ class ApiClient {
   }
 
   Uri _u(String path) => Uri.parse('${AppConfig.baseUrl}$path');
+  Uri u(String path) => _u(path);
+  http.Client get client => _client;
 
   bool _isTokenValid() {
     final t = _token;
@@ -120,6 +122,9 @@ class ApiClient {
     }
     return h;
   }
+
+  Map<String, String> getHeaders({Map<String, String>? headers}) =>
+      _headers(headers: headers);
 
   bool get isLoggedIn => _isTokenValid();
 
