@@ -15,6 +15,7 @@ class DanmuRenderer extends CustomPainter {
       LinkedHashMap<int, ui.Paragraph>();
   static const int _maxCacheSize = 2000;
   static double _cachedFontSize = 0;
+  static int _evictCounter = 0; // 每 60 帧才执行一次淘汰
 
   DanmuRenderer({
     required this.items,
@@ -32,8 +33,11 @@ class DanmuRenderer extends CustomPainter {
       _paragraphCache.clear();
     }
 
-    // 预淘汰：只保留当前活跃项的缓存，清理不再使用的条目
-    _evictStale();
+    // 惰性淘汰：每 60 帧（约 1 秒）才执行一次，避免每帧重建 activeCids
+    if (++_evictCounter >= 60) {
+      _evictCounter = 0;
+      _evictStale();
+    }
 
     for (final item in items) {
       if (!item.alive) continue;

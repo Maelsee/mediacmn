@@ -16,6 +16,7 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
   double _area = 0.3;
   double _speed = 130;
   double _opacity = 0.5;
+  double _density = 1.0;
   bool _initialized = false;
 
   @override
@@ -34,6 +35,7 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
       _area = engine.area;
       _speed = engine.speed;
       _opacity = engine.opacity;
+      _density = engine.density;
       _initialized = true;
     }
 
@@ -123,6 +125,20 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
             onChanged: (v) {
               setState(() => _opacity = v);
               engine.setOpacity(v);
+            },
+          ),
+
+          // 弹幕密度（10%稀疏 → 100%密集）
+          _buildSliderRow(
+            label: '弹幕密度',
+            value: _density,
+            min: 0.1,
+            max: 1.0,
+            divisions: 9,
+            format: (v) => '${(v * 100).round()}%',
+            onChanged: (v) {
+              setState(() => _density = v);
+              engine.setDensity(v);
             },
           ),
         ],

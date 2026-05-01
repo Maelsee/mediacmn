@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../models/danmu_models.dart';
@@ -17,6 +18,11 @@ class DanmuController extends ChangeNotifier {
   double _playbackSpeed = 1.0; // 视频播放倍速，弹幕速度会乘以此值
   final int _maxVisible = 100; // 同屏最大弹幕数
 
+  // 弹幕密度（0.1~1.0，值越大越密集）
+  double _density = 1.0;
+  double _minGapPx = 200.0; // 密度对应的轨道最小间距
+  double _staggerFactor = 0.1; // 密度对应的交错偏移系数
+
   // 分片管理
   List<DanmuSegment> _segments = [];
   int _currentSegmentIndex = 0;
@@ -31,12 +37,13 @@ class DanmuController extends ChangeNotifier {
   double _nextFireElapsed = 0; // 下一次允许发射的 elapsed 时间
 
   // 待发射队列：轨道满时暂存，轨道空出后补发
-  final List<DanmuItem> _pendingQueue = [];
+  final Queue<DanmuItem> _pendingQueue = Queue();
   static const int _maxPendingQueue = 50;
 
   // 当前播放位置（由 DanmuOverlay 在 Ticker 回调中更新）
   double _currentPosition = 0;
   double _lastPosition = 0; // 上一帧位置，用于 seek 检测
+  bool _dirty = true; // 脏标记：有变化才 notifyListeners
 
   // 缓存原始视口尺寸（用于 settings 变更后重建轨道）
   double _viewWidth = 0;
@@ -49,6 +56,7 @@ class DanmuController extends ChangeNotifier {
   double get area => _area;
   double get speed => _speed;
   double get playbackSpeed => _playbackSpeed;
+  double get density => _density;
   int get activeCount => _activeItems.length;
   int get totalCount => _allComments.length;
   List<DanmuItem> get activeItems => _activeItems;
@@ -64,6 +72,7 @@ class DanmuController extends ChangeNotifier {
       viewWidth: viewWidth,
       viewHeight: viewHeight * _area,
       itemHeight: _fontSize + 12,
+      minGapPx: _minGapPx,
     );
   }
 
@@ -148,6 +157,21 @@ class DanmuController extends ChangeNotifier {
     _playbackSpeed = v.clamp(0.25, 4.0);
   }
 
+  /// 设置弹幕密度（0.1~1.0）
+  /// 1.0 = 最密集（minGapPx=300, stagger=0.1）
+  /// 0.1 = 最稀疏（minGapPx=700, stagger=0.9）
+  void setDensity(double v) {
+    _density = v.clamp(0.1, 1.0);
+    _minGapPx = 700.0 - (_density - 0.1) * 500.0 / 0.9;
+    _staggerFactor = 0.9 - (_density - 0.1) * 0.8 / 0.9;
+    _reinitTrackManager();
+    notifyListeners();
+  }
+
+  /// 0.1（10%）→ minGapPx = 700 - 0 = 700, stagger = 0.9 ✓
+  /// 1.0（100%）→ minGapPx = 700 - 500 = 200, stagger = 0.9 - 0.8 = 0.1 ✓
+  /// 0.55（55%）→ minGapPx = 500, stagger = 0.5 ✓
+
   /// 使用缓存的 viewWidth/viewHeight 重建轨道管理器
   void _reinitTrackManager() {
     if (_viewWidth == 0 || _viewHeight == 0) return;
@@ -155,6 +179,7 @@ class DanmuController extends ChangeNotifier {
       viewWidth: _viewWidth,
       viewHeight: _viewHeight * _area,
       itemHeight: _fontSize + 12,
+      minGapPx: _minGapPx,
     );
   }
 
@@ -166,6 +191,7 @@ class DanmuController extends ChangeNotifier {
     if (_trackManager == null) return;
 
     _currentPosition = positionSeconds;
+    _dirty = false;
 
     // 1. Seek 检测：位置跳变超过 1 秒时清除旧弹幕
     final positionDelta = (positionSeconds - _lastPosition).abs();
@@ -174,34 +200,46 @@ class DanmuController extends ChangeNotifier {
       _activeCids.clear();
       _pendingQueue.clear();
       _trackManager!.reset();
-      _nextFireElapsed = 0; // seek 后立即允许发射
+      _nextFireElapsed = 0;
+      _dirty = true;
     }
     _lastPosition = positionSeconds;
 
     // 2. 检查是否需要加载下一分片
     _maybeLoadNextSegment(positionSeconds);
 
-    // 3. 清除已过期的弹幕（优化：同步维护 _activeCids）
+    // 3. 清除已过期的弹幕（单次遍历压缩）
+    final prevCount = _activeItems.length;
     _removeExpiredItems(elapsedSeconds);
+    if (_activeItems.length != prevCount) _dirty = true;
 
     // 4. 先处理待发射队列（轨道空出后补发之前被阻塞的弹幕）
+    final prevCount2 = _activeItems.length;
     _processPendingQueue(elapsedSeconds);
+    if (_activeItems.length != prevCount2) _dirty = true;
 
     // 5. 用二分查找找到当前时间窗口内应发射的弹幕
+    final prevCount3 = _activeItems.length;
     _fireNewDanmu(positionSeconds, elapsedSeconds);
+    if (_activeItems.length != prevCount3) _dirty = true;
 
-    notifyListeners();
+    if (_dirty) notifyListeners();
   }
 
-  /// 移除已过期的弹幕，同步维护 _activeCids
+  /// 移除已过期的弹幕，同步维护 _activeCids（单次遍历压缩，O(n)）
   void _removeExpiredItems(double elapsed) {
     final viewWidth = _trackManager!.viewWidth;
-    // 反向遍历避免 remove 时索引偏移
-    for (int i = _activeItems.length - 1; i >= 0; i--) {
-      if (!_activeItems[i].isVisible(elapsed, viewWidth)) {
-        _activeCids.remove(_activeItems[i].comment.cid);
-        _activeItems.removeAt(i);
+    int writeIdx = 0;
+    for (int i = 0; i < _activeItems.length; i++) {
+      final item = _activeItems[i];
+      if (item.isVisible(elapsed, viewWidth)) {
+        _activeItems[writeIdx++] = item;
+      } else {
+        _activeCids.remove(item.comment.cid);
       }
+    }
+    if (writeIdx < _activeItems.length) {
+      _activeItems.length = writeIdx;
     }
   }
 
@@ -225,8 +263,9 @@ class DanmuController extends ChangeNotifier {
     int fired = 0;
     while (_pendingQueue.isNotEmpty &&
         _activeItems.length < _maxVisible &&
-        fired < 3) { // 每帧最多补发 3 条，避免瞬间涌入
-      final item = _pendingQueue.removeAt(0);
+        fired < 3) {
+      // 每帧最多补发 3 条，避免瞬间涌入
+      final item = _pendingQueue.removeFirst();
       // 重新设置发射时间（队列等待期间 elapsed 已变化）
       item.firedAtElapsed = elapsed;
       item.firedAtPosition = position;
@@ -237,7 +276,7 @@ class DanmuController extends ChangeNotifier {
         fired++;
       } else {
         // 轨道仍然满，放回队列头部，等下一帧再试
-        _pendingQueue.insert(0, item);
+        _pendingQueue.addFirst(item);
         break;
       }
     }
@@ -261,16 +300,17 @@ class DanmuController extends ChangeNotifier {
     }
 
     final effectiveSpeed = _effectiveSpeed;
+    int consecutiveFails = 0;
 
     for (int i = lo; i < _sortedByTime.length; i++) {
       final comment = _sortedByTime[i];
       if (comment.time > windowEnd) break;
 
-      // O(1) 去重
       if (_activeCids.contains(comment.cid)) continue;
 
       final item = DanmuItem(comment);
-      final staggerOffset = _random.nextDouble() * _trackManager!.viewWidth * 0.1;
+      final staggerOffset =
+          _random.nextDouble() * _trackManager!.viewWidth * _staggerFactor;
       item.x = _trackManager!.viewWidth + staggerOffset;
       item.firedAtElapsed = elapsed;
       item.firedAtPosition = position;
@@ -279,14 +319,15 @@ class DanmuController extends ChangeNotifier {
         _activeItems.add(item);
         _activeCids.add(comment.cid);
         _nextFireElapsed = elapsed + _minFireGap;
+        consecutiveFails = 0;
       } else {
-        // 轨道满时入队等待，而非直接丢弃
         if (_pendingQueue.length < _maxPendingQueue) {
           _pendingQueue.add(item);
         }
+        if (++consecutiveFails >= 3) break; // 连续 3 条分配失败，轨道已满
       }
       if (_activeItems.length >= _maxVisible) break;
-      if (elapsed < _nextFireElapsed) break; // 本帧已发射一条，等下一帧再发射下一条
+      if (elapsed < _nextFireElapsed) break;
     }
   }
 

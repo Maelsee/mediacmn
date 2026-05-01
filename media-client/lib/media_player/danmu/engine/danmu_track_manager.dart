@@ -6,9 +6,7 @@ class DanmuTrackManager {
   final double viewHeight;
   final double itemHeight; // 单行弹幕高度
   final int maxTracks;
-
-  /// 同轨道前后弹幕最小间距（像素），只需保证文字不重叠
-  static const double minGapPx = 200.0;
+  final double minGapPx; // 同轨道前后弹幕最小间距（像素）
 
   // 每条轨道记录：该轨道允许下一条弹幕发射的最早时间
   final List<double> _trackFreeAt = [];
@@ -19,6 +17,7 @@ class DanmuTrackManager {
     required this.viewWidth,
     required this.viewHeight,
     this.itemHeight = 28,
+    this.minGapPx = 200.0,
   }) : maxTracks = (viewHeight / itemHeight).floor() {
     for (int i = 0; i < maxTracks; i++) {
       _trackFreeAt.add(0);
