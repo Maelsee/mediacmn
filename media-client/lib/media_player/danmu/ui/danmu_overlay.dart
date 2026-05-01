@@ -23,26 +23,26 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
   double _lastViewWidth = 0;
   double _lastViewHeight = 0;
   DanmuController? _lastEngine;
-  bool _needsInit = false;
 
   @override
   void initState() {
     super.initState();
-    // ignore: avoid_print
-    print('[Danmu] Overlay initState, fileId=${widget.fileId}');
     _ticker = createTicker((duration) {
       if (!mounted) return;
       _elapsed = duration.inMilliseconds / 1000.0;
 
-      // 在 ticker 回调中更新引擎（build 外部，安全调用 notifyListeners）
+      // 弹幕关闭时不更新引擎，节省 CPU
       final danmuState = ref.read(danmuProvider(widget.fileId));
-      if (!danmuState.enabled) return; // 弹幕关闭时不触发 setState，节省 CPU
+      if (!danmuState.enabled) return;
 
       final engine =
           ref.read(danmuProvider(widget.fileId).notifier).engine;
       if (engine != null) {
         final position = ref.read(playbackProvider).position;
+        final playbackSpeed = ref.read(playbackProvider).speed;
         final positionSeconds = position.inMilliseconds / 1000.0;
+        // 同步视频播放倍速到弹幕引擎
+        engine.setPlaybackSpeed(playbackSpeed);
         engine.updateFrame(positionSeconds, _elapsed);
       }
 
@@ -53,8 +53,6 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
 
   @override
   void dispose() {
-    // ignore: avoid_print
-    print('[Danmu] Overlay dispose, fileId=${widget.fileId}');
     _ticker.dispose();
     super.dispose();
   }
@@ -62,46 +60,58 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
   @override
   Widget build(BuildContext context) {
     final danmuState = ref.watch(danmuProvider(widget.fileId));
-    final engine = danmuState.enabled
-        ? ref.read(danmuProvider(widget.fileId).notifier).engine
-        : null;
+    final engine = ref.read(danmuProvider(widget.fileId).notifier).engine;
 
-    if (engine == null || !danmuState.enabled) {
+    // 引擎不存在时返回空（首次进入或无匹配弹幕源）
+    if (engine == null) {
       _lastEngine = null;
       return const SizedBox.shrink();
     }
 
-    // 引擎实例变化时（开关切换/换集），强制重新初始化轨道管理器
+    // 引擎实例变化时（首次匹配/换集），需要初始化轨道管理器
     if (!identical(engine, _lastEngine)) {
       _lastEngine = engine;
-      _needsInit = true;
+      // 新引擎需要通过 LayoutBuilder 初始化
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _lastViewWidth > 0 && _lastViewHeight > 0) {
+          engine.init(viewWidth: _lastViewWidth, viewHeight: _lastViewHeight);
+        }
+      });
     }
 
+    // 始终保持挂载，通过 opacity 控制可见性。
+    // 关闭弹幕时 opacity=0 + IgnorePointer，避免重建 widget 树导致引擎丢失。
     return IgnorePointer(
+      ignoring: !danmuState.enabled,
       child: Opacity(
-        opacity: engine.opacity,
+        opacity: danmuState.enabled ? engine.opacity : 0.0,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final w = constraints.maxWidth;
             final h = constraints.maxHeight;
-            // 尺寸变化或引擎实例变化时重新初始化轨道管理器
-            if (_needsInit || w != _lastViewWidth || h != _lastViewHeight) {
+            // 尺寸变化时重新初始化轨道管理器
+            if (w != _lastViewWidth || h != _lastViewHeight) {
               _lastViewWidth = w;
               _lastViewHeight = h;
-              _needsInit = false;
               engine.init(viewWidth: w, viewHeight: h);
-              // ignore: avoid_print
-              print('[Danmu] Overlay init tracks: ${w}x$h');
             }
-            return CustomPaint(
-              size: Size(w, h),
-              painter: DanmuRenderer(
-                items: engine.activeItems,
-                elapsed: _elapsed,
-                viewWidth: w,
-                viewHeight: h,
-                fontSize: engine.fontSize,
-              ),
+            // 每帧只触发 CustomPaint 重绘，不重建 LayoutBuilder
+            return ListenableBuilder(
+              listenable: engine,
+              builder: (context, _) {
+                return CustomPaint(
+                  size: Size(w, h),
+                  painter: danmuState.enabled
+                      ? DanmuRenderer(
+                          items: engine.activeItems,
+                          elapsed: _elapsed,
+                          viewWidth: w,
+                          viewHeight: h,
+                          fontSize: engine.fontSize,
+                        )
+                      : null, // 关闭时不绘制
+                );
+              },
             );
           },
         ),

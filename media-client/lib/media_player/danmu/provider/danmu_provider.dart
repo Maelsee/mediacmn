@@ -136,9 +136,8 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
   void toggle() {
     if (state.enabled) {
       // 关闭弹幕：递增 requestId 使所有进行中的异步回调失效
+      // 保留引擎实例，避免重建引擎后 seek 检测误触发清空弹幕
       _requestId++;
-      _engine?.disposeEngine();
-      _engine = null;
       state = state.copyWith(enabled: false);
     } else {
       // 开启弹幕：递增 requestId 使旧的 enable() 回调失效

@@ -4,10 +4,13 @@ import 'danmu_item.dart';
 class DanmuTrackManager {
   final double viewWidth;
   final double viewHeight;
-  final double itemHeight;  // 单行弹幕高度
+  final double itemHeight; // 单行弹幕高度
   final int maxTracks;
 
-  // 每条轨道记录：最后一条弹幕完全离开屏幕的时间
+  /// 同轨道前后弹幕最小间距（像素），只需保证文字不重叠
+  static const double minGapPx = 200.0;
+
+  // 每条轨道记录：该轨道允许下一条弹幕发射的最早时间
   final List<double> _trackFreeAt = [];
   // 每条轨道的 y 坐标
   final List<double> _trackY = [];
@@ -21,26 +24,22 @@ class DanmuTrackManager {
       _trackFreeAt.add(0);
       _trackY.add(i * itemHeight);
     }
-    // ignore: avoid_print
-    print('[Danmu] TrackManager: view=${viewWidth}x$viewHeight, '
-        'maxTracks=$maxTracks, itemHeight=$itemHeight');
   }
 
-  /// 为弹幕分配轨道，返回 y 坐标，-1 表示无可用轨道（丢弃）
+  /// 为弹幕分配轨道，返回 y 坐标，-1 表示无可用轨道
   double allocate(DanmuItem item, double currentTime, double speed) {
-    final duration = viewWidth / speed; // 弹幕穿越屏幕的时间
+    // 仅需等待前一条弹幕移出 minGapPx 距离，而非整个屏幕宽度
+    final minInterval = minGapPx / speed;
 
     for (int i = 0; i < maxTracks; i++) {
       if (currentTime >= _trackFreeAt[i]) {
-        _trackFreeAt[i] = currentTime + duration;
+        _trackFreeAt[i] = currentTime + minInterval;
         item.y = _trackY[i];
         item.speed = speed;
         return _trackY[i];
       }
     }
-    // ignore: avoid_print
-    print('[Danmu] allocate FAIL: all $maxTracks tracks busy, discarding');
-    return -1; // 所有轨道满载，丢弃
+    return -1; // 所有轨道满载（由调用方入队等待）
   }
 
   void reset() {

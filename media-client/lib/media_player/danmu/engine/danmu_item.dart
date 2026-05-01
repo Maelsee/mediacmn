@@ -3,16 +3,19 @@ import '../models/danmu_models.dart';
 class DanmuItem {
   final DanmuComment comment;
   // 布局结果（由 TrackManager 计算后填入）
-  double x = 0;            // 发射时的初始 x（屏幕右边缘）
+  double x = 0; // 发射时的初始 x（屏幕右边缘）
   double y = 0;
   double width = 0;
   double height = 0;
-  double speed = 0;        // 像素/秒
+  double speed = 0; // 像素/秒
   double opacity = 1.0;
   bool alive = true;
 
   /// 发射时的 Ticker elapsed（秒），用于渲染位置计算
   double firedAtElapsed = 0;
+
+  /// 发射时的视频播放位置（秒），用于 seek 检测
+  double firedAtPosition = 0;
 
   DanmuItem(this.comment);
 
