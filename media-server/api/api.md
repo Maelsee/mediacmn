@@ -244,3 +244,7 @@ post /api/danmu/{episode_id}/next-segment
   "is_manual": false,
   "match_confidence": 1
 }
+
+
+1，@media-client/lib/media_player，深度分析播放器模块代码结构。提出播放器的优化建议，尤其是健壮性和性能方面，以及代码优化例如单一性原则，职责划分明确，可重复利用，可扩展。给我分析报告。
+2，倍速播放有bug，点击屏幕就会将速度调整为1.0

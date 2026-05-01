@@ -10,7 +10,6 @@ class DanmuController extends ChangeNotifier {
   DanmuTrackManager? _trackManager;
   final List<DanmuItem> _activeItems = [];
   final List<DanmuComment> _allComments = [];
-  bool _enabled = true;
   double _opacity = 0.5;
   double _fontSize = 15;
   double _area = 0.3; // 弹幕区域（0.2~1.0）
@@ -39,7 +38,6 @@ class DanmuController extends ChangeNotifier {
 
   // ---- 公开 API ----
 
-  bool get enabled => _enabled;
   double get opacity => _opacity;
   double get fontSize => _fontSize;
   double get area => _area;
@@ -69,6 +67,7 @@ class DanmuController extends ChangeNotifier {
     _allComments.addAll(data.comments);
     _segments = data.segmentList;
     _currentSegmentIndex = 0;
+    _isLoadingSegment = false;
     _sortedByTime = List.of(_allComments)
       ..sort((a, b) => a.time.compareTo(b.time));
     // ignore: avoid_print
@@ -85,13 +84,6 @@ class DanmuController extends ChangeNotifier {
     _allComments.addAll(comments);
     _sortedByTime = List.of(_allComments)
       ..sort((a, b) => a.time.compareTo(b.time));
-  }
-
-  /// 切换弹幕开关
-  void toggle() {
-    _enabled = !_enabled;
-    if (!_enabled) _activeItems.clear();
-    notifyListeners();
   }
 
   /// 设置透明度
@@ -135,7 +127,7 @@ class DanmuController extends ChangeNotifier {
   /// [positionSeconds] 当前播放位置（秒）
   /// [elapsedSeconds]  当前 Ticker elapsed 时间（秒）
   void updateFrame(double positionSeconds, double elapsedSeconds) {
-    if (!_enabled || _trackManager == null) return;
+    if (_trackManager == null) return;
 
     _currentPosition = positionSeconds;
     _frameCount++;
@@ -228,6 +220,11 @@ class DanmuController extends ChangeNotifier {
     _isLoadingSegment = false;
   }
 
+  /// 重置分片加载状态（防止网络失败后卡在 loading）
+  void resetSegmentLoading() {
+    _isLoadingSegment = false;
+  }
+
   // 分片加载回调（由 Provider 注入）
   void Function(DanmuSegment segment)? _onNeedLoadSegment;
 
@@ -238,6 +235,13 @@ class DanmuController extends ChangeNotifier {
   void disposeEngine() {
     _frameTimer?.cancel();
     _activeItems.clear();
+    _allComments.clear();
+    _sortedByTime.clear();
+    _segments.clear();
+    _currentSegmentIndex = 0;
+    _isLoadingSegment = false;
+    _onNeedLoadSegment = null;
+    _trackManager = null;
     DanmuRenderer.clearCache();
   }
 }

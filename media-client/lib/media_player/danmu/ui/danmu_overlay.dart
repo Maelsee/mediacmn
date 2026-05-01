@@ -36,14 +36,14 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
 
       // 在 ticker 回调中更新引擎（build 外部，安全调用 notifyListeners）
       final danmuState = ref.read(danmuProvider(widget.fileId));
-      if (danmuState.enabled) {
-        final engine =
-            ref.read(danmuProvider(widget.fileId).notifier).engine;
-        if (engine != null) {
-          final position = ref.read(playbackProvider).position;
-          final positionSeconds = position.inMilliseconds / 1000.0;
-          engine.updateFrame(positionSeconds, _elapsed);
-        }
+      if (!danmuState.enabled) return; // 弹幕关闭时不触发 setState，节省 CPU
+
+      final engine =
+          ref.read(danmuProvider(widget.fileId).notifier).engine;
+      if (engine != null) {
+        final position = ref.read(playbackProvider).position;
+        final positionSeconds = position.inMilliseconds / 1000.0;
+        engine.updateFrame(positionSeconds, _elapsed);
       }
 
       setState(() {});
