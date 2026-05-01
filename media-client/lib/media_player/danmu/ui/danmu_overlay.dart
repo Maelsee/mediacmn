@@ -100,6 +100,7 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
                 elapsed: _elapsed,
                 viewWidth: w,
                 viewHeight: h,
+                fontSize: engine.fontSize,
               ),
             );
           },
