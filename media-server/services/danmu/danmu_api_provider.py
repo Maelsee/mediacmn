@@ -97,7 +97,7 @@ class DanmuApiProvider:
         settings = get_settings()
         
         # 从配置读取 danmu_api 设置
-        self._base_url = getattr(settings, "DANMU_API_URL", "http://127.0.0.1:9321").rstrip("/")
+        self._base_url = getattr(settings, "DANMU_API_URL", "http://danmu-api:9321").rstrip("/")
         self._token = getattr(settings, "DANMU_API_TOKEN", "")
         self._timeout_seconds = int(getattr(settings, "DANMU_API_TIMEOUT", 30))
         self._request_timeout = int(getattr(settings, "DANMU_API_REQUEST_TIMEOUT", 10000)) // 1000

@@ -19,6 +19,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from core.db import get_async_session_context
+# from core.security import get_user_id
 
 from core.config import get_settings
 from services.danmu.danmu_api_provider import (
@@ -261,60 +262,85 @@ class DanmuService:
     async def get_file_info(
         self,
         file_id: str,
-        current_subject: str,
+        # current_subject: str,
+        user_id: int
     ) -> Tuple[Optional[str], Optional[int], Optional[int]]:
         """
-        根据file_id获取文件对应的媒体信息（系列标题、季数、集数）
+        根据file_id获取文件对应的媒体信息（标题、季数、集数）
 
         表关系：
-          FileAsset(core_id) → MediaCore(episode)
-            → EpisodeExt(series_core_id, season_number, episode_number)
-              → MediaCore(series, title)
+          电视剧：
+            FileAsset(core_id) → MediaCore(episode)
+              → EpisodeExt(series_core_id, season_number, episode_number)
+                → MediaCore(series, title)
+          电影：
+            FileAsset(core_id) → MediaCore(movie, title)
 
         Args:
             file_id: 文件资源 ID（file_asset.id 的字符串形式）
             current_subject: 当前用户
 
         Returns:
-            (系列标题, 季数, 集数) — 找不到时对应字段为 None
+            (标题, 季数, 集数) — 找不到时对应字段为 None
+            - movie: (movie_title, None, None)
+            - episode: (series_title, season_number, episode_number)
         """
-        logger.info(f"Get file info request: {file_id}")
+        logger.info(f"Get file info request: {file_id}, user_id={user_id}")
         try:
+            # user_id = get_user_id(current_subject)
+            file_asset_id = int(file_id)
+
             async with get_async_session_context() as session:
                 from sqlmodel import select
 
-                # 1. FileAsset(id=file_id) → core_id
+                # 1. FileAsset(id=file_id, user_id) → core_id
                 file_stmt = select(FileAsset).where(
-                    FileAsset.id == int(file_id)
+                    FileAsset.id == file_asset_id,
+                    FileAsset.user_id == user_id,
                 )
                 file_asset = (await session.exec(file_stmt)).first()
                 if not file_asset or not file_asset.core_id:
                     return None, None, None
 
-                # 2. MediaCore(core_id) → 确认是 episode 类型
+                # 2. MediaCore(core_id, user_id) → 根据 kind 区分 movie / episode
                 core_stmt = select(MediaCore).where(
-                    MediaCore.id == file_asset.core_id
+                    MediaCore.id == file_asset.core_id,
+                    MediaCore.user_id == user_id,
                 )
-                episode_core = (await session.exec(core_stmt)).first()
-                if not episode_core:
+                media_core = (await session.exec(core_stmt)).first()
+                if not media_core:
                     return None, None, None
 
-                # 3. EpisodeExt(core_id) → series_core_id, season_number, episode_number
+                # 电影：只有标题，没有季集信息
+                if media_core.kind == "movie":
+                    return media_core.title, None, None
+
+                # 剧集：继续走 EpisodeExt → Series 标题链路
+                if media_core.kind != "episode":
+                    # 非 movie / episode 的类型做兜底，至少返回标题
+                    return media_core.title, None, None
+
+                # 3. EpisodeExt(core_id, user_id) → series_core_id, season_number, episode_number
                 ep_stmt = select(EpisodeExt).where(
-                    EpisodeExt.core_id == episode_core.id
+                    EpisodeExt.core_id == media_core.id,
+                    EpisodeExt.user_id == user_id,
                 )
                 episode_ext = (await session.exec(ep_stmt)).first()
                 if not episode_ext:
-                    return None, None, None
+                    return media_core.title, None, None
 
-                # 4. MediaCore(series_core_id) → 系列标题
+                # 4. MediaCore(series_core_id, user_id) → 系列标题
                 series_stmt = select(MediaCore).where(
-                    MediaCore.id == episode_ext.series_core_id
+                    MediaCore.id == episode_ext.series_core_id,
+                    MediaCore.user_id == user_id,
                 )
                 series_core = (await session.exec(series_stmt)).first()
                 series_title = series_core.title if series_core else None
 
                 return series_title, episode_ext.season_number, episode_ext.episode_number
+        except (ValueError, TypeError) as e:
+            logger.error(f"Get file info invalid args: file_id={file_id}, subject={current_subject}, error={e}")
+            return None, None, None
         except Exception as e:
             logger.error(f"Get file info error: {e}")
             return None, None, None

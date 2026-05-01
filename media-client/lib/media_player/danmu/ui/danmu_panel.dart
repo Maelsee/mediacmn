@@ -153,8 +153,7 @@ class DanmuPanel extends ConsumerWidget {
                                     ? const Color(0xFFFFE796)
                                     : Colors.white,
                                 fontSize: 14,
-                                fontWeight:
-                                    isSelected ? FontWeight.bold : null,
+                                fontWeight: isSelected ? FontWeight.bold : null,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -186,11 +185,46 @@ class DanmuPanel extends ConsumerWidget {
   }
 
   void _openSettingsPanel(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => DanmuSettingsPanel(fileId: fileId),
-    );
+    final size = MediaQuery.of(context).size;
+    final isLandscapeLayout = size.width > size.height;
+
+    if (isLandscapeLayout) {
+      showGeneralDialog(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: 'Dismiss',
+        barrierColor: Colors.black54,
+        transitionDuration: const Duration(milliseconds: 250),
+        pageBuilder: (ctx, anim1, anim2) {
+          return Align(
+            alignment: Alignment.centerRight,
+            child: Material(
+              color: const Color(0xFF1E1E1E),
+              child: SizedBox(
+                width: 350,
+                height: double.infinity,
+                child: DanmuSettingsPanel(fileId: fileId),
+              ),
+            ),
+          );
+        },
+        transitionBuilder: (ctx, anim1, anim2, child) {
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(1, 0),
+              end: Offset.zero,
+            ).animate(anim1),
+            child: child,
+          );
+        },
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (_) => DanmuSettingsPanel(fileId: fileId),
+      );
+    }
   }
 }

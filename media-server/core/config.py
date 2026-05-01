@@ -111,10 +111,15 @@ class Settings(BaseSettings):
 
 
     # DanmuApi 配置
-    DANMU_API_BASE_URL: str = Field(
+    DANMU_API_URL: str = Field(
         default="http://127.0.0.1:9321",
-        description="DanmuApi 服务地址"
+        # default="http://danmu-api:9321",
+        description="DanmuApi 服务地址（推荐配置项，容器内建议使用 http://danmu-api:9321）"
     )
+    # DANMU_API_BASE_URL: str = Field(
+    #     default="http://127.0.0.1:9321",
+    #     description="DanmuApi 服务地址（兼容旧配置）"
+    # )
     DANMU_API_TOKEN: str = Field(
         default="112",
         description="DanmuApi 访问令牌"
@@ -130,11 +135,11 @@ class Settings(BaseSettings):
         description="自动匹配置信度阈值"
     )
     DANMU_CACHE_TTL: int = Field(
-        default=604800,  # 7天
+        default=600,  # 10分钟
         description="弹幕缓存时间(秒)"
     )
     DANMU_SEARCH_CACHE_TTL: int = Field(
-        default=3600,  # 1小时
+        default=600,  # 10分钟
         description="搜索结果缓存时间(秒)"
     )
 

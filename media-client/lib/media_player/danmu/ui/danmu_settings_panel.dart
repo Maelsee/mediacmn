@@ -21,6 +21,8 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
   @override
   Widget build(BuildContext context) {
     final engine = ref.read(danmuProvider(widget.fileId).notifier).engine;
+    final size = MediaQuery.of(context).size;
+    final isLandscape = size.width > size.height;
 
     if (engine == null) {
       return const SizedBox.shrink();
@@ -36,33 +38,37 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      height: isLandscape ? double.infinity : null,
+      padding: EdgeInsets.fromLTRB(20, isLandscape ? 24 : 12, 20, 24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: isLandscape
+            ? null
+            : const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: isLandscape ? MainAxisSize.max : MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 拖拽指示条
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+          if (!isLandscape)
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
           const Text('弹幕设置',
               style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
+          SizedBox(height: isLandscape ? 24 : 16),
 
           // 字体大小
           _buildSliderRow(

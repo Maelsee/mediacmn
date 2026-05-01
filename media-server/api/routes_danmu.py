@@ -60,7 +60,7 @@ router = APIRouter()
 )
 async def auto_match(
     request: AutoMatchRequest,
-    _: str = Depends(get_current_subject),
+    current_subject: str = Depends(get_current_subject),
 ) -> AutoMatchResponse:
     """
     自动匹配弹幕源
@@ -78,9 +78,11 @@ async def auto_match(
     # 如果没有传 title 但传了 file_id，从数据库自动解析
     if not title and request.file_id:
         try:
+            user_id = int(current_subject)
             title, season, episode = await danmu_service.get_file_info(
                 file_id=request.file_id,
-                current_subject=_,
+                # current_subject=current_subject,
+                user_id=user_id,
             )
             logger.info(f"Auto match resolved from file_id: title={title}, season={season}, episode={episode}")
         except Exception as e:
@@ -97,7 +99,7 @@ async def auto_match(
             episode=episode,
             file_id=request.file_id,
         )
-        logger.info(f"Auto match result: {result}") 
+        # logger.info(f"Auto match result: {result}") 
         return AutoMatchResponse(**result)
 
     except DanmuApiTimeoutError as e:

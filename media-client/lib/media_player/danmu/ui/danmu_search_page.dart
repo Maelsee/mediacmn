@@ -16,16 +16,27 @@ class DanmuSearchPage extends ConsumerStatefulWidget {
 
 class _DanmuSearchPageState extends ConsumerState<DanmuSearchPage> {
   final _searchController = TextEditingController();
+  final _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
   void _onSearch() {
     final keyword = _searchController.text.trim();
     if (keyword.isEmpty) return;
+    _focusNode.unfocus();
     ref.read(danmuProvider(widget.fileId).notifier).search(keyword);
   }
 
@@ -48,45 +59,129 @@ class _DanmuSearchPageState extends ConsumerState<DanmuSearchPage> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: TextField(
-          controller: _searchController,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: '输入影视名称搜索弹幕',
-            hintStyle: TextStyle(color: Colors.white54),
-            border: InputBorder.none,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Container(
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(26),
+            borderRadius: BorderRadius.circular(20),
           ),
-          onSubmitted: (_) => _onSearch(),
+          child: TextField(
+            controller: _searchController,
+            focusNode: _focusNode,
+            style: const TextStyle(color: Colors.white, fontSize: 15),
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: '搜索影视名称...',
+              hintStyle: TextStyle(color: Colors.white.withAlpha(102)),
+              prefixIcon: Icon(Icons.search,
+                  color: Colors.white.withAlpha(102), size: 20),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.clear,
+                          color: Colors.white.withAlpha(102), size: 18),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {});
+                      },
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => _onSearch(),
+          ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
+          TextButton(
             onPressed: _onSearch,
+            child: const Text('搜索',
+                style: TextStyle(color: Color(0xFFFFE796), fontSize: 15)),
           ),
         ],
       ),
       body: state.searchLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              itemCount: state.searchResults.length,
-              itemBuilder: (context, index) {
-                final item = state.searchResults[index];
-                return ListTile(
-                  leading: item.imageUrl.isNotEmpty
-                      ? Image.network(item.imageUrl,
-                          width: 50, height: 70, fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const SizedBox(width: 50, height: 70))
-                      : const SizedBox(width: 50, height: 70),
-                  title: Text(item.animeTitle,
-                      style: const TextStyle(color: Colors.white)),
-                  subtitle: Text(
-                      '${item.typeDescription} · 共${item.episodeCount}集',
-                      style: const TextStyle(color: Colors.white54)),
-                  onTap: () => _goToBangumiDetail(item),
-                );
-              },
-            ),
+          : state.searchResults.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.search,
+                          size: 64, color: Colors.white.withAlpha(51)),
+                      const SizedBox(height: 16),
+                      Text(
+                        '输入影视名称搜索弹幕源',
+                        style: TextStyle(
+                            color: Colors.white.withAlpha(102), fontSize: 15),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: state.searchResults.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(height: 1, color: Colors.white.withAlpha(13)),
+                  itemBuilder: (context, index) {
+                    final item = state.searchResults[index];
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: item.imageUrl.isNotEmpty
+                            ? Image.network(item.imageUrl,
+                                width: 48,
+                                height: 64,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Container(
+                                        width: 48,
+                                        height: 64,
+                                        color: Colors.white.withAlpha(13)))
+                            : Container(
+                                width: 48,
+                                height: 64,
+                                color: Colors.white.withAlpha(13),
+                                child: const Icon(Icons.movie,
+                                    color: Colors.white38, size: 24)),
+                      ),
+                      title: Text(item.animeTitle,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 15)),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            if (item.typeDescription.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFE796).withAlpha(26),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(item.typeDescription,
+                                    style: const TextStyle(
+                                        color: Color(0xFFFFE796),
+                                        fontSize: 11)),
+                              ),
+                            Text('共${item.episodeCount}集',
+                                style: const TextStyle(
+                                    color: Colors.white54, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      onTap: () => _goToBangumiDetail(item),
+                    );
+                  },
+                ),
     );
   }
 }
@@ -149,8 +244,8 @@ class _DanmuBangumiPageState extends ConsumerState<_DanmuBangumiPage> {
           imageUrl: _bangumi?.imageUrl ?? '',
         );
     // pop bangumi page + search page，回到播放器
-    Navigator.of(context).pop(); // pop bangumi page
-    Navigator.of(context).pop(); // pop search page
+    Navigator.of(context).pop();
+    Navigator.of(context).pop();
   }
 
   @override
@@ -160,37 +255,115 @@ class _DanmuBangumiPageState extends ConsumerState<_DanmuBangumiPage> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(widget.title),
+        title: Text(widget.title,
+            style: const TextStyle(color: Colors.white, fontSize: 16)),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(
-                  child: Text('加载失败: $_error',
-                      style: const TextStyle(color: Colors.red)))
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline,
+                          color: Colors.white38, size: 48),
+                      const SizedBox(height: 12),
+                      Text('加载失败: $_error',
+                          style: const TextStyle(color: Colors.white54)),
+                    ],
+                  ),
+                )
               : _bangumi == null
                   ? const SizedBox.shrink()
                   : ListView(
                       children: [
+                        if (_bangumi!.imageUrl.isNotEmpty)
+                          Container(
+                            height: 180,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              image: DecorationImage(
+                                image: NetworkImage(_bangumi!.imageUrl),
+                                fit: BoxFit.cover,
+                                onError: (_, __) {},
+                              ),
+                            ),
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [Colors.transparent, Color(0xFF1E1E1E)],
+                                ),
+                              ),
+                              alignment: Alignment.bottomLeft,
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(_bangumi!.animeTitle,
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold)),
+                                  if (_bangumi!.type.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(_bangumi!.type,
+                                          style: const TextStyle(
+                                              color: Colors.white54,
+                                              fontSize: 13)),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
                         for (final season in _bangumi!.seasons) ...[
                           Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                                '${season.name} (${season.episodeCount}集)',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold)),
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: Row(
+                              children: [
+                                Text(season.name,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600)),
+                                const SizedBox(width: 8),
+                                Text('${season.episodeCount}集',
+                                    style: const TextStyle(
+                                        color: Colors.white54, fontSize: 13)),
+                              ],
+                            ),
                           ),
                           ..._bangumi!.episodes
                               .where((e) => e.seasonId == season.id)
                               .map((episode) => ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 2),
+                                    leading: Container(
+                                      width: 36,
+                                      height: 36,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withAlpha(13),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        episode.episodeNumber,
+                                        style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 13),
+                                      ),
+                                    ),
                                     title: Text(episode.episodeTitle,
                                         style: const TextStyle(
-                                            color: Colors.white70)),
+                                            color: Colors.white70,
+                                            fontSize: 14)),
                                     onTap: () => _selectEpisode(episode),
-                                  ))
-                        ]
+                                  )),
+                        ],
+                        const SizedBox(height: 32),
                       ],
                     ),
     );
