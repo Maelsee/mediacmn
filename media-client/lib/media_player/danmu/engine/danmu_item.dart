@@ -21,9 +21,9 @@ class DanmuItem {
   /// 位置 = 初始x - speed * (当前elapsed - 发射elapsed)
   double screenX(double elapsed) => x - speed * (elapsed - firedAtElapsed);
 
-  /// 是否还在可视区域内
+  /// 是否还在可视区域内（整个文本移出左边缘才算消失）
   bool isVisible(double elapsed, double viewWidth) {
     final sx = screenX(elapsed);
-    return sx + width > 0 && sx < viewWidth;
+    return sx + width > 0;
   }
 }

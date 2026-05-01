@@ -12,10 +12,10 @@ class DanmuSettingsPanel extends ConsumerStatefulWidget {
 }
 
 class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
-  double _fontSize = 16;
-  double _area = 1.0;
-  double _speed = 140;
-  double _opacity = 1.0;
+  double _fontSize = 15;
+  double _area = 0.3;
+  double _speed = 130;
+  double _opacity = 0.5;
   bool _initialized = false;
 
   @override

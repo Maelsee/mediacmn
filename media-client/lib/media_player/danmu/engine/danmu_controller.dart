@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../models/danmu_models.dart';
 import 'danmu_item.dart';
@@ -10,10 +11,10 @@ class DanmuController extends ChangeNotifier {
   final List<DanmuItem> _activeItems = [];
   final List<DanmuComment> _allComments = [];
   bool _enabled = true;
-  double _opacity = 1.0;
-  double _fontSize = 16;
-  double _area = 1.0; // 弹幕区域（0.2~1.0）
-  double _speed = 140; // 像素/秒
+  double _opacity = 0.5;
+  double _fontSize = 15;
+  double _area = 0.3; // 弹幕区域（0.2~1.0）
+  double _speed = 130; // 像素/秒
   final int _maxVisible = 100; // 同屏最大弹幕数
 
   // 分片管理
@@ -168,6 +169,8 @@ class DanmuController extends ChangeNotifier {
     _maybeLoadNextSegment(positionSeconds);
   }
 
+  final _random = Random();
+
   void _fireNewDanmu(double position, double elapsed) {
     if (_activeItems.length >= _maxVisible) return;
 
@@ -193,19 +196,14 @@ class DanmuController extends ChangeNotifier {
       if (_activeItems.any((a) => a.comment.cid == comment.cid)) continue;
 
       final item = DanmuItem(comment);
-      // 初始位置：屏幕右边缘
-      item.x = _trackManager!.viewWidth;
+      // 初始位置：屏幕右边缘 + 随机交错偏移（0~60% 屏幕宽度），避免左对齐
+      final staggerOffset = _random.nextDouble() * _trackManager!.viewWidth * 0.9;
+      item.x = _trackManager!.viewWidth + staggerOffset;
       // 记录发射时的 Ticker elapsed，用于渲染时计算位移
       item.firedAtElapsed = elapsed;
       final allocated = _trackManager!.allocate(item, position, _speed);
       if (allocated >= 0) {
         _activeItems.add(item);
-        // ignore: avoid_print
-        print('[Danmu] fire: cid=${comment.cid}, '
-            'time=${comment.time.toStringAsFixed(1)}s, '
-            'pos=${position.toStringAsFixed(1)}s, '
-            'track=${(allocated / (_fontSize + 12)).floor()}, '
-            'active=${_activeItems.length}');
       }
       if (_activeItems.length >= _maxVisible) break;
     }
