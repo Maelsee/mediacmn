@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../../../media_player/core/state/playback_state.dart';
+import '../../../../../utils/player_utils.dart';
 
 /// 片头片尾设置面板。
 class IntroOutroSettingsPanel extends StatefulWidget {
@@ -235,7 +236,7 @@ class _IntroOutroSettingsPanelState extends State<IntroOutroSettingsPanel> {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                _formatDuration(time),
+                formatDuration(time),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 15,
@@ -249,15 +250,6 @@ class _IntroOutroSettingsPanelState extends State<IntroOutroSettingsPanel> {
     );
   }
 
-  String _formatDuration(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60);
-    final s = d.inSeconds.remainder(60);
-    if (h > 0) {
-      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-    }
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
 
   void _showTimePicker(
     BuildContext context,

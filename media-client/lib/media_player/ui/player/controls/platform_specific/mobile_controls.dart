@@ -8,6 +8,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 
 import '../../../../core/state/playback_state.dart';
+import '../../../../utils/player_utils.dart';
 import '../mobile/widgets/mobile_top_bar.dart';
 import '../mobile/widgets/mobile_bottom_bar.dart';
 import '../mobile/widgets/mobile_center_controls.dart';
@@ -806,7 +807,7 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
                 _seekPreviewPos = clamped;
                 setState(() {
                   _overlayText =
-                      '${_formatDuration(clamped)} / ${_formatDuration(widget.duration)}';
+                      '${formatDuration(clamped)} / ${formatDuration(widget.duration)}';
                 });
               }
             },
@@ -870,15 +871,6 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
     );
   }
 
-  String _formatDuration(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60);
-    final s = d.inSeconds.remainder(60);
-    if (h > 0) {
-      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-    }
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
 
   /// 请求设置系统媒体音量（带节流）。
   void _requestSystemVolume(double value) {

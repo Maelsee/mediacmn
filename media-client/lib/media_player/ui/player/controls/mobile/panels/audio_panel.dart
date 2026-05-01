@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:media_client/media_player/utils/track_formatter.dart';
 import 'package:media_kit/media_kit.dart';
 
+import '../widgets/panel_list_item.dart';
+
 /// 音轨选择面板。
 ///
 /// 音轨数据来自播放器的 `tracksStream`（视频本身内嵌的音轨）。
@@ -112,26 +114,15 @@ class _AudioPanelState extends State<AudioPanel> {
     // 使用 ID 进行严格对比，解决对象引用不一致导致的选中状态失效问题
     final isSelected = widget.selectedAudio?.id != null &&
         track.id == widget.selectedAudio!.id;
-    return GestureDetector(
+    return PanelListItem(
+      isSelected: isSelected,
       onTap: () => widget.onAudioSelected(track),
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF666666).withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(12),
-          border: isSelected
-              ? Border.all(color: const Color(0xFFFFE796), width: 1)
-              : null,
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          TrackFormatter.audio(track),
-          style: TextStyle(
-            color: isSelected ? const Color(0xFFFFE796) : Colors.white,
-            fontSize: 14,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
+      child: Text(
+        TrackFormatter.audio(track),
+        style: TextStyle(
+          color: isSelected ? const Color(0xFFFFE796) : Colors.white,
+          fontSize: 14,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
         ),
       ),
     );

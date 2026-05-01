@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../core/player/player_config.dart';
 import '../../../../../core/state/playback_state.dart';
+import '../widgets/panel_list_item.dart';
 
 class SpeedPanel extends ConsumerWidget {
   final double currentSpeed;
@@ -19,7 +21,7 @@ class SpeedPanel extends ConsumerWidget {
 
   /// 根据视频特性动态调整可用的倍速选项
   List<double> _getAvailableSpeeds(BuildContext context, WidgetRef ref) {
-    return [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
+    return PlayerConfig.kSpeedOptions;
   }
 
   @override
@@ -75,34 +77,22 @@ class SpeedPanel extends ConsumerWidget {
             itemBuilder: (context, index) {
               final speed = availableSpeeds[index];
               final isSelected = (speed - currentSpeed).abs() < 0.01;
-              return GestureDetector(
+              return PanelListItem(
+                isSelected: isSelected,
                 onTap: () {
                   onSpeedChanged(speed);
                   if (closeOnSelect) {
                     Navigator.of(context).maybePop();
                   }
                 },
-                child: Container(
-                  margin:
-                      const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF666666).withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(12),
-                    border: isSelected
-                        ? Border.all(color: const Color(0xFFFFE796), width: 1)
-                        : null,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    '${speed}x',
-                    style: TextStyle(
-                      color:
-                          isSelected ? const Color(0xFFFFE796) : Colors.white,
-                      fontSize: 14,
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
+                child: Text(
+                  '${speed}x',
+                  style: TextStyle(
+                    color:
+                        isSelected ? const Color(0xFFFFE796) : Colors.white,
+                    fontSize: 14,
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
               );

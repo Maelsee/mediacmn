@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/player/player_config.dart';
 import '../../../../core/state/playback_state.dart';
 import '../../../../../media_library/media_models.dart';
 import '../../../../utils/player_utils.dart';
@@ -55,7 +56,7 @@ class CommonControls extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _ProgressRow(
+            ProgressBar(
               position: state.position,
               duration: state.duration,
               buffered: state.buffered,
@@ -115,81 +116,6 @@ class CommonControls extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ProgressRow extends StatefulWidget {
-  final Duration position;
-  final Duration duration;
-  final Duration buffered;
-  final Future<void> Function(Duration position) onSeek;
-
-  const _ProgressRow({
-    required this.position,
-    required this.duration,
-    required this.buffered,
-    required this.onSeek,
-  });
-
-  @override
-  State<_ProgressRow> createState() => _ProgressRowState();
-}
-
-class _ProgressRowState extends State<_ProgressRow> {
-  double? _drag;
-
-  @override
-  Widget build(BuildContext context) {
-    final durationMs = widget.duration.inMilliseconds;
-    final posMs = widget.position.inMilliseconds;
-    final bufferedMs = widget.buffered.inMilliseconds;
-    final valueMs = _drag?.toInt() ?? posMs;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Stack(
-          children: [
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 0),
-                overlayShape: SliderComponentShape.noOverlay,
-                activeTrackColor: Colors.white24,
-                inactiveTrackColor: Colors.white24,
-              ),
-              child: Slider(
-                value: durationMs == 0
-                    ? 0
-                    : bufferedMs.clamp(0, durationMs).toDouble(),
-                min: 0,
-                max: durationMs == 0 ? 1 : durationMs.toDouble(),
-                onChanged: (_) {},
-              ),
-            ),
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                activeTrackColor: Colors.white,
-                inactiveTrackColor: Colors.white24,
-                thumbColor: Colors.white,
-              ),
-              child: Slider(
-                value: durationMs == 0
-                    ? 0
-                    : valueMs.clamp(0, durationMs).toDouble(),
-                min: 0,
-                max: durationMs == 0 ? 1 : durationMs.toDouble(),
-                onChangeStart: (v) => setState(() => _drag = v),
-                onChanged: (v) => setState(() => _drag = v),
-                onChangeEnd: (v) async {
-                  setState(() => _drag = null);
-                  await widget.onSeek(Duration(milliseconds: v.toInt()));
-                },
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }
@@ -334,7 +260,7 @@ class _SpeedButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const options = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    const options = PlayerConfig.kSpeedOptions;
     return PopupMenuButton<double>(
       tooltip: '倍速',
       initialValue: speed,

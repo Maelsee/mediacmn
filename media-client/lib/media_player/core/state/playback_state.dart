@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:floating/floating.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -14,6 +13,9 @@ import '../../../core/api_client.dart';
 import '../../../core/playback_history/playback_progress_repository.dart';
 import '../../../core/playback_history/providers.dart';
 import '../../../media_library/media_models.dart';
+import 'episode_navigation_mixin.dart';
+import 'progress_tracker.dart';
+import 'settings_persistence.dart';
 
 class PlaybackSettings {
   /// 是否开启片头片尾跳过。
@@ -347,11 +349,8 @@ final playbackProvider =
   return notifier;
 });
 
-class PlaybackNotifier extends StateNotifier<PlaybackState> {
-  static const _settingsBox = 'player_settings_box';
-  static const _settingsKey = 'playback_settings_v1';
-  static const _playlistModeKey = 'playlist_mode_v1';
-
+class PlaybackNotifier extends StateNotifier<PlaybackState>
+    with EpisodeNavigationMixin {
   final ApiClient api;
   final PlayerServiceBase service;
   final PlayerConfig config;
@@ -370,11 +369,12 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   StreamSubscription? _tracksSub;
   StreamSubscription? _trackSub;
 
-  /// 本地进度保存定时器（用于节流写入）。
-  Timer? _localProgressTimer;
+  /// 进度追踪器（本地保存 + 远端上报）。
+  late final ProgressTracker _progressTracker;
 
-  /// 最近一次保存的进度（毫秒），用于减少重复写入。
-  int _lastSavedPositionMs = -1;
+  /// 设置持久化。
+  late final SettingsPersistence _settingsPersistence;
+
   bool _initialized = false;
 
   /// 记录最近一次打开媒体的时间，用于抑制“切源/切集/重开”过程中误触发的自动下一集。
@@ -391,17 +391,38 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   bool _audioSwitching = false;
 
   /// 路由入参中原始的标题文案（只在初始化时赋值一次，用于降级拼接）。
-  String? _routeTitleHint;
+  @override
+  String? routeTitleHint;
 
-  String? _seriesNameHint;
-  int? _seasonIndexHint;
+  @override
+  String? seriesNameHint;
+
+  @override
+  int? seasonIndexHint;
 
   PlaybackNotifier({
     required this.api,
     required this.service,
     required this.config,
     required this.progressRepository,
-  }) : super(const PlaybackState());
+  }) : super(const PlaybackState()) {
+    _progressTracker = ProgressTracker(repository: progressRepository);
+    _settingsPersistence = SettingsPersistence();
+  }
+
+  /// 从当前 state 构建进度快照。
+  ProgressSnapshot _snapshot() => ProgressSnapshot(
+        fileId: state.fileId,
+        coreId: state.coreId,
+        mediaType: state.mediaType,
+        title: state.title,
+        coverUrl: state.posterUrl,
+        positionMs: state.position.inMilliseconds,
+        durationMs: state.duration == Duration.zero
+            ? null
+            : state.duration.inMilliseconds,
+        playing: state.playing,
+      );
 
   Future<void> initialize({
     required String coreId,
@@ -410,7 +431,13 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     if (_initialized) return;
     _initialized = true;
 
-    await _loadSettings();
+    final globalResult = await _settingsPersistence.loadGlobalSettings();
+    if (globalResult.settings != null) {
+      state = state.copyWith(settings: globalResult.settings);
+    }
+    if (globalResult.playlistMode != null) {
+      state = state.copyWith(playlistMode: globalResult.playlistMode);
+    }
     try {
       await _applyPlaylistModeToService(state.playlistMode);
     } catch (_) {}
@@ -418,21 +445,21 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     final parsedCoreId = int.tryParse(coreId);
     final payload = extra is Map ? extra : const <String, dynamic>{};
 
-    final seriesNameHint =
+    var parsedSeriesName =
         (payload['seriesName'] ?? payload['series_name'])?.toString();
     final seasonIndexHintRaw =
         payload['seasonIndex'] ?? payload['season_index'];
-    int? seasonIndexHint;
+    int? parsedSeasonIndex;
     if (seasonIndexHintRaw is int) {
-      seasonIndexHint = seasonIndexHintRaw;
+      parsedSeasonIndex = seasonIndexHintRaw;
     } else if (seasonIndexHintRaw != null) {
-      seasonIndexHint = int.tryParse('$seasonIndexHintRaw');
+      parsedSeasonIndex = int.tryParse('$seasonIndexHintRaw');
     }
-    if (seriesNameHint != null && seriesNameHint.trim().isNotEmpty) {
-      _seriesNameHint = seriesNameHint.trim();
+    if (parsedSeriesName != null && parsedSeriesName.trim().isNotEmpty) {
+      parsedSeriesName = parsedSeriesName.trim();
     }
-    if (seasonIndexHint != null && seasonIndexHint > 0) {
-      _seasonIndexHint = seasonIndexHint;
+    if (parsedSeasonIndex != null && parsedSeasonIndex > 0) {
+      seasonIndexHint = parsedSeasonIndex;
     }
 
     // 本地播放：在 extra 参数中传入 filePath/path 即可
@@ -468,7 +495,7 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       posterUrl = detail.posterPath ?? detail.backdropPath;
       mediaType = detail.mediaType;
       if (detail.title.trim().isNotEmpty) {
-        _seriesNameHint = detail.title.trim();
+        parsedSeriesName = detail.title.trim();
       }
     } else if (detail is Map) {
       title = (detail['name'] ?? detail['title'])?.toString();
@@ -485,16 +512,16 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
           ? seasonIndexRaw
           : int.tryParse('$seasonIndexRaw');
       if (seriesName != null && seriesName.trim().isNotEmpty) {
-        _seriesNameHint ??= seriesName.trim();
+        parsedSeriesName ??= seriesName.trim();
       }
       if (seasonIndex != null && seasonIndex > 0) {
-        _seasonIndexHint ??= seasonIndex;
+        seasonIndexHint ??= seasonIndex;
       }
     }
 
     // 仅在初始化阶段记录一次路由原始标题，用于后续无系列名/季信息时的降级处理。
     if (title != null && title.trim().isNotEmpty) {
-      _routeTitleHint ??= title.trim();
+      routeTitleHint ??= title.trim();
     }
 
     final candidatesRaw = payload['candidates'];
@@ -553,7 +580,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
       seasonVersionId: seasonVersionId,
     );
 
-    _syncTitleForCurrentEpisode();
+    seriesNameHint = parsedSeriesName;
+    syncTitleForCurrentEpisode();
 
     _bindPlayerStreams();
 
@@ -568,7 +596,7 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
 
     unawaited(_ensureEpisodesLoaded(fileId: fileId));
 
-    _loadVideoSpecificSettings();
+    unawaited(_loadVideoSpecificSettingsFromPersistence());
 
     try {
       // 统一进度获取逻辑：路由参数优先，本地优先，远端兜底。
@@ -625,8 +653,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
             .catchError((_) {}),
       );
 
-      _startLocalProgressSave();
-      _recomputeEpisodeNav();
+      _progressTracker.start(_snapshot);
+      recomputeEpisodeNav();
     } catch (e) {
       state = state.copyWith(loading: false, error: '$e');
     }
@@ -658,8 +686,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     // 不再按媒体类型区分，统一基于 fileId 拉取选集列表，
     // 以兼容“最近观看”等只携带 fileId 的入口，同时支持电影的单集选集展示。
     if (state.episodes.isNotEmpty) {
-      _syncTitleForCurrentEpisode();
-      _recomputeEpisodeNav();
+      syncTitleForCurrentEpisode();
+      recomputeEpisodeNav();
       return;
     }
     if (state.episodesLoading) return;
@@ -674,8 +702,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
         episodesLoading: false,
         episodesError: null,
       );
-      _syncTitleForCurrentEpisode();
-      _recomputeEpisodeNav();
+      syncTitleForCurrentEpisode();
+      recomputeEpisodeNav();
     } catch (e) {
       state = state.copyWith(episodesLoading: false, episodesError: '$e');
     }
@@ -702,9 +730,7 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
 
   Future<void> setFit(BoxFit fit) async {
     state = state.copyWith(fit: fit);
-    // 自动保存视频特定配置（包含 fit）
-    await _saveVideoSpecificSettings(
-        applyToAll: state.settings.applyToAllEpisodes);
+    await _persistVideoSpecificSettings();
   }
 
   /// 设置画面缩放与位置（用于手势缩放/拖动）。
@@ -718,8 +744,7 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
 
   /// 手势结束时保存画面状态
   Future<void> saveVideoTransform() async {
-    await _saveVideoSpecificSettings(
-        applyToAll: state.settings.applyToAllEpisodes);
+    await _persistVideoSpecificSettings();
   }
 
   /// 重置画面缩放与位置。
@@ -729,7 +754,7 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
 
   Future<void> setPlaylistMode(PlaylistMode mode) async {
     state = state.copyWith(playlistMode: mode);
-    await _savePlaylistMode(mode);
+    await _settingsPersistence.savePlaylistMode(mode);
     try {
       await _applyPlaylistModeToService(mode);
     } catch (_) {}
@@ -848,8 +873,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
             )
             .catchError((_) {}),
       );
-      _startLocalProgressSave();
-      _recomputeEpisodeNav();
+      _progressTracker.start(_snapshot);
+      recomputeEpisodeNav();
     } catch (e) {
       state = state.copyWith(loading: false, error: '$e');
     }
@@ -863,9 +888,9 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   }
 
   Future<void> playPrevEpisode() async {
-    final next = _resolveAdjacentEpisode(previous: true);
+    final next = resolveAdjacentEpisode(previous: true);
     if (next == null) return;
-    final episode = _findEpisodeByFirstAssetFileId(next);
+    final episode = findEpisodeByFirstAssetFileId(next);
     if (episode != null) {
       await _openEpisode(episode);
       return;
@@ -874,9 +899,9 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   }
 
   Future<void> playNextEpisode() async {
-    final next = _resolveAdjacentEpisode(previous: false);
+    final next = resolveAdjacentEpisode(previous: false);
     if (next == null) return;
-    final episode = _findEpisodeByFirstAssetFileId(next);
+    final episode = findEpisodeByFirstAssetFileId(next);
     if (episode != null) {
       await _openEpisode(episode);
       return;
@@ -885,17 +910,16 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   }
 
   Future<void> updateSettings(PlaybackSettings settings) async {
-    // 检查 applyToAllEpisodes 是否发生变化，或者片头片尾时间是否变化
     final bool specificChanged =
         settings.introTime != state.settings.introTime ||
             settings.outroTime != state.settings.outroTime ||
             settings.applyToAllEpisodes != state.settings.applyToAllEpisodes;
 
     state = state.copyWith(settings: settings);
-    await _saveSettings(settings);
+    await _settingsPersistence.saveGlobalSettings(settings);
 
     if (specificChanged) {
-      await _saveVideoSpecificSettings(applyToAll: settings.applyToAllEpisodes);
+      await _persistVideoSpecificSettings();
     }
   }
 
@@ -906,8 +930,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
   }
 
   void _shutdown() {
-    unawaited(_reportCloseIfNeeded().catchError((_) {}));
-    _localProgressTimer?.cancel();
+    unawaited(_progressTracker.reportClose(_snapshot()).catchError((_) {}));
+    _progressTracker.dispose();
     _playingSub?.cancel();
     _bufferingSub?.cancel();
     _posSub?.cancel();
@@ -937,7 +961,7 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     _playingSub = service.playingStream.listen((v) {
       state = state.copyWith(playing: v);
       if (!v) {
-        unawaited(_saveLocalProgressNow().catchError((_) {}));
+        unawaited(_progressTracker.saveLocalProgress(_snapshot()).catchError((_) {}));
       }
     });
     _bufferingSub = service.bufferingStream.listen((v) {
@@ -993,61 +1017,6 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     });
   }
 
-  /// 启动本地进度保存定时器。
-  ///
-  /// 说明：
-  /// - 播放过程中高频写本地，提升离线续播与最近观看进度的实时性。
-  /// - 不在该定时器内进行远端上报，远端上报由 open/close 关键点触发。
-  void _startLocalProgressSave() {
-    _localProgressTimer?.cancel();
-    _localProgressTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
-      if (!state.playing) return;
-      await _saveLocalProgressNow();
-    });
-  }
-
-  /// 将当前播放状态写入本地进度。
-  Future<void> _saveLocalProgressNow() async {
-    final fileId = state.fileId;
-    if (fileId == null) return;
-
-    final positionMs = state.position.inMilliseconds;
-    if (positionMs == _lastSavedPositionMs) return;
-    _lastSavedPositionMs = positionMs;
-
-    final durationMs =
-        state.duration == Duration.zero ? null : state.duration.inMilliseconds;
-
-    await progressRepository.saveLocalProgress(
-      fileId: fileId,
-      coreId: state.coreId,
-      mediaType: state.mediaType,
-      positionMs: positionMs,
-      durationMs: durationMs,
-      title: state.title,
-      coverUrl: state.posterUrl,
-    );
-  }
-
-  /// 在退出播放器时上报一次 close 关键点。
-  Future<void> _reportCloseIfNeeded() async {
-    final fileId = state.fileId;
-    if (fileId == null) return;
-
-    final durationMs =
-        state.duration == Duration.zero ? null : state.duration.inMilliseconds;
-
-    await progressRepository.enqueueCloseReport(
-      fileId: fileId,
-      coreId: state.coreId,
-      mediaType: state.mediaType,
-      positionMs: state.position.inMilliseconds,
-      durationMs: durationMs,
-      title: state.title,
-      coverUrl: state.posterUrl,
-    );
-  }
-
   /// 打开指定选集。
   ///
   /// 规则：默认选择该集的第一个资源作为播放文件，并刷新候选资源列表。
@@ -1083,7 +1052,7 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
         videoScale: 1.0,
         videoOffset: Offset.zero,
       );
-      _syncTitleForCurrentEpisode();
+      syncTitleForCurrentEpisode();
       final resumeMs = restoreProgress
           ? await progressRepository.getResumePositionMs(fileId: fileId)
           : null;
@@ -1126,143 +1095,11 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
             )
             .catchError((_) {}),
       );
-      _startLocalProgressSave();
-      _recomputeEpisodeNav();
+      _progressTracker.start(_snapshot);
+      recomputeEpisodeNav();
     } catch (e) {
       state = state.copyWith(loading: false, error: '$e');
     }
-  }
-
-  int? _currentSeasonNumber() {
-    final detail = state.detail;
-    if (detail == null) {
-      // 无详情对象时，优先使用路由携带的季序号提示。
-      if (_seasonIndexHint != null && _seasonIndexHint! > 0) {
-        return _seasonIndexHint;
-      }
-      // 若仍然缺失，但媒体类型为剧集，则默认按第 1 季展示，
-      // 以提升“最近观看”等入口下的可读性。
-      if (state.mediaType == 'tv' || state.mediaType == 'tv_episode') {
-        return 1;
-      }
-      return null;
-    }
-    if (detail.mediaType != 'tv') {
-      return null;
-    }
-    final vId = state.seasonVersionId;
-    if (vId == null) {
-      return _seasonIndexHint;
-    }
-    for (final season in detail.seasons ?? const []) {
-      for (final version in season.versions ?? const []) {
-        if (version.id == vId) {
-          return season.seasonNumber;
-        }
-      }
-    }
-    return _seasonIndexHint;
-  }
-
-  String _composeEpisodeTitle(EpisodeDetail episode) {
-    String seriesName = '';
-    final detail = state.detail;
-    if (detail != null && detail.title.trim().isNotEmpty) {
-      seriesName = detail.title.trim();
-    } else if (_seriesNameHint != null && _seriesNameHint!.trim().isNotEmpty) {
-      seriesName = _seriesNameHint!.trim();
-    }
-
-    final parts = <String>[];
-    if (seriesName.isNotEmpty) {
-      parts.add(seriesName);
-    }
-
-    final seasonNo = _currentSeasonNumber();
-    if (seasonNo != null && seasonNo > 0) {
-      parts.add('第$seasonNo季');
-    }
-
-    final epNo = episode.episodeNumber;
-    if (epNo > 0) {
-      parts.add('第$epNo集');
-    }
-
-    var epTitle = episode.title.trim();
-    if (epTitle.isNotEmpty) {
-      final prefix = RegExp(r'^第\d+集\s*');
-      epTitle = epTitle.replaceFirst(prefix, '');
-      if (epTitle.isNotEmpty) {
-        parts.add(epTitle);
-      }
-    }
-
-    return parts.isEmpty ? '' : parts.join(' ');
-  }
-
-  void _syncTitleForCurrentEpisode() {
-    final keyFileId = state.currentEpisodeFileId ?? state.fileId;
-    if (keyFileId == null) return;
-
-    final episode = _findEpisodeByFirstAssetFileId(keyFileId);
-    if (episode == null) return;
-
-    final nextTitle = _composeEpisodeTitle(episode);
-    if (nextTitle.isEmpty) return;
-    if (state.title == nextTitle) return;
-
-    state = state.copyWith(title: nextTitle);
-  }
-
-  /// 根据当前文件 ID 定位对应的选集条目。
-  ///
-  /// 优先按“每集首个资源 fileId”匹配，保证与上一集/下一集导航使用的
-  /// 键一致；若未命中（例如从“最近观看”入口进入时，fileId 可能是某集
-  /// 的非首个资源），则回退在该集的所有资源中查找，确保仍能正确识别
-  /// 当前所属的剧集。
-  EpisodeDetail? _findEpisodeByFirstAssetFileId(int fileId) {
-    // 第一步：按首个资源 fileId 快速匹配，兼容详情页传入的标准场景。
-    for (final e in state.episodes) {
-      if (e.assets.isEmpty) continue;
-      if (e.assets.first.fileId == fileId) return e;
-    }
-
-    // 第二步：兼容“最近观看”等入口，fileId 不一定等于首个资源 fileId，
-    // 在所有资源中做一次完整扫描以反查所属剧集。
-    for (final e in state.episodes) {
-      for (final a in e.assets) {
-        if (a.fileId == fileId) return e;
-      }
-    }
-
-    return null;
-  }
-
-  /// 获取用于上一集/下一集的 fileId 序列。
-  ///
-  /// 优先使用 state.episodes（选集面板的数据源），
-  /// 若为空则回退使用 detail.seasons 结构。
-  List<int> _episodeFileIdList() {
-    final fromState = <int>[];
-    for (final e in state.episodes) {
-      if (e.assets.isEmpty) continue;
-      fromState.add(e.assets.first.fileId);
-    }
-    if (fromState.isNotEmpty) return fromState;
-
-    final detail = state.detail;
-    if (detail == null || detail.mediaType == 'movie') return const [];
-
-    final fromDetail = <int>[];
-    for (final season in detail.seasons ?? const []) {
-      for (final version in season.versions ?? const []) {
-        for (final ep in version.episodes) {
-          if (ep.assets.isEmpty) continue;
-          fromDetail.add(ep.assets.first.fileId);
-        }
-      }
-    }
-    return fromDetail;
   }
 
   void _maybeApplySkipIntroOutro() {
@@ -1318,251 +1155,38 @@ class PlaybackNotifier extends StateNotifier<PlaybackState> {
     }
   }
 
-  Future<void> _loadSettings() async {
-    try {
-      final box = await Hive.openBox(_settingsBox);
-      final raw = box.get(_settingsKey);
-      if (raw is Map) {
-        final m = raw.cast<String, dynamic>();
-        state = state.copyWith(
-          settings: state.settings.copyWith(
-            skipIntroOutro: (m['skip'] as bool?) ?? false,
-            subtitleFontSize: (m['sub_size'] as num?)?.toDouble() ?? 40.0,
-            subtitleBottomPadding:
-                (m['sub_padding'] as num?)?.toDouble() ?? 24.0,
-          ),
-        );
-      }
-
-      final rawMode = box.get(_playlistModeKey);
-      final mode = _parsePlaylistMode(rawMode);
-      state = state.copyWith(playlistMode: mode);
-    } catch (_) {}
-  }
-
-  /// 加载当前视频或季度的片头片尾及画面配置（缩放/比例）。
-  ///
-  /// 优先级：单集配置 > 季度/系列配置 > 全局默认。
-  Future<void> _loadVideoSpecificSettings() async {
-    final fileId = state.fileId;
-    final seasonId = state.seasonVersionId;
-    if (fileId == null) return;
-
-    try {
-      final box = await Hive.openBox(_settingsBox);
-
-      // 1. 尝试加载单集配置
-      final fileKey = 'video_settings_file_$fileId';
-      final fileData = box.get(fileKey);
-
-      if (fileData is Map) {
-        final m = fileData.cast<String, dynamic>();
-        state = state.copyWith(
-          settings: state.settings.copyWith(
-            introTime: Duration(milliseconds: (m['intro_ms'] as int?) ?? 0),
-            outroTime: Duration(milliseconds: (m['outro_ms'] as int?) ?? 0),
-            applyToAllEpisodes: false,
-          ),
-          fit: _parseBoxFit(m['fit']),
-          videoScale: (m['scale'] as num?)?.toDouble() ?? 1.0,
-          videoOffset: Offset(
-            (m['offset_dx'] as num?)?.toDouble() ?? 0.0,
-            (m['offset_dy'] as num?)?.toDouble() ?? 0.0,
-          ),
-        );
-        return;
-      }
-
-      // 2. 尝试加载季度/系列通用配置
-      if (seasonId != null) {
-        final seasonKey = 'video_settings_season_$seasonId';
-        final seasonData = box.get(seasonKey);
-
-        if (seasonData is Map) {
-          final m = seasonData.cast<String, dynamic>();
-          state = state.copyWith(
-            settings: state.settings.copyWith(
-              introTime: Duration(milliseconds: (m['intro_ms'] as int?) ?? 0),
-              outroTime: Duration(milliseconds: (m['outro_ms'] as int?) ?? 0),
-              applyToAllEpisodes: true,
-            ),
-            fit: _parseBoxFit(m['fit']),
-            videoScale: (m['scale'] as num?)?.toDouble() ?? 1.0,
-            videoOffset: Offset(
-              (m['offset_dx'] as num?)?.toDouble() ?? 0.0,
-              (m['offset_dy'] as num?)?.toDouble() ?? 0.0,
-            ),
-          );
-          return;
-        }
-      }
-    } catch (_) {}
-  }
-
-  /// 保存视频特定的配置（片头片尾、缩放、比例）。
-  ///
-  /// 根据 [applyToAll] 参数决定是保存为单集配置还是季度配置。
-  Future<void> _saveVideoSpecificSettings({bool applyToAll = false}) async {
-    final fileId = state.fileId;
-    final seasonId = state.seasonVersionId;
-    if (fileId == null) return;
-
-    try {
-      final box = await Hive.openBox(_settingsBox);
-
-      final data = {
-        'intro_ms': state.settings.introTime.inMilliseconds,
-        'outro_ms': state.settings.outroTime.inMilliseconds,
-        'fit': state.fit.name,
-        'scale': state.videoScale,
-        'offset_dx': state.videoOffset.dx,
-        'offset_dy': state.videoOffset.dy,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
-      };
-
-      if (applyToAll && seasonId != null) {
-        // 保存为季度配置，并清除当前集的单集配置以避免冲突
-        await box.put('video_settings_season_$seasonId', data);
-        await box.delete('video_settings_file_$fileId');
-      } else {
-        // 仅保存为单集配置
-        await box.put('video_settings_file_$fileId', data);
-      }
-    } catch (_) {}
-  }
-
-  BoxFit _parseBoxFit(String? name) {
-    if (name == null) return BoxFit.contain;
-    return BoxFit.values.firstWhere(
-      (e) => e.name == name,
-      orElse: () => BoxFit.contain,
+  /// 从持久化层加载视频特定设置并应用到 state。
+  Future<void> _loadVideoSpecificSettingsFromPersistence() async {
+    final result = await _settingsPersistence.loadVideoSpecificSettings(
+      fileId: state.fileId,
+      seasonVersionId: state.seasonVersionId,
     );
-  }
-
-  Future<void> _saveSettings(PlaybackSettings settings) async {
-    try {
-      final box = await Hive.openBox(_settingsBox);
-      // 仅保存全局通用设置，视频特定设置由 _saveVideoSpecificSettings 处理
-      final globalData = {
-        'skip': settings.skipIntroOutro,
-        'sub_size': settings.subtitleFontSize,
-        'sub_padding': settings.subtitleBottomPadding,
-      };
-      // 保留旧数据中的其他字段
-      final raw = box.get(_settingsKey);
-      if (raw is Map) {
-        final m = raw.cast<String, dynamic>();
-        m.addAll(globalData);
-        await box.put(_settingsKey, m);
-      } else {
-        await box.put(_settingsKey, globalData);
-      }
-    } catch (_) {}
-  }
-
-  /// 解析本地存储的播放模式。
-  ///
-  /// 兼容历史版本可能存入的 int（0/1/2）或 string（枚举 name）。
-  PlaylistMode _parsePlaylistMode(Object? raw) {
-    if (raw is String) {
-      for (final v in PlaylistMode.values) {
-        if (v.name == raw) return v;
-      }
-      return PlaylistMode.none;
-    }
-    if (raw is int) {
-      if (raw >= 0 && raw < PlaylistMode.values.length) {
-        return PlaylistMode.values[raw];
-      }
-      return PlaylistMode.none;
-    }
-    return PlaylistMode.none;
-  }
-
-  Future<void> _savePlaylistMode(PlaylistMode mode) async {
-    try {
-      final box = await Hive.openBox(_settingsBox);
-      await box.put(_playlistModeKey, mode.name);
-    } catch (_) {}
-  }
-
-  void _recomputeEpisodeNav() {
-    // 若没有任何选集列表（既没有 state.episodes，也无法从 detail 推导），
-    // 则认为当前媒体不支持上一集/下一集导航，直接关闭连续播放导航能力。
-    final current = state.fileId ?? state.currentEpisodeFileId;
-    if (current == null) {
-      state = state.copyWith(hasPrevEpisode: false, hasNextEpisode: false);
-      return;
-    }
-
-    final episodeFileIds = _episodeFileIdList();
-    if (episodeFileIds.length <= 1) {
-      state = state.copyWith(hasPrevEpisode: false, hasNextEpisode: false);
-      return;
-    }
-
-    // 默认按 fileId 在“首个资源 fileId 列表”中的位置计算上一集/下一集。
-    var idx = episodeFileIds.indexOf(current);
-
-    // 若未命中（例如当前播放的是该集的第二个或第三个资源），则退回
-    // 通过选集列表查找当前 fileId 所属的剧集索引，保证“最近观看”等
-    // 入口同样可以正确计算上一集/下一集。
-    if (idx == -1) {
-      final episodes = state.episodes;
-      for (var i = 0; i < episodes.length; i++) {
-        final ep = episodes[i];
-        for (final a in ep.assets) {
-          if (a.fileId == current) {
-            idx = i;
-            break;
-          }
-        }
-        if (idx != -1) break;
-      }
-      if (idx == -1) {
-        state = state.copyWith(hasPrevEpisode: false, hasNextEpisode: false);
-        return;
-      }
-    }
+    if (result.introTime == null && result.outroTime == null) return;
 
     state = state.copyWith(
-      hasPrevEpisode: idx > 0,
-      hasNextEpisode: idx + 1 < episodeFileIds.length,
+      settings: state.settings.copyWith(
+        introTime: result.introTime ?? state.settings.introTime,
+        outroTime: result.outroTime ?? state.settings.outroTime,
+        applyToAllEpisodes:
+            result.applyToAllEpisodes ?? state.settings.applyToAllEpisodes,
+      ),
+      fit: result.fit ?? state.fit,
+      videoScale: result.videoScale ?? state.videoScale,
+      videoOffset: result.videoOffset ?? state.videoOffset,
     );
   }
 
-  int? _resolveAdjacentEpisode({required bool previous}) {
-    // 仅当存在至少两集可导航时才计算上一集/下一集，避免在单集场景下
-    // 误触发连续播放逻辑。
-    final current = state.fileId ?? state.currentEpisodeFileId;
-    if (current == null) return null;
-
-    final episodeFileIds = _episodeFileIdList();
-    if (episodeFileIds.length <= 1) return null;
-
-    // 先按“首个资源 fileId 列表”查找当前索引。
-    var idx = episodeFileIds.indexOf(current);
-
-    // 若未命中，则根据选集列表中任意资源 fileId 反查索引，
-    // 解决“最近观看”入口 fileId 不等于首个资源 fileId 时
-    // 连续播放无法找到下一集的问题。
-    if (idx == -1) {
-      final episodes = state.episodes;
-      for (var i = 0; i < episodes.length; i++) {
-        final ep = episodes[i];
-        for (final a in ep.assets) {
-          if (a.fileId == current) {
-            idx = i;
-            break;
-          }
-        }
-        if (idx != -1) break;
-      }
-      if (idx == -1) return null;
-    }
-
-    final nextIdx = previous ? idx - 1 : idx + 1;
-    if (nextIdx < 0 || nextIdx >= episodeFileIds.length) return null;
-    return episodeFileIds[nextIdx];
+  /// 将当前视频特定设置持久化。
+  Future<void> _persistVideoSpecificSettings() async {
+    await _settingsPersistence.saveVideoSpecificSettings(
+      fileId: state.fileId,
+      seasonVersionId: state.seasonVersionId,
+      settings: state.settings,
+      fit: state.fit,
+      videoScale: state.videoScale,
+      videoOffset: state.videoOffset,
+      applyToAll: state.settings.applyToAllEpisodes,
+    );
   }
+
 }

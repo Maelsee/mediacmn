@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
+import '../widgets/panel_list_item.dart';
+
 /// 画质选择面板。
 class QualityPanel extends StatefulWidget {
   /// 可用画质轨道列表。
@@ -95,34 +97,19 @@ class _QualityPanelState extends State<QualityPanel> {
                     final quality = _visibleQualities[index];
                     // 使用 ID 对比确保选中状态正确
                     final isSelected = quality.id == widget.currentQuality.id;
-                    return GestureDetector(
+                    return PanelListItem(
+                      isSelected: isSelected,
                       onTap: () => widget.onQualitySelected(quality),
-                      child: Container(
-                        // margin: const EdgeInsets.symmetric(vertical: 4),
-                        // padding: const EdgeInsets.symmetric(vertical: 14),
-                        margin: const EdgeInsets.symmetric(
-                            vertical: 4, horizontal: 16),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF666666).withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(12),
-                          border: isSelected
-                              ? Border.all(
-                                  color: const Color(0xFFFFE796), width: 1)
-                              : null,
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          _getTrackName(quality),
-                          style: TextStyle(
-                            color: isSelected
-                                ? const Color(0xFFFFE796)
-                                : Colors.white,
-                            fontSize: 14,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
+                      child: Text(
+                        _getTrackName(quality),
+                        style: TextStyle(
+                          color: isSelected
+                              ? const Color(0xFFFFE796)
+                              : Colors.white,
+                          fontSize: 14,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
                       ),
                     );

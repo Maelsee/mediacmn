@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:media_client/media_player/utils/track_formatter.dart';
 import 'package:media_kit/media_kit.dart';
 
+import '../widgets/panel_list_item.dart';
+
 /// 移动端字幕面板。
 ///
 /// 字幕数据来自播放器的 `tracksStream`。
@@ -283,26 +285,16 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
 
   Widget _buildSubtitleOption(SubtitleTrack track) {
     final isSelected = track.id == widget.selectedSubtitle.id;
-    return GestureDetector(
+    return PanelListItem(
+      isSelected: isSelected,
       onTap: () => widget.onSubtitleSelected(track),
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF666666).withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(12),
-          border: isSelected
-              ? Border.all(color: const Color(0xFFFFE796), width: 1)
-              : null,
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          TrackFormatter.subtitle(track),
-          style: TextStyle(
-            color: isSelected ? const Color(0xFFFFE796) : Colors.white70,
-            fontSize: 14,
-            fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
-          ),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      child: Text(
+        TrackFormatter.subtitle(track),
+        style: TextStyle(
+          color: isSelected ? const Color(0xFFFFE796) : Colors.white70,
+          fontSize: 14,
+          fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
         ),
       ),
     );

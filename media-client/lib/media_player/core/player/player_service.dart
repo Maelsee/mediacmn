@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'mpv_speed_profile.dart';
 import 'player_config.dart';
 
 /// 播放器服务抽象。
@@ -471,126 +472,13 @@ class PlayerService implements PlayerServiceBase {
   @override
   Future<void> setVolume(double volume) => _player.setVolume(volume);
   @override
-  // Future<void> setSpeed(double speed) async {
-  //   /// 动态调整缓冲区大小以适应不同播放速度
-  //   final platform = _player.platform as dynamic;
-
-  //   if (speed > 1.0) {
-  //     /// 高速播放时启用严格同步模式
-  //     _debugLog('高速播放(${speed}x)，启用音画同步优化模式');
-
-  //     // 视频严格跟随音频，避免音画不同步
-  //     await platform.setProperty('video-sync', 'audio');
-  //     // 开启音调修正，确保倍速播放时音调不变（避免变声）
-  //     await platform.setProperty('audio-pitch-correction', 'yes');
-  //     // 高精度seek确保位置准确
-  //     await platform.setProperty('hr-seek', 'always');
-  //     // 避免缓存导致的同步延迟
-  //     await platform.setProperty('cache-pause', 'no');
-
-  //     // 根据倍速动态调整丢帧策略
-  //     if (speed >= 2.0) {
-  //       // 渲染级丢帧，优先保证音频流畅
-  //       await platform.setProperty('framedrop', 'vo');
-  //       // 降低视频延迟
-  //       await platform.setProperty('video-latency-hacks', 'yes');
-  //       // 高速播放时减少缓冲区避免延迟
-  //       await platform.setProperty('cache', 'no');
-  //       await platform.setProperty('demuxer-max-bytes', '50M');
-  //       await platform.setProperty('demuxer-max-back-bytes', '25M');
-  //     }
-  //   } else {
-  //     /// 正常速度时恢复默认同步策略
-  //     _debugLog('恢复正常速度模式');
-  //     await platform.setProperty('video-sync', 'display-resample');
-  //     await platform.setProperty('audio-pitch-correction', 'yes');
-  //     await platform.setProperty('framedrop', 'decoder');
-  //     await platform.setProperty('video-latency-hacks', 'no');
-  //     // 恢复默认缓存策略
-  //     await platform.setProperty('cache', 'auto');
-  //     await platform.setProperty('demuxer-max-bytes', '200M');
-  //     await platform.setProperty('demuxer-max-back-bytes', '100M');
-  //   }
-
-  //   await _player.setRate(speed);
-  // }
   @override
   Future<void> setSpeed(double speed) async {
-    final platform = _player.platform as dynamic;
-
-    if (speed > 1.0) {
-      _debugLog('高速播放(${speed}x)，启用性能优先模式');
-
-      // 1. 同步策略：保持 display-resample
-      // 这是以显示器刷新率为基准重采样音频，比 audio 模式在高速时更平滑
-      await platform.setProperty('video-sync', 'display-resample');
-
-      // 2. 音调修正：必须开启，否则倍速声音像花栗鼠
-      await platform.setProperty('audio-pitch-correction', 'yes');
-
-      // 3. 【修正点】移除 hr-seek=always
-      // hr-seek 是用于精确跳转（Seek）的，播放过程中开启会增加额外开销，且对音画同步帮助不大。
-      // 恢复为默认或设为 no，让播放器自然流畅运行。
-      // await platform.setProperty('hr-seek', 'always'); // <--- 删掉这行
-
-      // 4. 【修正点】绝对不要关闭缓存
-      // 4K 2x 需要巨大的数据吞吐量。Cache=no 会导致数据供给不足，解码器空转而卡顿。
-      // 保持开启，甚至在高速下建议稍微增大缓冲，以应对读取抖动。
-      await platform.setProperty('cache', 'yes');
-      // 确保缓存不会暂停（这是对的）
-      await platform.setProperty('cache-pause', 'no');
-
-      // 5. 针对倍速的丢帧与解码优化
-      if (speed >= 2.0) {
-        _debugLog('2倍速+：激进解码优化');
-
-        // 解码器层丢帧：跟不上就直接丢，保证音频时间轴不卡
-        await platform.setProperty('framedrop', 'decoder');
-
-        // 跳过往复滤波器优化：
-        // 原代码用了 'all'，画质太差（全是马赛克）。
-        // 'nonref' 只跳过非参考帧的滤波，能在保留大部分画质的同时显著降低 CPU/GPU 负载。
-        await platform.setProperty('vd-lavc-skiploopfilter', 'nonref');
-
-        // 允许解码器进行非标准的快速优化
-        await platform.setProperty('vd-lavc-fast', 'yes');
-
-        // 针对特定 GPU 驱动的延迟优化
-        await platform.setProperty('video-latency-hacks', 'yes');
-
-        // 【修正点】增大缓冲区，而不是减小
-        // 2x 速度下，消费数据的速度翻倍。
-        // 原代码设为 50M 太小了，对于高码率 4K 可能只够几秒，一旦磁盘读取稍微慢一点就卡顿。
-        // 建议设置为较大的值（如 150M 或更高），确保持续有数据喂给解码器。
-        await platform.setProperty('demuxer-max-bytes', '250M');
-        await platform.setProperty('demuxer-max-back-bytes', '50M');
-      } else {
-        // 1.0x - 2.0x 之间的温和加速
-        await platform.setProperty('framedrop', 'decoder'); // 保持 decoder 模式
-        await platform.setProperty('vd-lavc-skiploopfilter', 'nonref'); // 轻度跳帧
-        await platform.setProperty('vd-lavc-fast', 'no'); // 恢复正常解码精度
-      }
-    } else {
-      /// 正常速度：恢复高画质体验
-      _debugLog('恢复正常速度模式');
-
-      await platform.setProperty('video-sync', 'display-resample');
-      await platform.setProperty('audio-pitch-correction', 'yes');
-
-      // 正常速度下也可以允许轻微丢帧，但优先保证画质
-      await platform.setProperty('framedrop', 'decoder');
-
-      // 恢复完整滤波器，画质最清晰
-      await platform.setProperty('vd-lavc-skiploopfilter', 'default'); // 或 'no'
-      await platform.setProperty('vd-lavc-fast', 'no');
-      await platform.setProperty('video-latency-hacks', 'no');
-
-      // 正常速度下可以使用默认缓存策略，或者保持一个较大的缓存以备不时之需
-      await platform.setProperty('cache', 'auto');
-      await platform.setProperty('demuxer-max-bytes', '200M');
-    }
-
-    // 最后设置播放速度
+    await MpvSpeedProfile.apply(
+      _player.platform as dynamic,
+      speed,
+      _debugLog,
+    );
     await _player.setRate(speed);
   }
 

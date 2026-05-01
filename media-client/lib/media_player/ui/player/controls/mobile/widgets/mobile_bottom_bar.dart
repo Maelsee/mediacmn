@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../../utils/player_utils.dart';
+
 class MobileBottomBar extends StatefulWidget {
   final bool isPlaying;
   final Duration position;
@@ -45,15 +47,6 @@ class _MobileBottomBarState extends State<MobileBottomBar> {
   /// 进度条拖动中的临时值（毫秒）。
   double _dragValue = 0.0;
 
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    final seconds = duration.inSeconds.remainder(60);
-    return hours > 0
-        ? '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}'
-        : '${twoDigits(minutes)}:${twoDigits(seconds)}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +113,7 @@ class _MobileBottomBarState extends State<MobileBottomBar> {
     return Row(
       children: [
         Text(
-          _formatDuration(displayTime),
+          formatDuration(displayTime),
           style: const TextStyle(color: Colors.white, fontSize: 12),
         ),
         Expanded(
@@ -158,7 +151,7 @@ class _MobileBottomBarState extends State<MobileBottomBar> {
           ),
         ),
         Text(
-          _formatDuration(widget.duration),
+          formatDuration(widget.duration),
           style: const TextStyle(color: Colors.white, fontSize: 12),
         ),
       ],
