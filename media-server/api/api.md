@@ -174,12 +174,11 @@ get /api/danmu/{episode_id}
 post /api/danmu/{episode_id}/next-segment
 参数：
 {
-  "segment": {
-    "type": "string",
-    "segment_start": int,
-    "segment_end": int,
-    "url": "string"
-  },
+
+  "type": "string",
+  "segment_start": int,
+  "segment_end": int,
+  "url": "string"
   "episode_id": optional("string"),
   "format": optional("json"/"xml")
 }
@@ -201,6 +200,10 @@ post /api/danmu/{episode_id}/next-segment
 }
 ```
 /api/danmu/match/bind/{file_id}
+参数：
+
+返回：
+
 ```json
 {
   "id": 2,

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../provider/danmu_provider.dart';
+import '../models/danmu_models.dart';
 import 'danmu_search_page.dart';
+import 'danmu_settings_panel.dart';
 
 class DanmuPanel extends ConsumerWidget {
   final String fileId;
@@ -17,15 +19,15 @@ class DanmuPanel extends ConsumerWidget {
       color: const Color(0xFF1E1E1E),
       child: Column(
         children: [
-          // ---- 开关 + 透明度 ----
-          _buildToggleRow(state, notifier),
+          // ---- 开关 + 设置按钮 ----
+          _buildToggleRow(context, state, notifier),
 
           const Divider(color: Colors.white12),
 
           // ---- 匹配来源列表 ----
           if (state.loading)
             const Expanded(child: Center(child: CircularProgressIndicator()))
-          else if (state.sources.isNotEmpty)
+          else if (state.sources.isNotEmpty || state.manualSource != null)
             Expanded(child: _buildSourceList(state, notifier))
           else
             const Expanded(
@@ -56,7 +58,8 @@ class DanmuPanel extends ConsumerWidget {
     );
   }
 
-  Widget _buildToggleRow(DanmuState state, DanmuNotifier notifier) {
+  Widget _buildToggleRow(
+      BuildContext context, DanmuState state, DanmuNotifier notifier) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
@@ -69,24 +72,42 @@ class DanmuPanel extends ConsumerWidget {
             activeThumbColor: const Color(0xFFFFE796),
             onChanged: (_) => notifier.toggle(),
           ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white54, size: 20),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            onPressed: () => _openSettingsPanel(context),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildSourceList(DanmuState state, DanmuNotifier notifier) {
+    // 合并自动匹配源 + 手动源
+    final allSources = <DanmuSource>[
+      ...state.sources,
+      if (state.manualSource != null &&
+          !state.sources
+              .any((s) => s.episodeId == state.manualSource!.episodeId))
+        state.manualSource!,
+    ];
+
     return ListView.builder(
-      itemCount: state.sources.length,
+      itemCount: allSources.length,
       itemBuilder: (context, index) {
-        final source = state.sources[index];
+        final source = allSources[index];
         final isSelected = source.episodeId == state.selectedSource?.episodeId;
+        final isManual = state.manualSource != null &&
+            source.episodeId == state.manualSource!.episodeId;
         return GestureDetector(
           onTap: () => notifier.selectSource(source),
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF666666).withAlpha(76), // 0.3
+              color: const Color(0xFF666666).withAlpha(76),
               borderRadius: BorderRadius.circular(12),
               border: isSelected
                   ? Border.all(color: const Color(0xFFFFE796), width: 1.5)
@@ -109,17 +130,37 @@ class DanmuPanel extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        source.animeTitle,
-                        style: TextStyle(
-                          color: isSelected
-                              ? const Color(0xFFFFE796)
-                              : Colors.white,
-                          fontSize: 14,
-                          fontWeight: isSelected ? FontWeight.bold : null,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          if (isManual)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 1),
+                              margin: const EdgeInsets.only(right: 6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF4FC3F7).withAlpha(51),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text('手动',
+                                  style: TextStyle(
+                                      color: Color(0xFF4FC3F7), fontSize: 10)),
+                            ),
+                          Expanded(
+                            child: Text(
+                              source.animeTitle,
+                              style: TextStyle(
+                                color: isSelected
+                                    ? const Color(0xFFFFE796)
+                                    : Colors.white,
+                                fontSize: 14,
+                                fontWeight:
+                                    isSelected ? FontWeight.bold : null,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -142,5 +183,14 @@ class DanmuPanel extends ConsumerWidget {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => DanmuSearchPage(fileId: fileId),
     ));
+  }
+
+  void _openSettingsPanel(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => DanmuSettingsPanel(fileId: fileId),
+    );
   }
 }

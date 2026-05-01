@@ -28,6 +28,9 @@ class DanmuState {
   // 绑定
   final DanmuBinding? binding;
 
+  // 手动搜索选中的源
+  final DanmuSource? manualSource;
+
   const DanmuState({
     this.enabled = false,
     this.loading = false,
@@ -41,6 +44,7 @@ class DanmuState {
     this.searchResults = const [],
     this.searchLoading = false,
     this.binding,
+    this.manualSource,
   });
 
   DanmuState copyWith({
@@ -56,6 +60,8 @@ class DanmuState {
     List<DanmuSearchItem>? searchResults,
     bool? searchLoading,
     DanmuBinding? binding,
+    DanmuSource? manualSource,
+    bool clearManualSource = false,
   }) =>
       DanmuState(
         enabled: enabled ?? this.enabled,
@@ -70,6 +76,7 @@ class DanmuState {
         searchResults: searchResults ?? this.searchResults,
         searchLoading: searchLoading ?? this.searchLoading,
         binding: binding ?? this.binding,
+        manualSource: clearManualSource ? null : (manualSource ?? this.manualSource),
       );
 }
 
@@ -96,11 +103,8 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
           'danmuData=${result.danmuData != null ? '${result.danmuData!.count} comments' : 'null'}, '
           'binding=${result.binding != null}');
       final engine = DanmuController();
-      if (result.danmuData != null) {
-        engine.loadDanmuData(result.danmuData!);
-        engine.setOnNeedLoadSegment(_loadSegment);
-      }
       _engine = engine;
+      _applyDanmuData(result.danmuData);
       state = state.copyWith(
         loading: false,
         matchResult: result,
@@ -128,7 +132,7 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
     }
   }
 
-  /// 选择不同的源
+  /// 选择不同的源（自动匹配列表中的源）
   Future<void> selectSource(DanmuSource source) async {
     // ignore: avoid_print
     print('[Danmu] selectSource: episodeId=${source.episodeId}, '
@@ -136,14 +140,12 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
     state = state.copyWith(loading: true, selectedSource: source);
     try {
       final data = await _api.getDanmuByEpisode(source.episodeId, _fileId);
-      _engine?.loadDanmuData(data);
+      _applyDanmuData(data);
       state = state.copyWith(
         loading: false,
         danmuData: data,
         totalDanmuCount: data.count,
       );
-      // Auto save binding when user selects a different source
-      await _api.saveDanmuBinding(_fileId, source.episodeId);
     } catch (e) {
       state = state.copyWith(loading: false, error: e.toString());
     }
@@ -160,24 +162,64 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
     }
   }
 
-  /// 手动选择 bangumi episode
-  Future<void> selectEpisode(int episodeId) async {
+  /// 手动选择 bangumi episode（带 bangumi 信息，用于面板展示）
+  Future<void> selectEpisodeFromBangumi({
+    required int episodeId,
+    required int animeId,
+    required String animeTitle,
+    required String episodeTitle,
+    required String type,
+    required String typeDescription,
+    required String imageUrl,
+  }) async {
     // ignore: avoid_print
-    print('[Danmu] selectEpisode: episodeId=$episodeId');
-    state = state.copyWith(loading: true);
+    print('[Danmu] selectEpisodeFromBangumi: episodeId=$episodeId, '
+        'anime=$animeTitle, episode=$episodeTitle');
+    final manualSource = DanmuSource(
+      episodeId: episodeId,
+      animeId: animeId,
+      animeTitle: animeTitle,
+      episodeTitle: episodeTitle,
+      type: type,
+      typeDescription: typeDescription,
+      shift: 0,
+      imageUrl: imageUrl,
+    );
+    state = state.copyWith(
+        loading: true,
+        manualSource: manualSource,
+        selectedSource: manualSource);
     try {
       final data = await _api.getDanmuByEpisode(episodeId, _fileId);
-      _engine?.loadDanmuData(data);
+      _applyDanmuData(data);
       state = state.copyWith(
         loading: false,
         danmuData: data,
         totalDanmuCount: data.count,
       );
-      // Save binding
-      await _api.saveDanmuBinding(_fileId, episodeId);
     } catch (e) {
       state = state.copyWith(loading: false, error: e.toString());
     }
+  }
+
+  /// 统一加载弹幕数据到引擎（自动匹配/手动搜索/切换源 共用）
+  ///
+  /// 处理流程：
+  /// 1. 确保引擎存在（手动搜索场景下 engine 可能为 null）
+  /// 2. 将 comments 加载到引擎（排序 + 清空活跃弹幕）
+  /// 3. 注册分片加载回调（后续 segment_list 中的片段通过 next-segment API 获取）
+  void _applyDanmuData(DanmuData? data) {
+    if (data == null) return;
+    if (_engine == null) {
+      // ignore: avoid_print
+      print('[Danmu] _applyDanmuData: engine was null, creating new one');
+      _engine = DanmuController();
+    }
+    _engine!.loadDanmuData(data);
+    _engine!.setOnNeedLoadSegment(_loadSegment);
+    // ignore: avoid_print
+    print('[Danmu] _applyDanmuData: loaded ${data.count} comments, '
+        '${data.segmentList.length} segments');
   }
 
   /// 分片加载回调
@@ -187,7 +229,8 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
       print('[Danmu] loadSegment: type=${segment.type}, '
           'start=${segment.segmentStart}, end=${segment.segmentEnd}');
       final episodeId = state.danmuData?.episodeId;
-      final result = await _api.danmuNextSegment(segment, episodeId: episodeId);
+      if (episodeId == null) return;
+      final result = await _api.danmuNextSegment(segment, episodeId);
       _engine?.onSegmentLoaded(result.comments);
       state = state.copyWith(loadedSegmentIndex: state.loadedSegmentIndex + 1);
     } catch (_) {

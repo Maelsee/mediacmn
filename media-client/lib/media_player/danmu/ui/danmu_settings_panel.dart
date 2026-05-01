@@ -1,0 +1,174 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../provider/danmu_provider.dart';
+
+class DanmuSettingsPanel extends ConsumerStatefulWidget {
+  final String fileId;
+
+  const DanmuSettingsPanel({super.key, required this.fileId});
+
+  @override
+  ConsumerState<DanmuSettingsPanel> createState() => _DanmuSettingsPanelState();
+}
+
+class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
+  double _fontSize = 16;
+  double _area = 1.0;
+  double _speed = 140;
+  double _opacity = 1.0;
+  bool _initialized = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final engine = ref.read(danmuProvider(widget.fileId).notifier).engine;
+
+    if (engine == null) {
+      return const SizedBox.shrink();
+    }
+
+    // 从 engine 读取初始值（仅一次）
+    if (!_initialized) {
+      _fontSize = engine.fontSize;
+      _area = engine.area;
+      _speed = engine.speed;
+      _opacity = engine.opacity;
+      _initialized = true;
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 拖拽指示条
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const Text('弹幕设置',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+
+          // 字体大小
+          _buildSliderRow(
+            label: '字体大小',
+            value: _fontSize,
+            min: 12,
+            max: 32,
+            divisions: 20,
+            format: (v) => '${v.round()}',
+            onChanged: (v) {
+              setState(() => _fontSize = v);
+              engine.setFontSize(v);
+            },
+          ),
+
+          // 显示区域
+          _buildSliderRow(
+            label: '显示区域',
+            value: _area,
+            min: 0.2,
+            max: 1.0,
+            divisions: 8,
+            format: (v) => '${(v * 100).round()}%',
+            onChanged: (v) {
+              setState(() => _area = v);
+              engine.setArea(v);
+            },
+          ),
+
+          // 滚动速度
+          _buildSliderRow(
+            label: '滚动速度',
+            value: _speed,
+            min: 60,
+            max: 300,
+            divisions: 24,
+            format: (v) => '${v.round()}px/s',
+            onChanged: (v) {
+              setState(() => _speed = v);
+              engine.setSpeed(v);
+            },
+          ),
+
+          // 透明度
+          _buildSliderRow(
+            label: '透明度',
+            value: _opacity,
+            min: 0.0,
+            max: 1.0,
+            divisions: 10,
+            format: (v) => '${(v * 100).round()}%',
+            onChanged: (v) {
+              setState(() => _opacity = v);
+              engine.setOpacity(v);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSliderRow({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required String Function(double) format,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(label,
+                style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderThemeData(
+                activeTrackColor: const Color(0xFFFFE796),
+                inactiveTrackColor: Colors.white24,
+                thumbColor: const Color(0xFFFFE796),
+                overlayColor: const Color(0xFFFFE796).withAlpha(0x33),
+                trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+              ),
+              child: Slider(
+                value: value.clamp(min, max),
+                min: min,
+                max: max,
+                divisions: divisions,
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 56,
+            child: Text(format(value),
+                textAlign: TextAlign.right,
+                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+}

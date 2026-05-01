@@ -11,9 +11,9 @@ class DanmuController extends ChangeNotifier {
   final List<DanmuComment> _allComments = [];
   bool _enabled = true;
   double _opacity = 1.0;
-  final double _fontSize = 16;
-  final double _area = 1.0; // 弹幕区域（0.5=上半屏, 1.0=全屏）
-  final double _speed = 140; // 像素/秒
+  double _fontSize = 16;
+  double _area = 1.0; // 弹幕区域（0.2~1.0）
+  double _speed = 140; // 像素/秒
   final int _maxVisible = 100; // 同屏最大弹幕数
 
   // 分片管理
@@ -32,16 +32,25 @@ class DanmuController extends ChangeNotifier {
   int _frameCount = 0;
   int _lastLogActiveCount = -1;
 
+  // 缓存原始视口尺寸（用于 settings 变更后重建轨道）
+  double _viewWidth = 0;
+  double _viewHeight = 0;
+
   // ---- 公开 API ----
 
   bool get enabled => _enabled;
   double get opacity => _opacity;
+  double get fontSize => _fontSize;
+  double get area => _area;
+  double get speed => _speed;
   int get activeCount => _activeItems.length;
   int get totalCount => _allComments.length;
   List<DanmuItem> get activeItems => _activeItems;
   double get currentPosition => _currentPosition;
 
   void init({required double viewWidth, required double viewHeight}) {
+    _viewWidth = viewWidth;
+    _viewHeight = viewHeight;
     _trackManager = DanmuTrackManager(
       viewWidth: viewWidth,
       viewHeight: viewHeight * _area,
@@ -88,6 +97,36 @@ class DanmuController extends ChangeNotifier {
   void setOpacity(double v) {
     _opacity = v.clamp(0.0, 1.0);
     notifyListeners();
+  }
+
+  /// 设置字体大小（需要重新初始化轨道）
+  void setFontSize(double v) {
+    _fontSize = v.clamp(12.0, 32.0);
+    _reinitTrackManager();
+    notifyListeners();
+  }
+
+  /// 设置弹幕显示区域（0.2~1.0）
+  void setArea(double v) {
+    _area = v.clamp(0.2, 1.0);
+    _reinitTrackManager();
+    notifyListeners();
+  }
+
+  /// 设置弹幕速度（像素/秒）
+  void setSpeed(double v) {
+    _speed = v.clamp(60.0, 300.0);
+    notifyListeners();
+  }
+
+  /// 使用缓存的 viewWidth/viewHeight 重建轨道管理器
+  void _reinitTrackManager() {
+    if (_viewWidth == 0 || _viewHeight == 0) return;
+    _trackManager = DanmuTrackManager(
+      viewWidth: _viewWidth,
+      viewHeight: _viewHeight * _area,
+      itemHeight: _fontSize + 12,
+    );
   }
 
   /// 每帧更新：由 DanmuOverlay 的 Ticker 回调驱动
