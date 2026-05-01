@@ -3,6 +3,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../provider/danmu_provider.dart';
+import '../engine/danmu_controller.dart';
 import '../engine/danmu_renderer.dart';
 import '../../core/state/playback_state.dart';
 
@@ -21,6 +22,8 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
   double _elapsed = 0;
   double _lastViewWidth = 0;
   double _lastViewHeight = 0;
+  DanmuController? _lastEngine;
+  bool _needsInit = false;
 
   @override
   void initState() {
@@ -64,7 +67,14 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
         : null;
 
     if (engine == null || !danmuState.enabled) {
+      _lastEngine = null;
       return const SizedBox.shrink();
+    }
+
+    // 引擎实例变化时（开关切换/换集），强制重新初始化轨道管理器
+    if (!identical(engine, _lastEngine)) {
+      _lastEngine = engine;
+      _needsInit = true;
     }
 
     return IgnorePointer(
@@ -74,10 +84,11 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
           builder: (context, constraints) {
             final w = constraints.maxWidth;
             final h = constraints.maxHeight;
-            // 只在尺寸变化时重新初始化轨道管理器
-            if (w != _lastViewWidth || h != _lastViewHeight) {
+            // 尺寸变化或引擎实例变化时重新初始化轨道管理器
+            if (_needsInit || w != _lastViewWidth || h != _lastViewHeight) {
               _lastViewWidth = w;
               _lastViewHeight = h;
+              _needsInit = false;
               engine.init(viewWidth: w, viewHeight: h);
               // ignore: avoid_print
               print('[Danmu] Overlay init tracks: ${w}x$h');

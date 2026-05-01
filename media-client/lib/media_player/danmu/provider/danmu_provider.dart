@@ -128,7 +128,13 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
       _engine = null;
       state = state.copyWith(enabled: false);
     } else {
-      enable();
+      // 如果已有匹配源和弹幕数据，直接复用，不重新请求 API
+      if (state.selectedSource != null && state.danmuData != null) {
+        state = state.copyWith(enabled: true);
+        _applyDanmuData(state.danmuData);
+      } else {
+        enable();
+      }
     }
   }
 
