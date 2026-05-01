@@ -599,6 +599,9 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
   /// 长按开始时的原始倍速。
   double _longPressStartSpeed = 1.0;
 
+  /// 长按是否已真正启动（用于区分 quick tap 的 cancel 和真正长按的 cancel）。
+  bool _longPressActive = false;
+
   /// 最近一次下发系统音量的时间。
   DateTime _lastVolumeUpdateAt = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -648,6 +651,7 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
             onTap: widget.controlsVisible ? null : widget.onToggleControls,
             onLongPressStart: (_) {
               // 长按：临时 2 倍速播放。
+              _longPressActive = true;
               _longPressStartSpeed = widget.speed;
               widget.onSetSpeed(2.0);
               setState(() {
@@ -655,7 +659,9 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
               });
             },
             onLongPressCancel: () {
-              // 长按取消：恢复倍速并清除文案
+              // 仅在长按真正启动后才恢复倍速，quick tap 的 cancel 不处理。
+              if (!_longPressActive) return;
+              _longPressActive = false;
               widget.onSetSpeed(_longPressStartSpeed);
               setState(() {
                 _overlayText = null;
@@ -663,6 +669,7 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
             },
             onLongPressEnd: (_) {
               // 松开：恢复到长按前的倍速。
+              _longPressActive = false;
               widget.onSetSpeed(_longPressStartSpeed);
               setState(() {
                 _overlayText = null;
