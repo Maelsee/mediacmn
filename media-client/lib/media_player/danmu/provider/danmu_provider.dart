@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api_client.dart';
 import '../models/danmu_models.dart';
-import '../engine/danmu_controller.dart';
+import '../service/danmaku_service.dart';
 import '../api/danmu_api.dart';
 
 // ---- State ----
@@ -88,6 +88,10 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
   final String _fileId;
   DanmuController? _engine;
 
+  /// 最近一次 Ticker 帧的视频播放位置（秒），用于在加载弹幕数据时
+  /// 立即触发当前播放位置对应的分片加载，避免等待下一帧。
+  double _lastKnownPosition = 0;
+
   /// 异步请求序号，用于丢弃过期回调。
   /// 每次引擎生命周期变化（开启/关闭/切换源）都会递增，
   /// 确保旧的异步回调不会写入已被 dispose 或重建的引擎。
@@ -97,6 +101,11 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
 
   DanmuController? get engine => _engine;
 
+  /// 更新最近已知的视频播放位置（由 Ticker 每帧调用）
+  void updatePosition(double positionSeconds) {
+    _lastKnownPosition = positionSeconds;
+  }
+
   /// 开启弹幕：触发自动匹配
   Future<void> enable() async {
     final requestId = ++_requestId;
@@ -105,16 +114,10 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
       final result = await _api.danmuAutoMatch(_fileId);
       // 引擎已被 dispose（toggle OFF/ON 或 dispose）或有更新的请求，丢弃结果
       if (_requestId != requestId) return;
-      // ignore: avoid_print
-      print('[Danmu] match result: isMatched=${result.isMatched}, '
-          'sources=${result.sources.length}, '
-          'bestMatch=${result.bestMatch?.animeTitle}, '
-          'danmuData=${result.danmuData != null ? '${result.danmuData!.count} comments' : 'null'}, '
-          'binding=${result.binding != null}');
       // 在 requestId 检查通过后再创建引擎，避免创建后被丢弃
       final engine = DanmuController();
       _engine = engine;
-      _applyDanmuData(result.danmuData);
+      _applyDanmuData(result.danmuData, currentPosition: _lastKnownPosition);
       state = state.copyWith(
         loading: false,
         matchResult: result,
@@ -124,10 +127,8 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
         totalDanmuCount: result.danmuData?.count ?? 0,
         binding: result.binding,
       );
-    } catch (e, st) {
+    } catch (e) {
       if (_requestId != requestId) return;
-      // ignore: avoid_print
-      print('[Danmu] enable error: $e\n$st');
       state = state.copyWith(loading: false, error: e.toString());
     }
   }
@@ -145,7 +146,7 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
       if (state.selectedSource != null && state.danmuData != null) {
         // 已有匹配源和弹幕数据，直接复用，不重新请求 API
         state = state.copyWith(enabled: true, clearError: true);
-        _applyDanmuData(state.danmuData);
+        _applyDanmuData(state.danmuData, currentPosition: _lastKnownPosition);
       } else {
         enable();
       }
@@ -159,16 +160,13 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
   /// 防止快速切换时两者脱节导致 toggle 复用错误的缓存数据。
   Future<void> selectSource(DanmuSource source) async {
     final requestId = ++_requestId;
-    // ignore: avoid_print
-    print('[Danmu] selectSource: episodeId=${source.episodeId}, '
-        'title=${source.animeTitle}, episode=${source.episodeTitle}');
     state = state.copyWith(loading: true, clearError: true);
     try {
       final data = await _api.getDanmuByEpisode(source.episodeId, _fileId);
       if (_requestId != requestId) return;
       // 只在弹幕开启时加载到引擎；关闭时只更新 state 缓存
       if (state.enabled) {
-        _applyDanmuData(data);
+        _applyDanmuData(data, currentPosition: _lastKnownPosition);
       }
       // selectedSource 与 danmuData 原子更新，保证一致性
       state = state.copyWith(
@@ -208,9 +206,6 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
     required String imageUrl,
   }) async {
     final requestId = ++_requestId;
-    // ignore: avoid_print
-    print('[Danmu] selectEpisodeFromBangumi: episodeId=$episodeId, '
-        'anime=$animeTitle, episode=$episodeTitle');
     final manualSource = DanmuSource(
       episodeId: episodeId,
       animeId: animeId,
@@ -231,7 +226,7 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
       if (_requestId != requestId) return;
       // 只在弹幕开启时加载到引擎；关闭时只更新 state 缓存
       if (state.enabled) {
-        _applyDanmuData(data);
+        _applyDanmuData(data, currentPosition: _lastKnownPosition);
       }
       // selectedSource 与 danmuData 原子更新，保证一致性
       state = state.copyWith(
@@ -252,18 +247,13 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
   /// 1. 确保引擎存在（手动搜索场景下 engine 可能为 null）
   /// 2. 将 comments 加载到引擎（排序 + 清空活跃弹幕）
   /// 3. 注册分片加载回调（后续 segment_list 中的片段通过 next-segment API 获取）
-  void _applyDanmuData(DanmuData? data) {
+  /// 4. 立即触发当前播放位置对应的分片加载
+  void _applyDanmuData(DanmuData? data, {double currentPosition = 0}) {
     if (data == null) return;
-    if (_engine == null) {
-      // ignore: avoid_print
-      print('[Danmu] _applyDanmuData: engine was null, creating new one');
-      _engine = DanmuController();
-    }
-    _engine!.loadDanmuData(data);
+    _engine ??= DanmuController();
+    _engine!.loadDanmuData(data, currentPosition: currentPosition);
     _engine!.setOnNeedLoadSegment(_loadSegment);
-    // ignore: avoid_print
-    print('[Danmu] _applyDanmuData: loaded ${data.count} comments, '
-        '${data.segmentList.length} segments');
+    _engine!.setTimeOffset(state.binding?.offset ?? 0);
   }
 
   /// 分片加载回调
@@ -273,9 +263,6 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
     final engine = _engine;
     if (engine == null) return;
     try {
-      // ignore: avoid_print
-      print('[Danmu] loadSegment: type=${segment.type}, '
-          'start=${segment.segmentStart}, end=${segment.segmentEnd}');
       final episodeId = state.danmuData?.episodeId;
       if (episodeId == null) return;
       final result = await _api.danmuNextSegment(segment, episodeId);
@@ -283,9 +270,7 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
       if (_requestId != requestId || !identical(engine, _engine)) return;
       engine.onSegmentLoaded(result.comments);
       state = state.copyWith(loadedSegmentIndex: state.loadedSegmentIndex + 1);
-    } catch (e) {
-      // ignore: avoid_print
-      print('[Danmu] loadSegment error: $e');
+    } catch (_) {
     } finally {
       // 无论成功失败都重置加载状态，防止卡在 _isLoadingSegment=true
       // 只重置当前引擎（如果还是同一个的话）

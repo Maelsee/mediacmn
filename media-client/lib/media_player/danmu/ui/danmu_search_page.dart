@@ -229,9 +229,6 @@ class _DanmuBangumiPageState extends ConsumerState<_DanmuBangumiPage> {
   }
 
   void _selectEpisode(DanmuEpisode episode) {
-    // ignore: avoid_print
-    print('[Danmu] selectEpisode: episodeId=${episode.episodeId}, '
-        'title=${episode.episodeTitle}');
     ref
         .read(danmuProvider(widget.fileId).notifier)
         .selectEpisodeFromBangumi(

@@ -52,10 +52,15 @@ post /api/danmu/match/auto
     "count": 1482,
     "comments": [
       {
-        "cid": 1,
-        "p": "1.00,1,16707842,[qiyi]",
-        "m": "大脚：下辈子定当兵练脚力 ️♡848",
-        "t": 1
+        "text": "大脚：下辈子定当兵练脚力 ️♡848",
+        "time": 1,
+        "color": "#FEF102",
+        "type": "scroll",
+        "count": 1,
+        "extra": {
+          "cid": 1,
+          "source": "[qiyi]"
+        }
       },
       ...
     ],
@@ -151,11 +156,16 @@ get /api/danmu/{episode_id}
   "count": 1482,
   "comments": [
     {
-      "cid": 1,
-      "p": "1.00,1,16707842,[qiyi]",
-      "m": "大脚：下辈子定当兵练脚力 ️♡848",
-      "t": 1
-    },
+        "text": "大脚：下辈子定当兵练脚力 ️♡848",
+        "time": 1,
+        "color": "#FEF102",
+        "type": "scroll",
+        "count": 1,
+        "extra": {
+          "cid": 1,
+          "source": "[qiyi]"
+        }
+      },
   ],
   "offset": 0,
   "video_duration": 2739,
@@ -188,11 +198,16 @@ post /api/danmu/{episode_id}/next-segment
   "count": 1590,
   "comments": [
     {
-      "cid": 1,
-      "p": "2401.00,1,16777215,[qiyi]",
-      "m": "都是那个时代枷锁 ️♡408",
-      "t": 2401
-    },
+        "text": "大脚：下辈子定当兵练脚力 ️♡848",
+        "time": 1,
+        "color": "#FEF102",
+        "type": "scroll",
+        "count": 1,
+        "extra": {
+          "cid": 1,
+          "source": "[qiyi]"
+        }
+      },
   ],
   "success": true,
   "errorCode": 0,

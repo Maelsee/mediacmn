@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ==================== 枚举类型 ====================
@@ -19,6 +19,15 @@ class DanmuType(str, Enum):
     SCROLL = "scroll"      # 滚动弹幕
     TOP = "top"            # 顶部弹幕
     BOTTOM = "bottom"      # 底部弹幕
+    SPECIAL = "special"    # 特殊弹幕
+
+
+# p[1] 值到 DanmuType 的映射
+_DANMU_P1_TO_TYPE: Dict[int, DanmuType] = {
+    1: DanmuType.SCROLL,
+    4: DanmuType.BOTTOM,
+    5: DanmuType.TOP,
+}
 
 
 class SearchType(str, Enum):
@@ -47,37 +56,107 @@ class NextSegmentInput(BaseModel):
     url: str
 
 
-# class DanmuComment(BaseModel):
-#     """单条弹幕"""
-#     id: str = Field(..., description="弹幕唯一标识")
-#     time: int = Field(..., description="出现时间(毫秒)")
-#     content: str = Field(..., description="弹幕内容")
-#     color: str = Field(default="#FFFFFF", description="弹幕颜色")
-#     type: DanmuType = Field(default=DanmuType.SCROLL, description="弹幕类型")
-#     font_size: float = Field(default=1.0, description="字体大小比例")
-#     source: Optional[str] = Field(default=None, description="来源平台")
+class DanmuComment(BaseModel):
+    """转换后的弹幕"""
+    text: str = Field(..., description="弹幕文本")
+    time: float = Field(..., description="出现时间(秒)")
+    color: str = Field(default="#FFFFFF", description="弹幕颜色")
+    type: DanmuType = Field(default=DanmuType.SCROLL, description="弹幕类型")
+    count: int = Field(default=1, description="弹幕数量(合并显示)")
+    extra: Optional[Dict[str, Any]] = Field(default=None, description="自定义额外数据")
+
+    @staticmethod
+    def from_raw(raw: Dict[str, Any]) -> "DanmuComment":
+        """从原始弹幕格式转换
+
+        原始格式:
+            cid: 弹幕ID
+            p: "时间,类型,颜色值,来源"
+                p[0]=出现时间(秒), p[1]=类型(1=滚动,4=底部,5=顶部), p[2]=十进制颜色值, p[3]=来源
+            m: 弹幕文本
+            t: 弹幕数量
+        返回格式:
+            text: 弹幕文本
+            time: 出现时间(秒)
+            color: 弹幕颜色(十六进制格式)
+            type: 弹幕类型
+            count: 弹幕数量(合并显示)
+            extra: 自定义额外数据
+                包含 cid 和 source（如果存在）
+                   """
+        p_str: str = raw.get("p", "")
+        parts = [s.strip() for s in p_str.split(",")]
+
+        time = float(parts[0]) if len(parts) > 0 else 0.0
+
+        p1 = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
+        danmu_type = _DANMU_P1_TO_TYPE.get(p1, DanmuType.SPECIAL)
+
+        color_int = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 16777215  # 默认白色
+        color = f"#{color_int:06X}"
+
+        source = parts[3] if len(parts) > 3 else None
+
+        extra: Optional[Dict[str, Any]] = None
+        if raw.get("cid") is not None or source:
+            extra = {}
+            if raw.get("cid") is not None:
+                extra["cid"] = raw["cid"]
+            if source:
+                extra["source"] = source
+
+        return DanmuComment(
+            text=raw.get("m", ""),
+            time=time,
+            color=color,
+            type=danmu_type,
+            count=int(raw.get("t", 1)),
+            extra=extra,
+        )
 
 
 class DanmuData(BaseModel):
     """弹幕数据"""
     episode_id: int = Field(..., description="剧集ID")
     count: int = Field(default=0, description="弹幕数量")
-    comments: List[Dict[str, Any]] = Field(default_factory=list, description="弹幕列表")
+    comments: List[DanmuComment] = Field(default_factory=list, description="弹幕列表")
     offset: float = Field(default=0.0, description="时间偏移量")
     video_duration: int = Field(default=0, description="视频时长(秒)")
     load_mode: DanmuLoadMode = Field(default=DanmuLoadMode.FULL, description="加载模式")
     segment_list: List[Dict[str, Any]] = Field(default_factory=list, description="分片描述列表")
     binding: Optional["BindingInfo"] = Field(default=None, description="自动创建的绑定信息（首次获取弹幕时返回）")
-# class DanmuData(BaseModel):
-#     """弹幕数据"""
-#     episode_id: int = Field(..., description="剧集ID")
-#     count: int = Field(default=0, description="弹幕数量")
-#     comments: List[Dict[str, Any]] = Field(default_factory=list, description="弹幕列表")
-#     offset: float = Field(default=0.0, description="时间偏移量")
-#     video_duration: int = Field(default=0, description="视频时长(秒)")
-#     load_mode: DanmuLoadMode = Field(default=DanmuLoadMode.FULL, description="加载模式")
-#     segment_list: List[Dict[str, Any]] = Field(default_factory=list, description="分片描述列表")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_comments(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        """自动将原始 comments 转换为 DanmuComment"""
+        raw_comments = data.get("comments")
+        if isinstance(raw_comments, list):
+            data["comments"] = [
+                DanmuComment.from_raw(c) if isinstance(c, dict) and "p" in c else c
+                for c in raw_comments
+            ]
+        return data
+
+class NextSegmentResponse(BaseModel):
+    """分片数据响应"""
+    count: int = Field(default=0, description="弹幕数量")
+    comments: List[DanmuComment] = Field(default_factory=list, description="弹幕列表")
+    success: bool = Field(default=True, description="是否成功")
+    errorCode: int = Field(default=0, description="错误码")
+    errorMessage: str = Field(default="", description="错误信息")
+    
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_comments(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        """自动将原始 comments 转换为 DanmuComment"""
+        raw_comments = data.get("comments")
+        if isinstance(raw_comments, list):
+            data["comments"] = [
+                DanmuComment.from_raw(c) if isinstance(c, dict) and "p" in c else c
+                for c in raw_comments
+            ]
+        return data
 # ==================== 匹配相关模型 ====================
 
 class DanmuSource(BaseModel):
@@ -296,8 +375,20 @@ class MergeDanmuRequest(BaseModel):
 class MergeDanmuResponse(BaseModel):
     """合并弹幕响应"""
     count: int = Field(default=0, description="弹幕总数")
-    comments: List[Dict[str, Any]] = Field(default_factory=list, description="弹幕列表")
+    comments: List[DanmuComment] = Field(default_factory=list, description="弹幕列表")
     sources: List[Dict[str, Any]] = Field(default_factory=list, description="来源信息")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_comments(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        """自动将原始 comments 转换为 DanmuComment"""
+        raw_comments = data.get("comments")
+        if isinstance(raw_comments, list):
+            data["comments"] = [
+                DanmuComment.from_raw(c) if isinstance(c, dict) and "p" in c else c
+                for c in raw_comments
+            ]
+        return data
 
 
 # ==================== 通用响应模型 ====================

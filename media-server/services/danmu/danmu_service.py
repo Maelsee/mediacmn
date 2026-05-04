@@ -207,10 +207,12 @@ class DanmuService:
             # await danmu_cache_service.set_match_result(cache_key, match_result)
 
             # 高置信度 + 有 file_id → 自动绑定 + 获取弹幕（一步到位）
-            if is_matched and confidence >= self._confidence_threshold and file_id and best_match:
+            if is_matched and confidence >= self._confidence_threshold  and best_match:
+
                 episode_id = str(best_match.get("episodeId", ""))
-                if episode_id:
-                    try:
+                try:
+                    if episode_id and file_id:
+                        # 有file_id自动绑定
                         binding = await danmu_binding_service.create_binding(
                             file_id=file_id,
                             episode_id=episode_id,
@@ -228,19 +230,19 @@ class DanmuService:
                         logger.info(f"Auto match: bounding={binding}")
                         match_result["binding"] = binding
 
-                        # 直接获取弹幕数据
-                        danmu_data = await self.get_danmu(
-                            episode_id=episode_id,
-                            file_id=file_id,
-                            load_mode="segment",
-                        )
-                        match_result["danmu_data"] = danmu_data
-                        logger.info(
-                            f"Auto match: auto-bound file={file_id} -> episode={episode_id}, "
-                            f"danmu loaded ({danmu_data.get('count', 0)} comments)"
-                        )
-                    except Exception as e:
-                        logger.warning(f"Auto match: auto-bind failed, returning match only: {e}")
+                    # 直接获取弹幕数据
+                    danmu_data = await self.get_danmu(
+                        episode_id=episode_id,
+                        file_id=file_id,
+                        load_mode="segment",
+                    )
+                    match_result["danmu_data"] = danmu_data
+                    logger.info(
+                        f"Auto match: auto-bound file={file_id} -> episode={episode_id}, "
+                        f"danmu loaded ({danmu_data.get('count', 0)} comments)"
+                    )
+                except Exception as e:
+                    logger.warning(f"Auto match: auto-bind failed, returning match only: {e}")
 
             return match_result
             """

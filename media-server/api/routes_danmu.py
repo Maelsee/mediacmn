@@ -41,6 +41,7 @@ from schemas.danmu_serialization import (
     SuccessResponse,
     NextSegmentInput,
     DanmuFormat,
+    NextSegmentResponse,
 )
 from services.danmu.danmu_service import danmu_service
 from services.danmu.danmu_api_provider import DanmuApiError, DanmuApiTimeoutError
@@ -314,7 +315,7 @@ async def get_next_segment(
     episode_id: str = Path(..., description="剧集ID"),
     format: DanmuFormat = Query(default=DanmuFormat.JSON, description="数据格式"),
     _: str = Depends(get_current_subject),
-) -> dict:
+) -> NextSegmentResponse:
     """
     获取下一分片弹幕
 
@@ -326,7 +327,7 @@ async def get_next_segment(
             next_segment=segment.model_dump(),
             format=format.value,
         )
-        return result
+        return NextSegmentResponse(**result)
 
     except DanmuApiTimeoutError as e:
         raise HTTPException(status_code=504, detail=str(e))

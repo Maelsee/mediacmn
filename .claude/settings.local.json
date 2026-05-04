@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dart analyze *)",
+      "Bash(flutter analyze *)",
+      "Bash(bash -c \"/mnt/g/FlutterApp/flutterSDk/flutter/bin/dart analyze lib/media_player/danmu/ 2>&1\")",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -s \"https://api.github.com/repos/Predidit/canvas_danmaku/contents/lib/models/danmaku_item.dart\")",
+      "Bash(python3 -c \"import json,sys,base64; d=json.load\\(sys.stdin\\); print\\(base64.b64decode\\(d['content']\\).decode\\(\\)\\)\")",
+      "Bash(/mnt/g/FlutterApp/flutterSDk/flutter/bin/dart analyze *)"
+    ]
+  }
+}

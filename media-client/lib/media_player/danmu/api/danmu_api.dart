@@ -22,10 +22,6 @@ extension DanmuApi on ApiClient {
       throw Exception('弹幕匹配失败: ${res.statusCode} ${res.body}');
     }
     final json = jsonDecode(res.body) as Map<String, dynamic>;
-    // ignore: avoid_print
-    print('[Danmu API] match/auto response keys: ${json.keys.toList()}');
-    // ignore: avoid_print
-    print('[Danmu API] sources count: ${(json['sources'] as List?)?.length}');
     return DanmuMatchResult.fromJson(json);
   }
 
@@ -91,18 +87,12 @@ extension DanmuApi on ApiClient {
       'episode_id': episodeId.toString(),
       'format': format,
     };
-    // ignore: avoid_print
-    print('[Danmu API] next-segment URL: /api/danmu/$episodeId/next-segment');
-    // ignore: avoid_print
-    print('[Danmu API] next-segment payload: ${jsonEncode(payload)}');
 
     final res = await client.post(
       u('/api/danmu/$episodeId/next-segment'),
       headers: getHeaders(headers: {'Content-Type': 'application/json'}),
       body: jsonEncode(payload),
     );
-    // ignore: avoid_print
-    print('[Danmu API] next-segment response: ${res.statusCode} ${res.body}');
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw Exception('加载分片失败: ${res.statusCode} ${res.body}');
     }

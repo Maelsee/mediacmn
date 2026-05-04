@@ -58,11 +58,6 @@ class DanmuData {
     final segments = (json['segment_list'] as List?)
         ?.map((e) => DanmuSegment.fromJson(e as Map<String, dynamic>))
         .toList() ?? const [];
-    // ignore: avoid_print
-    print('[Danmu] DanmuData.fromJson: episode_id=${json['episode_id']}, '
-        'count=${json['count']}, comments=${comments.length}, '
-        'segments=${segments.length}, '
-        'firstComment=${comments.isNotEmpty ? "time=${comments.first.time}, content=${comments.first.content.substring(0, comments.first.content.length.clamp(0, 20))}" : "N/A"}');
     return DanmuData(
       episodeId: (json['episode_id'] as num?)?.toInt() ?? 0,
       count: (json['count'] as num?)?.toInt() ?? 0,
