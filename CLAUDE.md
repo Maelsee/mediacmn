@@ -94,9 +94,12 @@ docker compose -f docker-compose.yml down      # 停止
 - `media_library/` — 首页分区、搜索、详情、媒体卡片、手动匹配
 - `source_library/` — 存储源管理（WebDAV/SMB/Local 的增删改查与浏览）
 - `media_player/` — media_kit 播放器，平台自适应 UI（移动端/桌面端/Web 控制、字幕/音轨/选集面板）
+  - `danmu/` — 弹幕模块：`DanmuController`（service 层）桥接 API 数据与 canvas_danmaku 渲染库，负责二分查找发射调度、分片懒加载、Seek 检测、设置映射
+  - 弹幕数据流：API 返回 `DanmuData`（初始 comments + segmentList）→ `DanmuController.loadDanmuData` 排序 → Ticker 每帧 `updateFrame` 驱动发射 → `canvas_danmaku` 的 `DanmakuScreen` 渲染
+  - 设计文档：`danmuDesign.md`、`弹幕设计方案.md`
 - `profile/` — 登录、注册、用户设置
 - 路由：GoRouter 声明式路由，3 个 tab 分支（media/sources/profile）
-- 状态管理：flutter_riverpod
+- 状态管理：flutter_riverpod，常用模式为 `StateNotifierProvider.family.autoDispose<Notifier, State, String>(ref, id)`
 
 ### 数据库设计
 

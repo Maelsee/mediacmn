@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /root -path \"*/canvas_danmaku*\" -type d)",
+      "Bash(find /home -path \"*/.pub-cache/hosted/pub.dev/canvas_danmaku*\" -type d)",
+      "Bash(find /opt -path \"*/canvas_danmaku*\" -type d)",
+      "Read(//c/Users/**)",
+      "WebFetch(domain:pub.dev)",
+      "Read(//mnt/e/**)",
+      "Read(//mnt/c/**)",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(p['name'],p.get\\('rootUri',''\\)\\) for p in data.get\\('packages',[]\\) if 'canvas_danmaku' in p['name']]\")",
+      "Bash(flutter analyze *)"
+    ]
+  }
+}

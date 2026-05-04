@@ -72,7 +72,8 @@ extension DanmuApi on ApiClient {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw Exception('获取弹幕失败');
     }
-    return DanmuData.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    return DanmuData.fromJson(json);
   }
 
   /// 加载下一分片

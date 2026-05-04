@@ -14,9 +14,9 @@ class DanmuSettingsPanel extends ConsumerStatefulWidget {
 class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
   double _fontSize = 15;
   double _area = 0.3;
-  double _speed = 130;
+  double _speed = 70;
   double _opacity = 0.5;
-  double _density = 1.0;
+  double _density = 0.5;
   bool _initialized = false;
 
   @override
@@ -90,9 +90,9 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
           _buildSliderRow(
             label: '显示区域',
             value: _area,
-            min: 0.2,
+            min: 0.0,
             max: 1.0,
-            divisions: 8,
+            divisions: 10,
             format: (v) => '${(v * 100).round()}%',
             onChanged: (v) {
               setState(() => _area = v);
@@ -104,9 +104,9 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
           _buildSliderRow(
             label: '滚动速度',
             value: _speed,
-            min: 60,
-            max: 300,
-            divisions: 24,
+            min: 20,
+            max: 200,
+            divisions: 18,
             format: (v) => '${v.round()}px/s',
             onChanged: (v) {
               setState(() => _speed = v);

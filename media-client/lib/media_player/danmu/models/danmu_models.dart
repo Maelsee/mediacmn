@@ -10,15 +10,35 @@ class DanmuComment {
     required this.color, required this.source, required this.content});
 
   factory DanmuComment.fromJson(Map<String, dynamic> json) {
-    final p = (json['p'] as String? ?? '').split(',');
+    // 新格式：{text, time, color, type, extra: {cid, source}}
+    final extra = json['extra'] as Map<String, dynamic>? ?? {};
+    final colorStr = json['color'] as String? ?? '#FFFFFF';
+    final colorValue = _parseColor(colorStr);
+    final typeStr = json['type'] as String? ?? 'scroll';
+    final mode = _modeFromType(typeStr);
     return DanmuComment(
-      time: double.tryParse(p.isNotEmpty ? p[0] : '0') ?? 0,
-      mode: p.length > 1 ? (int.tryParse(p[1]) ?? 1) : 1,
-      color: p.length > 2 ? (int.tryParse(p[2]) ?? 16777215) : 16777215,
-      source: p.length > 3 ? p[3] : '',
-      content: json['m'] as String? ?? '',
-      cid: (json['cid'] as num?)?.toInt() ?? 0,
+      time: (json['time'] as num?)?.toDouble() ?? 0,
+      mode: mode,
+      color: colorValue,
+      source: extra['source'] as String? ?? '',
+      content: json['text'] as String? ?? '',
+      cid: (extra['cid'] as num?)?.toInt() ?? 0,
     );
+  }
+
+  static int _parseColor(String hex) {
+    final clean = hex.replaceFirst('#', '');
+    final rgb = int.tryParse(clean, radix: 16) ?? 16777215;
+    // 补全 alpha 通道为 0xFF（不透明）
+    return rgb | 0xFF000000;
+  }
+
+  static int _modeFromType(String type) {
+    switch (type) {
+      case 'bottom': return 4;
+      case 'top': return 5;
+      default: return 1; // scroll
+    }
   }
 }
 

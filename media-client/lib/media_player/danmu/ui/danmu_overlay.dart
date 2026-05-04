@@ -12,6 +12,7 @@ import '../../core/state/playback_state.dart';
 /// 架构：
 /// - DanmakuScreen 负责渲染（内置 Ticker + Canvas 绘制）
 /// - 外部 Ticker 驱动 DanmuController.updateFrame（二分查找发射 + 分片加载）
+/// - Ticker 在弹幕开启期间持续运行，由 enabled 状态控制启停
 class DanmuOverlay extends ConsumerStatefulWidget {
   final String fileId;
 
@@ -28,20 +29,17 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
   double _lastViewWidth = 0;
   double _lastViewHeight = 0;
 
-  // 引擎变更监听器（用于 Ticker 重启）
-  VoidCallback? _engineListener;
-  dynamic _lastEngine;
-
   // 缓存 DanmakuScreen 实例，避免 Widget 重建导致控制器失效
   cd.DanmakuScreen<DanmuComment>? _cachedScreen;
 
-  // 智能 Ticker 生命周期
-  int _idleFrameCount = 0;
-  static const int _idleThreshold = 10;
+  // 记录上一次的引擎版本，用于检测引擎变更并清除缓存
+  int _lastEngineVersion = -1;
+  bool _tickerLogOnce = false;
 
   @override
   void initState() {
     super.initState();
+    print('[DanmuOverlay] initState fileId=${widget.fileId}');
     _ticker = createTicker((duration) {
       if (!mounted) return;
       _elapsed = duration.inMilliseconds / 1000.0;
@@ -54,6 +52,16 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
           .updatePosition(positionSeconds);
 
       final danmuState = ref.read(danmuProvider(widget.fileId));
+
+      // 首帧日志（无论 enabled 与否）
+      if (!_tickerLogOnce) {
+        _tickerLogOnce = true;
+        print('[DanmuOverlay] Ticker 首帧: enabled=${danmuState.enabled}, '
+            'pos=${positionSeconds.toStringAsFixed(1)}, '
+            'sources=${danmuState.sources.length}, '
+            'danmuData=${danmuState.danmuData != null}');
+      }
+
       if (!danmuState.enabled) return;
 
       final engine = ref.read(danmuProvider(widget.fileId).notifier).engine;
@@ -62,51 +70,11 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
         engine.setPlaybackSpeed(playbackSpeed);
         engine.updateFrame(positionSeconds, _elapsed);
       }
-
-      // 智能 Ticker 停止
-      if (++_idleFrameCount >= _idleThreshold) {
-        _idleFrameCount = 0;
-        if (engine != null && !engine.hasActiveItems) {
-          _ticker.stop();
-        }
-      }
     });
-    _ticker.start();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final engine = ref.read(danmuProvider(widget.fileId).notifier).engine;
-    if (!identical(engine, _lastEngine)) {
-      _unbindEngineListener();
-      _lastEngine = engine;
-      _bindEngineListener(engine);
-    }
-  }
-
-  /// 绑定引擎监听器：当引擎通知变更时重启 Ticker
-  void _bindEngineListener(dynamic engine) {
-    if (engine == null) return;
-    _engineListener = () {
-      if (!_ticker.isActive) {
-        _idleFrameCount = 0;
-        _ticker.start();
-      }
-    };
-    engine.addListener(_engineListener!);
-  }
-
-  void _unbindEngineListener() {
-    if (_engineListener != null && _lastEngine != null) {
-      _lastEngine!.removeListener(_engineListener!);
-      _engineListener = null;
-    }
   }
 
   @override
   void dispose() {
-    _unbindEngineListener();
     _ticker.dispose();
     super.dispose();
   }
@@ -114,20 +82,35 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
   @override
   Widget build(BuildContext context) {
     final danmuState = ref.watch(danmuProvider(widget.fileId));
-    final engine = ref.read(danmuProvider(widget.fileId).notifier).engine;
+    final notifier = ref.read(danmuProvider(widget.fileId).notifier);
+    final engine = notifier.engine;
+
+    // print('[DanmuOverlay] build: enabled=${danmuState.enabled}, '
+    //     'engine=${engine != null}, ticker=${_ticker.isActive}, '
+    //     'loading=${danmuState.loading}');
+
+    // Ticker 生命周期：弹幕开启时运行，关闭时停止
+    if (danmuState.enabled) {
+      if (!_ticker.isActive) {
+        print('[DanmuOverlay] 启动 Ticker');
+        _ticker.start();
+      }
+    } else {
+      if (_ticker.isActive) {
+        print('[DanmuOverlay] 停止 Ticker');
+        _ticker.stop();
+      }
+    }
 
     if (engine == null) {
-      _unbindEngineListener();
-      _lastEngine = null;
       _cachedScreen = null;
+      _lastEngineVersion = -1;
       return const SizedBox.shrink();
     }
 
-    // 引擎实例变化时初始化 + 绑定监听 + 清除缓存
-    if (!identical(engine, _lastEngine)) {
-      _unbindEngineListener();
-      _lastEngine = engine;
-      _bindEngineListener(engine);
+    // 引擎版本变化时清除缓存，触发 DanmakuScreen 重建以重新注入 canvas 控制器
+    if (danmuState.engineVersion != _lastEngineVersion) {
+      _lastEngineVersion = danmuState.engineVersion;
       _cachedScreen = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _lastViewWidth > 0 && _lastViewHeight > 0) {
@@ -159,7 +142,7 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
 
             // 缓存 DanmakuScreen 实例
             _cachedScreen ??= cd.DanmakuScreen<DanmuComment>(
-              key: ValueKey('danmaku_${widget.fileId}'),
+              key: ValueKey('danmaku_${widget.fileId}_$_lastEngineVersion'),
               createdController: (controller) {
                 engine.attachCanvasController(controller);
               },

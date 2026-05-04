@@ -19,9 +19,9 @@ class DanmuController extends ChangeNotifier {
   double _opacity = 0.5;
   double _fontSize = 15;
   double _area = 0.3;
-  double _speed = 130; // px/s
+  double _speed = 70; // px/s
   double _playbackSpeed = 1.0;
-  double _density = 1.0;
+  double _density = 0.5;
   double _timeOffset = 0;
 
   // === 弹幕数据 ===
@@ -31,8 +31,8 @@ class DanmuController extends ChangeNotifier {
 
   // === 分片管理 ===
   List<DanmuSegment> _segments = [];
-  int _currentSegmentIndex = 0;
   bool _isLoadingSegment = false;
+  int _pendingSegmentIndex = -1; // 正在加载的分片索引
   final Set<int> _loadedSegments = {0};
 
   // === 发射控制 ===
@@ -44,6 +44,9 @@ class DanmuController extends ChangeNotifier {
 
   // === 密度控制 ===
   double _lastFireTime = 0;
+
+  // === 调试 ===
+  int _frameCount = 0;
 
   // === 分片加载回调 ===
   void Function(DanmuSegment segment)? _onNeedLoadSegment;
@@ -62,14 +65,12 @@ class DanmuController extends ChangeNotifier {
   int get totalCount => _allComments.length;
   double get currentPosition => _currentPosition;
 
-  /// 是否有活跃弹幕（用于 Ticker 生命周期管理）
-  bool get hasActiveItems => _canvasController?.running ?? false;
-
   // ---- canvas 控制器注入 ----
 
   /// 由 DanmuOverlay 在 DanmakuScreen.createdController 回调中调用
   void attachCanvasController(cd.DanmakuController<DanmuComment> controller) {
     _canvasController = controller;
+    print('[Danmu] canvas 控制器已注入');
     _syncOptionToCanvas();
   }
 
@@ -89,8 +90,8 @@ class DanmuController extends ChangeNotifier {
 
     _allComments.addAll(data.comments);
     _segments = data.segmentList;
-    _currentSegmentIndex = 0;
     _isLoadingSegment = false;
+    _pendingSegmentIndex = -1;
     _loadedSegments
       ..clear()
       ..add(0);
@@ -103,6 +104,13 @@ class DanmuController extends ChangeNotifier {
     _sortedByTime = List.of(_allComments)
       ..sort((a, b) => a.time.compareTo(b.time));
 
+    final firstTime = _sortedByTime.isNotEmpty ? _sortedByTime.first.time : 0;
+    final lastTime = _sortedByTime.isNotEmpty ? _sortedByTime.last.time : 0;
+    print('[Danmu] 数据加载完成: comments=${data.comments.length}, '
+        'segments=${_segments.length}, sorted=${_sortedByTime.length}, '
+        'timeRange=[${firstTime.toStringAsFixed(1)}, ${lastTime.toStringAsFixed(1)}], '
+        'pos=${currentPosition.toStringAsFixed(1)}, canvas=$_canvasController');
+
     if (currentPosition > 0) {
       _maybeLoadNextSegment(currentPosition);
     }
@@ -112,10 +120,15 @@ class DanmuController extends ChangeNotifier {
 
   void appendComments(List<DanmuComment> comments) {
     if (comments.isEmpty) return;
+    final oldLen = _sortedByTime.length;
     _allComments.addAll(comments);
     final newSorted = List<DanmuComment>.of(comments)
       ..sort((a, b) => a.time.compareTo(b.time));
     _sortedByTime = _mergeSorted(_sortedByTime, newSorted);
+    final newFirst = _sortedByTime.isNotEmpty ? _sortedByTime.first.time : 0;
+    final newLast = _sortedByTime.isNotEmpty ? _sortedByTime.last.time : 0;
+    print('[Danmu] appendComments: +${comments.length}, sorted $oldLen -> ${_sortedByTime.length}, '
+        'timeRange=[${newFirst.toStringAsFixed(1)}, ${newLast.toStringAsFixed(1)}]');
   }
 
   static List<DanmuComment> _mergeSorted(
@@ -155,13 +168,13 @@ class DanmuController extends ChangeNotifier {
   }
 
   void setArea(double v) {
-    _area = v.clamp(0.2, 1.0);
+    _area = v.clamp(0.0, 1.0);
     _syncOptionToCanvas();
     notifyListeners();
   }
 
   void setSpeed(double v) {
-    _speed = v.clamp(60.0, 300.0);
+    _speed = v.clamp(20.0, 200.0);
     _syncOptionToCanvas();
     notifyListeners();
   }
@@ -217,14 +230,25 @@ class DanmuController extends ChangeNotifier {
     _currentPosition = positionSeconds;
     bool dirty = false;
 
+    // 每 120 帧（约 2 秒）输出一次状态
+    if (++_frameCount % 120 == 0) {
+      print('[Danmu] 帧更新: pos=${positionSeconds.toStringAsFixed(1)}, '
+          'elapsed=${elapsedSeconds.toStringAsFixed(1)}, '
+          'sorted=${_sortedByTime.length}, canvas=${_canvasController != null}, '
+          'activeCids=${_activeCids.length}, nextFire=${_nextFireElapsed.toStringAsFixed(2)}');
+    }
+
     // 1. Seek 检测
     final positionDelta = (positionSeconds - _lastPosition).abs();
     if (positionDelta > 1.0 && _lastPosition != 0) {
+      print('[Danmu] Seek 检测: ${_lastPosition.toStringAsFixed(1)} -> ${positionSeconds.toStringAsFixed(1)}');
       _canvasController?.clear();
       _activeCids.clear();
       _nextFireElapsed = 0;
-      _currentSegmentIndex = 0;
       _lastFireTime = 0;
+      // 重置分片加载状态，允许为新位置加载分片
+      _isLoadingSegment = false;
+      _pendingSegmentIndex = -1;
       dirty = true;
     }
     _lastPosition = positionSeconds;
@@ -241,11 +265,6 @@ class DanmuController extends ChangeNotifier {
     if (_activeCids.length != prevCidCount) dirty = true;
 
     if (dirty) notifyListeners();
-  }
-
-  void onPositionUpdate(double positionSeconds) {
-    _currentPosition = positionSeconds;
-    _maybeLoadNextSegment(positionSeconds);
   }
 
   // ---- 发射逻辑 ----
@@ -274,10 +293,12 @@ class DanmuController extends ChangeNotifier {
     // 密度控制：限制每帧发射数量
     final maxFirePerFrame = _density >= 0.7 ? 5 : (_density >= 0.4 ? 3 : 1);
     int fired = 0;
+    int candidates = 0;
 
     for (int i = lo; i < _sortedByTime.length; i++) {
       final comment = _sortedByTime[i];
       if (comment.time > windowEnd) break;
+      candidates++;
       if (_activeCids.contains(comment.cid)) continue;
       if (fired >= maxFirePerFrame) break;
 
@@ -287,6 +308,10 @@ class DanmuController extends ChangeNotifier {
       _nextFireElapsed = elapsed + minGap;
       _lastFireTime = elapsed;
       fired++;
+    }
+
+    if (fired > 0) {
+      print('[Danmu] 发射成功: fired=$fired, candidates=$candidates');
     }
   }
 
@@ -319,44 +344,45 @@ class DanmuController extends ChangeNotifier {
     }
   }
 
-  // ---- 分片管理（保留原逻辑）----
+  // ---- 分片管理 ----
 
+  /// 查找并加载当前位置需要的分片。
+  /// 跳过已过期的分片（end < pos - 30），从当前位置附近开始加载。
   void _maybeLoadNextSegment(double position) {
     if (_isLoadingSegment) return;
     if (_segments.isEmpty) return;
 
-    // 快速跳过已加载的分片
-    while (_currentSegmentIndex < _segments.length - 1 &&
-        _loadedSegments.contains(_currentSegmentIndex)) {
-      _currentSegmentIndex++;
-    }
-
-    // 跳过位置已超过的分片（向前跳转场景）
-    while (_currentSegmentIndex < _segments.length - 1) {
-      final nextSeg = _segments[_currentSegmentIndex + 1];
-      if (position >= nextSeg.segmentStart - 30) {
-        _currentSegmentIndex++;
-      } else {
-        break;
+    for (int i = 0; i < _segments.length; i++) {
+      if (_loadedSegments.contains(i)) continue;
+      final seg = _segments[i];
+      // 跳过已过期的分片（结束位置在当前位置 30 秒之前）
+      if (seg.segmentEnd < position - 30) continue;
+      // 当前位置在分片范围内，或提前 30 秒预加载
+      if (position >= seg.segmentStart - 30) {
+        print('[Danmu] 请求分片[$i]: '
+            'range=[${seg.segmentStart.toStringAsFixed(0)}, ${seg.segmentEnd.toStringAsFixed(0)}], '
+            'pos=${position.toStringAsFixed(1)}');
+        _pendingSegmentIndex = i;
+        _isLoadingSegment = true;
+        _onNeedLoadSegment?.call(seg);
+        return;
       }
-    }
-
-    // 当前分片是否需要加载
-    if (_currentSegmentIndex >= _segments.length) return;
-    if (_loadedSegments.contains(_currentSegmentIndex)) return;
-
-    final seg = _segments[_currentSegmentIndex];
-    if (position >= seg.segmentStart - 30) {
-      _isLoadingSegment = true;
-      _onNeedLoadSegment?.call(seg);
     }
   }
 
   void onSegmentLoaded(List<DanmuComment> comments) {
     appendComments(comments);
-    _loadedSegments.add(_currentSegmentIndex);
+    if (_pendingSegmentIndex >= 0) {
+      _loadedSegments.add(_pendingSegmentIndex);
+      _pendingSegmentIndex = -1;
+    }
     _isLoadingSegment = false;
     _nextFireElapsed = 0;
+    final firstT = comments.isNotEmpty ? comments.first.time : 0;
+    final lastT = comments.isNotEmpty ? comments.last.time : 0;
+    print('[Danmu] 分片加载完成: +${comments.length}条, '
+        '总计=${_sortedByTime.length}, loadedSegments=$_loadedSegments, '
+        'commentTimeRange=[${firstT.toStringAsFixed(1)}, ${lastT.toStringAsFixed(1)}]');
     notifyListeners();
   }
 
@@ -377,8 +403,8 @@ class DanmuController extends ChangeNotifier {
     _allComments.clear();
     _sortedByTime.clear();
     _segments.clear();
-    _currentSegmentIndex = 0;
     _isLoadingSegment = false;
+    _pendingSegmentIndex = -1;
     _loadedSegments.clear();
     _nextFireElapsed = 0;
     _onNeedLoadSegment = null;
