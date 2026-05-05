@@ -17,6 +17,9 @@ class SettingsPanel extends StatelessWidget {
   /// 更新画面缩放倍数回调（建议同步重置 offset）。
   final ValueChanged<double> onVideoScaleChanged;
 
+  /// 当前视频总时长，传递给片头片尾设置面板。
+  final Duration videoDuration;
+
   const SettingsPanel({
     super.key,
     required this.settings,
@@ -27,6 +30,7 @@ class SettingsPanel extends StatelessWidget {
     required this.onPlaylistModeChanged,
     required this.videoScale,
     required this.onVideoScaleChanged,
+    required this.videoDuration,
   });
 
   @override
@@ -102,6 +106,7 @@ class SettingsPanel extends StatelessWidget {
                                   settings: settings,
                                   onChanged: onSettingsChanged,
                                   onSave: () => Navigator.of(ctx).pop(),
+                                  videoDuration: videoDuration,
                                 ),
                               ),
                             ),
@@ -153,6 +158,7 @@ class SettingsPanel extends StatelessWidget {
                                 settings: settings,
                                 onChanged: onSettingsChanged,
                                 onSave: () => Navigator.of(ctx).pop(),
+                                videoDuration: videoDuration,
                               ),
                             ),
                           ],

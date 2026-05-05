@@ -10,10 +10,14 @@ class IntroOutroSettingsPanel extends StatefulWidget {
   final ValueChanged<PlaybackSettings> onChanged;
   final VoidCallback? onSave;
 
+  /// 当前视频总时长，用于片尾时间的默认值。
+  final Duration videoDuration;
+
   const IntroOutroSettingsPanel({
     super.key,
     required this.settings,
     required this.onChanged,
+    required this.videoDuration,
     this.onSave,
   });
 
@@ -30,6 +34,25 @@ class _IntroOutroSettingsPanelState extends State<IntroOutroSettingsPanel> {
     super.initState();
     _s = widget.settings;
   }
+
+  /// 用于显示和 picker 初始值的片头时间（未配置时回退到 00:00）。
+  Duration get _effectiveIntroTime =>
+      _s.hasIntroTime ? _s.introTime : Duration.zero;
+
+  /// 用于显示和 picker 初始值的片尾时间（未配置时回退到视频总时长）。
+  Duration get _effectiveOutroTime {
+    if (_s.hasOutroTime) return _s.outroTime;
+    // videoDuration 可能为零（视频尚未加载），此时回退到 4 小时作为合理上限。
+    return widget.videoDuration > Duration.zero
+        ? widget.videoDuration
+        : const Duration(hours: 4);
+  }
+
+  /// picker 的最大可选时长。
+  Duration get _maxPickerDuration =>
+      widget.videoDuration > Duration.zero
+          ? widget.videoDuration
+          : const Duration(hours: 4);
 
   @override
   void didUpdateWidget(covariant IntroOutroSettingsPanel oldWidget) {
@@ -93,23 +116,25 @@ class _IntroOutroSettingsPanelState extends State<IntroOutroSettingsPanel> {
                       children: [
                         _buildTimeTile(
                           label: '片头时间',
-                          time: _s.introTime,
+                          time: _effectiveIntroTime,
                           onTap: () => _showTimePicker(
                             context,
                             '片头时间',
-                            _s.introTime,
+                            _effectiveIntroTime,
                             (d) => _updateSettings(_s.copyWith(introTime: d)),
+                            maxDuration: _maxPickerDuration,
                           ),
                         ),
                         const Divider(height: 1, color: Colors.black12),
                         _buildTimeTile(
                           label: '片尾时间',
-                          time: _s.outroTime,
+                          time: _effectiveOutroTime,
                           onTap: () => _showTimePicker(
                             context,
                             '片尾时间',
-                            _s.outroTime,
+                            _effectiveOutroTime,
                             (d) => _updateSettings(_s.copyWith(outroTime: d)),
+                            maxDuration: _maxPickerDuration,
                           ),
                         ),
                       ],
@@ -255,8 +280,9 @@ class _IntroOutroSettingsPanelState extends State<IntroOutroSettingsPanel> {
     BuildContext context,
     String title,
     Duration initial,
-    ValueChanged<Duration> onConfirm,
-  ) {
+    ValueChanged<Duration> onConfirm, {
+    Duration? maxDuration,
+  }) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF2C2C2C),
@@ -268,6 +294,7 @@ class _IntroOutroSettingsPanelState extends State<IntroOutroSettingsPanel> {
           title: title,
           initialDuration: initial,
           onConfirm: onConfirm,
+          maximumDuration: maxDuration,
         );
       },
     );
@@ -278,11 +305,13 @@ class _TimePickerSheet extends StatefulWidget {
   final String title;
   final Duration initialDuration;
   final ValueChanged<Duration> onConfirm;
+  final Duration? maximumDuration;
 
   const _TimePickerSheet({
     required this.title,
     required this.initialDuration,
     required this.onConfirm,
+    this.maximumDuration,
   });
 
   @override
@@ -296,6 +325,9 @@ class _TimePickerSheetState extends State<_TimePickerSheet> {
   void initState() {
     super.initState();
     _current = widget.initialDuration;
+    if (widget.maximumDuration != null && _current > widget.maximumDuration!) {
+      _current = widget.maximumDuration!;
+    }
   }
 
   @override
@@ -340,7 +372,14 @@ class _TimePickerSheetState extends State<_TimePickerSheet> {
               child: CupertinoTimerPicker(
                 mode: CupertinoTimerPickerMode.hms,
                 initialTimerDuration: _current,
-                onTimerDurationChanged: (d) => _current = d,
+                onTimerDurationChanged: (d) {
+                  if (widget.maximumDuration != null &&
+                      d > widget.maximumDuration!) {
+                    _current = widget.maximumDuration!;
+                  } else {
+                    _current = d;
+                  }
+                },
                 backgroundColor: Colors.transparent,
               ),
             ),

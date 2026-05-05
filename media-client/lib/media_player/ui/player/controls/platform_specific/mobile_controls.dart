@@ -393,6 +393,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       onVideoScaleChanged: (scale) {
         notifier.setVideoTransform(scale: scale, offset: Offset.zero);
       },
+      videoDuration: state.duration,
     );
   }
 

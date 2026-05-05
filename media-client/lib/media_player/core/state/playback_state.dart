@@ -17,6 +17,10 @@ import 'episode_navigation_mixin.dart';
 import 'progress_tracker.dart';
 import 'settings_persistence.dart';
 
+/// 哨兵值：表示用户未配置片头/片尾时间。
+/// 负数 Duration 确保 `> Duration.zero` 检查自动将其视为"未设置"。
+const Duration kUnsetDuration = Duration(milliseconds: -1);
+
 class PlaybackSettings {
   /// 是否开启片头片尾跳过。
   final bool skipIntroOutro;
@@ -36,10 +40,16 @@ class PlaybackSettings {
   /// 字幕底部边距。
   final double subtitleBottomPadding;
 
+  /// introTime 是否已被用户显式配置。
+  bool get hasIntroTime => introTime != kUnsetDuration;
+
+  /// outroTime 是否已被用户显式配置。
+  bool get hasOutroTime => outroTime != kUnsetDuration;
+
   const PlaybackSettings({
     this.skipIntroOutro = false,
-    this.introTime = Duration.zero,
-    this.outroTime = Duration.zero,
+    this.introTime = kUnsetDuration,
+    this.outroTime = kUnsetDuration,
     this.applyToAllEpisodes = false,
     this.subtitleFontSize = 40.0,
     this.subtitleBottomPadding = 24.0,
@@ -78,16 +88,18 @@ class PlaybackSettings {
   static PlaybackSettings fromJson(Map<String, dynamic> json) {
     return PlaybackSettings(
       skipIntroOutro: (json['skip'] as bool?) ?? false,
-      introTime: Duration(
-        milliseconds: (json['intro_ms'] as num?)?.toInt() ?? 0,
-      ),
-      outroTime: Duration(
-        milliseconds: (json['outro_ms'] as num?)?.toInt() ?? 0,
-      ),
+      introTime: _parseDurationFromJson(json['intro_ms']),
+      outroTime: _parseDurationFromJson(json['outro_ms']),
       applyToAllEpisodes: (json['apply_all'] as bool?) ?? false,
       subtitleFontSize: (json['sub_size'] as num?)?.toDouble() ?? 40.0,
       subtitleBottomPadding: (json['sub_padding'] as num?)?.toDouble() ?? 24.0,
     );
+  }
+
+  static Duration _parseDurationFromJson(Object? raw) {
+    final ms = (raw as num?)?.toInt() ?? -1;
+    if (ms < 0) return kUnsetDuration;
+    return Duration(milliseconds: ms);
   }
 }
 
@@ -921,6 +933,17 @@ class PlaybackNotifier extends StateNotifier<PlaybackState>
     if (specificChanged) {
       await _persistVideoSpecificSettings();
     }
+
+    assert(() {
+      debugPrint('[PlaybackNotifier] Settings saved: '
+          'skipIntroOutro=${settings.skipIntroOutro}, '
+          'introTime=${settings.introTime}, '
+          'outroTime=${settings.outroTime}, '
+          'fileId=${state.fileId}, '
+          'seasonVersionId=${state.seasonVersionId}, '
+          'specificChanged=$specificChanged');
+      return true;
+    }());
   }
 
   @override
@@ -1140,8 +1163,15 @@ class PlaybackNotifier extends StateNotifier<PlaybackState>
   /// - 单集循环：从头重新播放当前集
   /// - 不循环：不做额外动作（保持结束态）
   Future<void> _handlePlaybackCompleted({bool fromOutroSkip = false}) async {
-    // 片尾跳过属于“提前结束”，同样按播放模式执行。
-    // fromOutroSkip 目前仅用于语义区分，保留扩展点。
+    // 片尾跳过时，如果有下一集则强制连播（用户配置片尾时间的意图就是跳到下一集）。
+    if (fromOutroSkip) {
+      final next = resolveAdjacentEpisode(previous: false);
+      if (next != null) {
+        await playNextEpisode();
+        return;
+      }
+    }
+
     switch (state.playlistMode) {
       case PlaylistMode.loop:
         await playNextEpisode();
@@ -1161,6 +1191,17 @@ class PlaybackNotifier extends StateNotifier<PlaybackState>
       fileId: state.fileId,
       seasonVersionId: state.seasonVersionId,
     );
+
+    assert(() {
+      debugPrint('[PlaybackNotifier] Video settings loaded: '
+          'fileId=${state.fileId}, '
+          'seasonVersionId=${state.seasonVersionId}, '
+          'introTime=${result.introTime}, '
+          'outroTime=${result.outroTime}, '
+          'applyToAll=${result.applyToAllEpisodes}');
+      return true;
+    }());
+
     if (result.introTime == null && result.outroTime == null) return;
 
     state = state.copyWith(

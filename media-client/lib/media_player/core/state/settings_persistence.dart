@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_kit/media_kit.dart';
@@ -82,8 +83,8 @@ class SettingsPersistence {
       if (fileData is Map) {
         final m = fileData.cast<String, dynamic>();
         return SettingsLoadResult(
-          introTime: Duration(milliseconds: (m['intro_ms'] as int?) ?? 0),
-          outroTime: Duration(milliseconds: (m['outro_ms'] as int?) ?? 0),
+          introTime: _parseDuration(m['intro_ms']),
+          outroTime: _parseDuration(m['outro_ms']),
           applyToAllEpisodes: false,
           fit: _parseBoxFit(m['fit']),
           videoScale: (m['scale'] as num?)?.toDouble() ?? 1.0,
@@ -102,8 +103,8 @@ class SettingsPersistence {
         if (seasonData is Map) {
           final m = seasonData.cast<String, dynamic>();
           return SettingsLoadResult(
-            introTime: Duration(milliseconds: (m['intro_ms'] as int?) ?? 0),
-            outroTime: Duration(milliseconds: (m['outro_ms'] as int?) ?? 0),
+            introTime: _parseDuration(m['intro_ms']),
+            outroTime: _parseDuration(m['outro_ms']),
             applyToAllEpisodes: true,
             fit: _parseBoxFit(m['fit']),
             videoScale: (m['scale'] as num?)?.toDouble() ?? 1.0,
@@ -149,13 +150,19 @@ class SettingsPersistence {
     required Offset videoOffset,
     bool applyToAll = false,
   }) async {
-    if (fileId == null) return;
+    if (fileId == null) {
+      assert(() {
+        debugPrint('[SettingsPersistence] saveVideoSpecificSettings skipped: fileId is null');
+        return true;
+      }());
+      return;
+    }
 
     try {
       final box = await Hive.openBox(_boxName);
       final data = {
-        'intro_ms': settings.introTime.inMilliseconds,
-        'outro_ms': settings.outroTime.inMilliseconds,
+        'intro_ms': settings.introTime == kUnsetDuration ? -1 : settings.introTime.inMilliseconds,
+        'outro_ms': settings.outroTime == kUnsetDuration ? -1 : settings.outroTime.inMilliseconds,
         'fit': fit.name,
         'scale': videoScale,
         'offset_dx': videoOffset.dx,
@@ -163,12 +170,19 @@ class SettingsPersistence {
         'updated_at': DateTime.now().millisecondsSinceEpoch,
       };
 
+      final key = applyToAll && seasonVersionId != null
+          ? 'video_settings_season_$seasonVersionId'
+          : 'video_settings_file_$fileId';
+      await box.put(key, data);
       if (applyToAll && seasonVersionId != null) {
-        await box.put('video_settings_season_$seasonVersionId', data);
         await box.delete('video_settings_file_$fileId');
-      } else {
-        await box.put('video_settings_file_$fileId', data);
       }
+
+      assert(() {
+        debugPrint('[SettingsPersistence] Saved video settings: '
+            'key=$key, intro_ms=${data['intro_ms']}, outro_ms=${data['outro_ms']}');
+        return true;
+      }());
     } catch (_) {}
   }
 
@@ -202,5 +216,11 @@ class SettingsPersistence {
       (e) => e.name == name,
       orElse: () => BoxFit.contain,
     );
+  }
+
+  static Duration _parseDuration(Object? raw) {
+    final ms = (raw as int?) ?? -1;
+    if (ms < 0) return kUnsetDuration;
+    return Duration(milliseconds: ms);
   }
 }
