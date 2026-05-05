@@ -149,19 +149,30 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
               option: cd.DanmakuOption(
                 fontSize: engine.fontSize,
                 area: engine.area,
-                opacity: engine.opacity,
+                opacity: 1.0, // 固定 1.0，透明度由外层 Opacity widget 控制
                 duration: w > 0
                     ? (w / (engine.speed * engine.playbackSpeed))
                         .clamp(3.0, 30.0)
                     : 10.0,
                 staticDuration: 5.0,
                 strokeWidth: 1.5,
-                massiveMode: engine.density >= 0.7,
+                massiveMode: engine.density >= 0.5,
                 safeArea: false,
               ),
             );
 
-            return _cachedScreen!;
+            // 透明度通过 Opacity widget 控制（canvas_danmaku 的 _updateOption 不触发 setState）
+            // ListenableBuilder 监听 engine 变化以更新透明度
+            return ListenableBuilder(
+              listenable: engine,
+              builder: (context, child) {
+                return Opacity(
+                  opacity: engine.opacity,
+                  child: child,
+                );
+              },
+              child: _cachedScreen!,
+            );
           },
         ),
       ),

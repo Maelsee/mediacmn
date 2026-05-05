@@ -389,8 +389,19 @@ class PlaybackNotifier extends StateNotifier<PlaybackState>
 
   bool _initialized = false;
 
-  /// 记录最近一次打开媒体的时间，用于抑制“切源/切集/重开”过程中误触发的自动下一集。
+  /// 记录最近一次打开媒体的时间，用于抑制”切源/切集/重开”过程中误触发的自动下一集。
   DateTime? _lastOpenAt;
+
+  /// 当前媒体是否已完成首次片头跳过。
+  ///
+  /// 每次打开新媒体时重置为 false，首次跳过片头后设为 true。
+  /// 之后仅在用户手动拖动进度条进入片头时间 ±5 秒窗口时才再次触发。
+  bool _introSkippedForCurrentMedia = false;
+
+  /// 片尾跳过是否已触发（防重入保护）。
+  ///
+  /// 避免 position 流每帧回调导致连续触发多次 `_handlePlaybackCompleted`。
+  bool _outroSkipTriggered = false;
 
   /// 字幕切换中标记。
   ///
@@ -489,6 +500,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState>
         videoOffset: Offset.zero,
       );
       _lastOpenAt = DateTime.now();
+      _introSkippedForCurrentMedia = false;
+      _outroSkipTriggered = false;
       await service.openUrl(filePath);
       try {
         await _applyPlaylistModeToService(state.playlistMode);
@@ -639,6 +652,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState>
       );
 
       _lastOpenAt = DateTime.now();
+      _introSkippedForCurrentMedia = false;
+      _outroSkipTriggered = false;
       await service.openUrl(
         url,
         headers: headers,
@@ -1094,6 +1109,8 @@ class PlaybackNotifier extends StateNotifier<PlaybackState>
       );
 
       _lastOpenAt = DateTime.now();
+      _introSkippedForCurrentMedia = false;
+      _outroSkipTriggered = false;
       await service.openUrl(
         url,
         headers: headers,
@@ -1129,13 +1146,36 @@ class PlaybackNotifier extends StateNotifier<PlaybackState>
     final s = state.settings;
     if (!s.skipIntroOutro) return;
     if (state.duration == Duration.zero) return;
+    // 加载中不触发（防重入：切集时 position 流仍在回调）。
+    if (state.loading) return;
 
-    if (s.introTime > Duration.zero && state.position < s.introTime) {
-      unawaited(service.seek(s.introTime));
-      return;
+    const graceWindow = Duration(seconds: 5);
+
+    // 片头跳过：
+    // - 首次加载（_introSkippedForCurrentMedia == false）：position < introTime 即跳过
+    // - 之后：仅当用户手动拖入 introTime 前 5 秒窗口内才跳过
+    if (s.introTime > Duration.zero) {
+      if (!_introSkippedForCurrentMedia && state.position < s.introTime) {
+        _introSkippedForCurrentMedia = true;
+        unawaited(service.seek(s.introTime));
+        return;
+      }
+      if (_introSkippedForCurrentMedia &&
+          state.position >= s.introTime - graceWindow &&
+          state.position < s.introTime) {
+        unawaited(service.seek(s.introTime));
+        return;
+      }
     }
 
-    if (s.outroTime > Duration.zero && state.position >= s.outroTime) {
+    // 片尾跳过：仅在 outroTime 前 5 秒窗口内触发一次。
+    // 用户手动拖过 outroTime 则不强制跳回。
+    if (!_outroSkipTriggered &&
+        s.outroTime > Duration.zero &&
+        state.position >= s.outroTime - graceWindow &&
+        state.position < s.outroTime) {
+      _introSkippedForCurrentMedia = false;
+      _outroSkipTriggered = true;
       unawaited(_handlePlaybackCompleted(fromOutroSkip: true));
       return;
     }

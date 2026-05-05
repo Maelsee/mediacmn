@@ -12,11 +12,12 @@ class DanmuSettingsPanel extends ConsumerStatefulWidget {
 }
 
 class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
-  double _fontSize = 15;
+  double _fontSize = 17;
   double _area = 0.3;
   double _speed = 70;
   double _opacity = 0.5;
-  double _density = 0.5;
+  double _density = 0.3;
+  double _timeOffset = 0;
   bool _initialized = false;
 
   @override
@@ -36,11 +37,127 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
       _speed = engine.speed;
       _opacity = engine.opacity;
       _density = engine.density;
+      _timeOffset = engine.timeOffset;
       _initialized = true;
     }
 
+    // 滑块列表内容
+    final sliders = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildSliderRow(
+          label: '字体大小',
+          value: _fontSize,
+          min: 12,
+          max: 32,
+          divisions: 20,
+          format: (v) => '${v.round()}',
+          onChanged: (v) {
+            setState(() => _fontSize = v);
+            engine.setFontSize(v);
+          },
+        ),
+        _buildSliderRow(
+          label: '显示区域',
+          value: _area,
+          min: 0.0,
+          max: 1.0,
+          divisions: 10,
+          format: (v) => '${(v * 100).round()}%',
+          onChanged: (v) {
+            setState(() => _area = v);
+            engine.setArea(v);
+          },
+        ),
+        _buildSliderRow(
+          label: '滚动速度',
+          value: _speed,
+          min: 20,
+          max: 200,
+          divisions: 18,
+          format: (v) => '${v.round()}px/s',
+          onChanged: (v) {
+            setState(() => _speed = v);
+            engine.setSpeed(v);
+          },
+        ),
+        _buildSliderRow(
+          label: '透明度',
+          value: _opacity,
+          min: 0.0,
+          max: 1.0,
+          divisions: 10,
+          format: (v) => '${(v * 100).round()}%',
+          onChanged: (v) {
+            setState(() => _opacity = v);
+            engine.setOpacity(v);
+          },
+        ),
+        _buildSliderRow(
+          label: '弹幕密度',
+          value: _density,
+          min: 0.1,
+          max: 1.0,
+          divisions: 9,
+          format: (v) => '${(v * 100).round()}%',
+          onChanged: (v) {
+            setState(() => _density = v);
+            engine.setDensity(v);
+          },
+        ),
+        _buildSliderRow(
+          label: '时间偏移',
+          labelSuffix: _timeOffset != 0 ? ' 重置' : null,
+          onLabelTap: _timeOffset != 0
+              ? () {
+                  setState(() => _timeOffset = 0);
+                  engine.setTimeOffset(0);
+                }
+              : null,
+          value: _timeOffset,
+          min: -30.0,
+          max: 30.0,
+          divisions: 60,
+          format: (v) => '${v >= 0 ? '+' : ''}${v.toStringAsFixed(1)}s',
+          onChanged: (v) {
+            setState(() => _timeOffset = v);
+            engine.setTimeOffset(v);
+          },
+        ),
+      ],
+    );
+
+    // 构建头部（标题 + 拖拽条）
+    Widget buildHeader() => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isLandscape)
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            const Text('弹幕设置',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold)),
+            SizedBox(height: isLandscape ? 16 : 12),
+          ],
+        );
+
+    // 竖屏限制高度为屏幕 50%（与其他面板一致），横屏自适应
+    final panelHeight = isLandscape ? null : size.height * 0.5;
+
     return Container(
-      height: isLandscape ? double.infinity : null,
+      height: panelHeight,
       padding: EdgeInsets.fromLTRB(20, isLandscape ? 24 : 12, 20, 24),
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
@@ -49,97 +166,12 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
             : const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Column(
-        mainAxisSize: isLandscape ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 拖拽指示条
-          if (!isLandscape)
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          const Text('弹幕设置',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold)),
-          SizedBox(height: isLandscape ? 24 : 16),
-
-          // 字体大小
-          _buildSliderRow(
-            label: '字体大小',
-            value: _fontSize,
-            min: 12,
-            max: 32,
-            divisions: 20,
-            format: (v) => '${v.round()}',
-            onChanged: (v) {
-              setState(() => _fontSize = v);
-              engine.setFontSize(v);
-            },
-          ),
-
-          // 显示区域
-          _buildSliderRow(
-            label: '显示区域',
-            value: _area,
-            min: 0.0,
-            max: 1.0,
-            divisions: 10,
-            format: (v) => '${(v * 100).round()}%',
-            onChanged: (v) {
-              setState(() => _area = v);
-              engine.setArea(v);
-            },
-          ),
-
-          // 滚动速度
-          _buildSliderRow(
-            label: '滚动速度',
-            value: _speed,
-            min: 20,
-            max: 200,
-            divisions: 18,
-            format: (v) => '${v.round()}px/s',
-            onChanged: (v) {
-              setState(() => _speed = v);
-              engine.setSpeed(v);
-            },
-          ),
-
-          // 透明度
-          _buildSliderRow(
-            label: '透明度',
-            value: _opacity,
-            min: 0.0,
-            max: 1.0,
-            divisions: 10,
-            format: (v) => '${(v * 100).round()}%',
-            onChanged: (v) {
-              setState(() => _opacity = v);
-              engine.setOpacity(v);
-            },
-          ),
-
-          // 弹幕密度（10%稀疏 → 100%密集）
-          _buildSliderRow(
-            label: '弹幕密度',
-            value: _density,
-            min: 0.1,
-            max: 1.0,
-            divisions: 9,
-            format: (v) => '${(v * 100).round()}%',
-            onChanged: (v) {
-              setState(() => _density = v);
-              engine.setDensity(v);
-            },
+          buildHeader(),
+          Expanded(
+            child: SingleChildScrollView(child: sliders),
           ),
         ],
       ),
@@ -154,6 +186,8 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
     required int divisions,
     required String Function(double) format,
     required ValueChanged<double> onChanged,
+    String? labelSuffix,
+    VoidCallback? onLabelTap,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -161,8 +195,24 @@ class _DanmuSettingsPanelState extends ConsumerState<DanmuSettingsPanel> {
         children: [
           SizedBox(
             width: 72,
-            child: Text(label,
-                style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            child: GestureDetector(
+              onTap: onLabelTap,
+              child: Text.rich(
+                TextSpan(
+                  text: label,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  children: labelSuffix != null
+                      ? [
+                          TextSpan(
+                            text: labelSuffix,
+                            style: const TextStyle(
+                                color: Color(0xFFFFE796), fontSize: 12),
+                          ),
+                        ]
+                      : null,
+                ),
+              ),
+            ),
           ),
           Expanded(
             child: SliderTheme(

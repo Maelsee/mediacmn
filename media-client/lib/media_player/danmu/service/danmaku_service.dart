@@ -17,11 +17,11 @@ class DanmuController extends ChangeNotifier {
 
   // === 用户设置 ===
   double _opacity = 0.5;
-  double _fontSize = 15;
+  double _fontSize = 17;
   double _area = 0.3;
   double _speed = 70; // px/s
   double _playbackSpeed = 1.0;
-  double _density = 0.5;
+  double _density = 0.3;
   double _timeOffset = 0;
 
   // === 弹幕数据 ===
@@ -62,6 +62,7 @@ class DanmuController extends ChangeNotifier {
   double get speed => _speed;
   double get playbackSpeed => _playbackSpeed;
   double get density => _density;
+  double get timeOffset => _timeOffset;
   int get totalCount => _allComments.length;
   double get currentPosition => _currentPosition;
 
@@ -186,12 +187,18 @@ class DanmuController extends ChangeNotifier {
 
   void setDensity(double v) {
     _density = v.clamp(0.1, 1.0);
+    // density 仅控制 massiveMode（轨道占满时是否叠加），不再混入 area 调整
     _syncOptionToCanvas();
     notifyListeners();
   }
 
   void setTimeOffset(double v) {
+    final old = _timeOffset;
     _timeOffset = v;
+    if (old != v) {
+      final direction = v > 0 ? '弹幕慢于视频' : (v < 0 ? '弹幕快于视频' : '无偏移');
+      print('[Danmu] 时间偏移变更: ${old.toStringAsFixed(1)}s -> ${v.toStringAsFixed(1)}s ($direction)');
+    }
   }
 
   // ---- 核心：设置映射到 DanmakuOption ----
@@ -206,17 +213,16 @@ class DanmuController extends ChangeNotifier {
         ? (_viewWidth / effectiveSpeed).clamp(3.0, 30.0)
         : 10.0;
 
-    // density → massiveMode + area 微调
-    final massiveMode = _density >= 0.7;
-    final effectiveArea = _density < 0.3
-        ? (_area * 0.8).clamp(0.2, 1.0)
-        : _area;
+    // density → massiveMode（轨道占满时是否叠加显示）
+    final massiveMode = _density >= 0.5;
 
+    // 注意：opacity 不在此处同步，由 DanmuOverlay 通过 Opacity widget 控制
+    // 原因：canvas_danmaku 的 _updateOption 不会 setState，导致 Opacity widget 不重建
     cc.updateOption(cc.option.copyWith(
       fontSize: _fontSize,
-      area: effectiveArea,
+      area: _area,
       duration: duration,
-      opacity: _opacity,
+      opacity: 1.0, // 固定为 1.0，实际透明度由外层 Opacity widget 控制
       massiveMode: massiveMode,
       strokeWidth: 1.5,
       safeArea: false,
@@ -278,6 +284,14 @@ class DanmuController extends ChangeNotifier {
 
     final adjustedPosition = position + _timeOffset;
     final windowEnd = adjustedPosition + _lookAheadSeconds;
+
+    // 偏移调试日志（仅在有偏移时输出，避免刷屏）
+    if (_timeOffset != 0) {
+      final direction = _timeOffset > 0 ? '弹幕慢于视频' : '弹幕快于视频';
+      print('[Danmu] 偏移发射: 视频位置=${position.toStringAsFixed(2)}s, '
+          '偏移=${_timeOffset.toStringAsFixed(1)}s, '
+          '查询位置=${adjustedPosition.toStringAsFixed(2)}s ($direction)');
+    }
 
     // 二分查找定位起始位置
     int lo = 0, hi = _sortedByTime.length;

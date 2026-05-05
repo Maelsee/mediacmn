@@ -55,47 +55,64 @@ mixin EpisodeNavigationMixin on StateNotifier<PlaybackState> {
     final detail = state.detail;
     if (detail == null || detail.mediaType == 'movie') return const [];
 
-    final fromDetail = <int>[];
+    // 仅使用当前季的版本，避免跨季混排导致索引错位。
+    final currentSeasonVersionId = state.seasonVersionId;
     for (final season in detail.seasons ?? const []) {
       for (final version in season.versions ?? const []) {
+        if (currentSeasonVersionId != null &&
+            version.id != currentSeasonVersionId) {
+          continue;
+        }
+        final fromDetail = <int>[];
         for (final ep in version.episodes) {
           if (ep.assets.isEmpty) continue;
           fromDetail.add(ep.assets.first.fileId);
         }
+        if (fromDetail.isNotEmpty) return fromDetail;
       }
     }
-    return fromDetail;
+
+    // 最后兜底：返回所有季的 fileId（不应走到这里）。
+    final fallback = <int>[];
+    for (final season in detail.seasons ?? const []) {
+      for (final version in season.versions ?? const []) {
+        for (final ep in version.episodes) {
+          if (ep.assets.isEmpty) continue;
+          fallback.add(ep.assets.first.fileId);
+        }
+      }
+    }
+    return fallback;
   }
 
   /// 计算相邻剧集的 fileId。
+  ///
+  /// 始终基于 `state.episodes` 的顺序进行导航，避免因空资源集导致索引错位。
   int? resolveAdjacentEpisode({required bool previous}) {
     final current = state.fileId ?? state.currentEpisodeFileId;
     if (current == null) return null;
 
-    final ids = episodeFileIdList();
-    if (ids.length <= 1) return null;
+    final episodes = state.episodes;
+    if (episodes.length <= 1) return null;
 
-    var idx = ids.indexOf(current);
-
-    // 若未命中，通过选集列表中任意资源 fileId 反查索引
-    if (idx == -1) {
-      final episodes = state.episodes;
-      for (var i = 0; i < episodes.length; i++) {
-        final ep = episodes[i];
-        for (final a in ep.assets) {
-          if (a.fileId == current) {
-            idx = i;
-            break;
-          }
+    // 在 episodes 中查找当前集的索引（搜索所有资源，兼容非首个资源的情况）。
+    var idx = -1;
+    for (var i = 0; i < episodes.length; i++) {
+      for (final a in episodes[i].assets) {
+        if (a.fileId == current) {
+          idx = i;
+          break;
         }
-        if (idx != -1) break;
       }
-      if (idx == -1) return null;
+      if (idx != -1) break;
     }
+    if (idx == -1) return null;
 
     final nextIdx = previous ? idx - 1 : idx + 1;
-    if (nextIdx < 0 || nextIdx >= ids.length) return null;
-    return ids[nextIdx];
+    if (nextIdx < 0 || nextIdx >= episodes.length) return null;
+    final nextEp = episodes[nextIdx];
+    if (nextEp.assets.isEmpty) return null;
+    return nextEp.assets.first.fileId;
   }
 
   /// 重新计算上一集/下一集导航状态。

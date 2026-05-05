@@ -261,6 +261,11 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
     }
   }
 
+  /// 更新弹幕时间偏移（纯前端，不持久化到服务器）
+  void updateOffset(double offset) {
+    _engine?.setTimeOffset(offset);
+  }
+
   /// 统一加载弹幕数据到引擎（自动匹配/手动搜索/切换源 共用）
   ///
   /// 处理流程：
@@ -277,10 +282,11 @@ class DanmuNotifier extends StateNotifier<DanmuState> {
       _engine = DanmuController();
       _engineVersion++;
       engineCreated = true;
+      // 新引擎：从绑定读取初始偏移
+      _engine!.setTimeOffset(state.binding?.offset ?? 0);
     }
-    // 先注册回调，再加载数据（loadDanmuData 内部会触发分片请求）
+    // 已有引擎：保留用户手动设置的时间偏移
     _engine!.setOnNeedLoadSegment(_loadSegment);
-    _engine!.setTimeOffset(state.binding?.offset ?? 0);
     _engine!.loadDanmuData(data, currentPosition: currentPosition);
     return engineCreated;
   }

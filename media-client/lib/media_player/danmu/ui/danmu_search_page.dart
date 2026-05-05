@@ -108,19 +108,25 @@ class _DanmuSearchPageState extends ConsumerState<DanmuSearchPage> {
       body: state.searchLoading
           ? const Center(child: CircularProgressIndicator())
           : state.searchResults.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.search,
-                          size: 64, color: Colors.white.withAlpha(51)),
-                      const SizedBox(height: 16),
-                      Text(
-                        '输入影视名称搜索弹幕源',
-                        style: TextStyle(
-                            color: Colors.white.withAlpha(102), fontSize: 15),
+              ? SingleChildScrollView(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 80),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.search,
+                              size: 64, color: Colors.white.withAlpha(51)),
+                          const SizedBox(height: 16),
+                          Text(
+                            '输入影视名称搜索弹幕源',
+                            style: TextStyle(
+                                color: Colors.white.withAlpha(102),
+                                fontSize: 15),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 )
               : ListView.separated(
