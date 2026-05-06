@@ -403,6 +403,9 @@ class PlaybackNotifier extends StateNotifier<PlaybackState>
   /// 避免 position 流每帧回调导致连续触发多次 `_handlePlaybackCompleted`。
   bool _outroSkipTriggered = false;
 
+  /// 弹幕开关偏好（跨集保持，不随 fileId 变化而重置）。
+  bool danmuEnabled = false;
+
   /// 字幕切换中标记。
   ///
   /// 目的：避免用户连续点击导致重复切换，造成明显卡顿或长时间无响应。

@@ -38,7 +38,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           overlays: [],
         );
 
-        // 隐藏系统音量条，避免手势调音量时遮挡与卡顿。
+        // 隐藏系统音量条，避免手势调音量时遮挡。
         FlutterVolumeController.updateShowSystemUI(false);
       }
       ref
@@ -52,7 +52,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     if (!_isWidgetTest) {
       // 退出播放页恢复系统 UI 展示。
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      // 恢复默认行为（显示系统音量条）。
+      // 恢复系统音量条显示。
       FlutterVolumeController.updateShowSystemUI(true);
     }
     super.dispose();

@@ -228,7 +228,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     widget.notifier.toggleLock();
   }
 
-  /// 切换横竖屏（仅控制系统允许的方向集合）。
+  /// 切换横竖屏。
+  ///
+  /// 横屏时允许根据重力方向自动旋转 180 度，不锁定单一方向。
   void _toggleOrientation() {
     if (MediaQuery.of(context).orientation == Orientation.portrait) {
       _setPreferredOrientations([
@@ -236,7 +238,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         DeviceOrientation.landscapeRight,
       ]);
     } else {
-      _setPreferredOrientations([DeviceOrientation.portraitUp]);
+      // 重置为系统默认，允许传感器自由决定方向（含横屏 180 度翻转）。
+      _setPreferredOrientations([]);
     }
   }
 
@@ -716,9 +719,12 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
                   _startValue = 0.5;
                 }
               } else {
+                // 音量：读取系统音量，若播放器有增益则从增益位置开始。
                 try {
-                  final v = await FlutterVolumeController.getVolume();
-                  _startValue = v ?? 0.5;
+                  final sysVol = await FlutterVolumeController.getVolume();
+                  final playerVol = widget.volume / 100.0;
+                  // 播放器音量 > 1.0 表示有增益，从增益位置开始
+                  _startValue = playerVol > 1.01 ? playerVol : (sysVol ?? 0.5);
                 } catch (_) {
                   _startValue = 0.5;
                 }
@@ -776,13 +782,20 @@ class _MobileGestureLayerState extends State<MobileGestureLayer> {
                   _overlayText = '亮度: ${(newValue * 100).toInt()}%';
                 });
               } else if (_dragMode == 2) {
-                // 音量：上滑增加、下滑减少（系统媒体音量）。
+                // 音量：上滑增加、下滑减少。系统音量满后通过播放器增益继续提升。
                 final delta = -dy / 300;
-                final newValue = (_startValue + delta).clamp(0.0, 1.0);
+                final newValue = (_startValue + delta).clamp(0.0, 2.0);
                 _startValue = newValue;
-                _requestSystemVolume(newValue);
+
+                // 系统音量：最高 100%
+                _requestSystemVolume(newValue.clamp(0.0, 1.0));
+
+                // 播放器音量：newValue 1.0~2.0 对应增益 100%~200%
+                widget.onVolumeChange((newValue * 100).clamp(0, 200));
+
+                final effectivePct = (newValue * 100).toInt();
                 setState(() {
-                  _overlayText = '音量: ${(newValue * 100).toInt()}%';
+                  _overlayText = '音量: $effectivePct%';
                 });
               } else if (_dragMode == 3) {
                 // 进度：水平滑动映射为时间偏移。

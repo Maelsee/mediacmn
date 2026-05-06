@@ -35,6 +35,7 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
   // 记录上一次的引擎版本，用于检测引擎变更并清除缓存
   int _lastEngineVersion = -1;
   bool _tickerLogOnce = false;
+  bool _autoEnableChecked = false;
 
   @override
   void initState() {
@@ -85,9 +86,23 @@ class _DanmuOverlayState extends ConsumerState<DanmuOverlay>
     final notifier = ref.read(danmuProvider(widget.fileId).notifier);
     final engine = notifier.engine;
 
-    // print('[DanmuOverlay] build: enabled=${danmuState.enabled}, '
-    //     'engine=${engine != null}, ticker=${_ticker.isActive}, '
-    //     'loading=${danmuState.loading}');
+    // 自动恢复弹幕状态：如果偏好为开启且当前 provider 未启用，则自动 enable。
+    if (!_autoEnableChecked) {
+      _autoEnableChecked = true;
+      final playbackNotifier = ref.read(playbackProvider.notifier);
+      if (playbackNotifier.danmuEnabled && !danmuState.enabled) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) notifier.enable();
+        });
+      }
+    }
+
+    // 同步弹幕开关偏好到 PlaybackNotifier（跨集保持）。
+    ref.listen(danmuProvider(widget.fileId), (prev, next) {
+      if (prev?.enabled != next.enabled) {
+        ref.read(playbackProvider.notifier).danmuEnabled = next.enabled;
+      }
+    });
 
     // Ticker 生命周期：弹幕开启时运行，关闭时停止
     if (danmuState.enabled) {
