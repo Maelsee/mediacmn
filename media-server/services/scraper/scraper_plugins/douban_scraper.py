@@ -41,21 +41,20 @@ class DoubanScraper(ScraperPlugin):
     def priority(self) -> int:
         return 90  # 略低于TMDB
     
-    def _get_session(self) -> aiohttp.ClientSession:
-        """获取HTTP会话"""
+    async def _ensure_session(self):
+        """确保 HTTP 会话存在且有效（复用连接池）"""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 headers=self._headers,
                 timeout=aiohttp.ClientTimeout(total=30)
             )
-        return self._session
     
     async def test_connection(self) -> bool:
         """测试连接"""
         try:
-            async with self._get_session() as session:
-                url = "https://movie.douban.com/"
-                async with session.get(url) as response:
+            await self._ensure_session()
+            url = "https://movie.douban.com/"
+            async with self._session.get(url) as response:
                     if response.status == 200:
                         text = await response.text()
                         if "豆瓣电影" in text:
@@ -69,12 +68,18 @@ class DoubanScraper(ScraperPlugin):
             logger.error(f"豆瓣连接测试异常: {e}")
             return False
     
+    async def close(self) -> None:
+        """关闭会话（兼容接口）"""
+        await self.shutdown()
+
     async def shutdown(self) -> None:
+        """关闭 HTTP 会话并释放连接池"""
         try:
             if self._session and not self._session.closed:
                 await self._session.close()
         except Exception:
             pass
+        self._session = None
     
     async def search(self, title: str, year: Optional[int] = None,
                     media_type: MediaType = MediaType.MOVIE,
@@ -95,8 +100,8 @@ class DoubanScraper(ScraperPlugin):
                 "cat": "1002"  # 电影分类
             }
             
-            async with self._get_session() as session:
-                async with session.get(search_url, params=params) as response:
+            await self._ensure_session()
+            async with self._session.get(search_url, params=params) as response:
                     if response.status != 200:
                         logger.error(f"豆瓣搜索失败: HTTP {response.status}")
                         return []
@@ -188,8 +193,8 @@ class DoubanScraper(ScraperPlugin):
         try:
             url = f"https://movie.douban.com/subject/{movie_id}/"
             
-            async with self._get_session() as session:
-                async with session.get(url) as response:
+            await self._ensure_session()
+            async with self._session.get(url) as response:
                     if response.status != 200:
                         logger.error(f"豆瓣详情获取失败: HTTP {response.status}")
                         return None

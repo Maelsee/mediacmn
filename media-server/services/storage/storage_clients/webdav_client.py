@@ -709,7 +709,9 @@ class WebDAVStorageClient(StorageClient):
     #             )
     
     async def connect(self) -> bool:
-        """建立 WebDAV 连接"""
+        """建立 WebDAV 连接（幂等：已连接且存活时直接返回）"""
+        if self._connected and self.is_alive():
+            return True
         try:
             await self._ensure_session()
             success, error = await self.check_connection()

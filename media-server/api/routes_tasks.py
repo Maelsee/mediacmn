@@ -1,8 +1,11 @@
 """
-任务API路由 - 生产者模块调用
+任务API路由 - 内部/开发者接口
 
 提供统一的任务创建接口：scan/metadata/persist/delete/localize
 以及任务状态查询接口。
+
+注意：此路由面向开发者和内部系统调用。面向终端用户的扫描操作请使用
+routes_scan.py（POST /scan/start），它提供多存储扫描和 WebSocket 进度推送。
 """
 from __future__ import annotations
 

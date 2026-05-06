@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     TMDB_IMAGE_BASE_URL: str = Field(default="https://image.tmdb.org/t/p", description="TMDB 图片基准地址")
     TMDB_FORCE_IPV4: bool = Field(default=False, description="TMDB 请求是否强制使用 IPv4")
     TVMAZE_API_KEY: Optional[str] = Field(default=None, description="TVMaze API Key（如需要）")
+    DASHSCOPE_API_KEY: Optional[str] = Field(default=None, description="阿里百炼 API Key（Qwen3.6-Flash 免费，用于路径解析兜底）")
     # TMDB 网络代理（可选），用于受限网络环境
     # TMDB_HTTP_PROXY: Optional[str] = Field(default=None, description="TMDB HTTP 代理，例如 http://127.0.0.1:7890")
     # TMDB_HTTPS_PROXY: Optional[str] = Field(default=None, description="TMDB HTTPS 代理，例如 http://127.0.0.1:7890")

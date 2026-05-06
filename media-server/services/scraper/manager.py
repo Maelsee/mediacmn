@@ -23,7 +23,9 @@ from .base import (
     ScraperMovieDetail,
     ScraperSeriesDetail,
     ScraperSeasonDetail,
+    ScraperEpisodeDetail,
 )
+from .rate_limiter import TokenBucketRateLimiter
 logger = logging.getLogger(__name__)
 
 class _LocalDetailCache:
@@ -90,6 +92,14 @@ class ScraperManager:
             maxsize=getattr(settings, "SCRAPER_DETAIL_CACHE_LOCAL_MAXSIZE", 2048),
             ttl_seconds=getattr(settings, "SCRAPER_DETAIL_CACHE_TTL_SECONDS", 86400),
         )
+        self._search_cache = _LocalDetailCache(
+            maxsize=getattr(settings, "SCRAPER_SEARCH_CACHE_LOCAL_MAXSIZE", 1024),
+            ttl_seconds=getattr(settings, "SCRAPER_SEARCH_CACHE_TTL_SECONDS", 21600),  # 6h
+        )
+        self._search_timeout_seconds: float = float(getattr(settings, "SCRAPER_SEARCH_TIMEOUT_SECONDS", 8.0))
+        self._rate_limiter = TokenBucketRateLimiter()
+        self._rate_limiter.configure("tmdb", rate=40, burst=5)
+        self._rate_limiter.configure("douban", rate=10, burst=3)
         self._use_redis_cache: bool = bool(getattr(settings, "SCRAPER_DETAIL_CACHE_USE_REDIS", False))
         self._cache_ttl_seconds: int = int(getattr(settings, "SCRAPER_DETAIL_CACHE_TTL_SECONDS", 86400))
         self._lock_ttl_seconds: int = int(getattr(settings, "SCRAPER_DETAIL_CACHE_LOCK_TTL_SECONDS", 30))
@@ -577,31 +587,37 @@ class ScraperManager:
     
     # ================= 业务接口 =================
     async def search_media(self, title: str, year: Optional[int], media_type: MediaType, language: str) -> List[ScraperSearchResult]:
-        """聚合搜索（增加超时控制和排序逻辑）"""
+        """聚合搜索（增加超时控制、缓存和频率限制）"""
         # 核心防御
         self._ensure_started()
-        
+
+        # 检查搜索缓存
+        cache_key = ("search", title.strip().lower(), year, media_type.value, language)
+        cached = self._search_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         # 获取已启用的插件实例
         active_plugins = [
-            (name, self._plugins[name]) 
-            for name in self._enabled_plugins 
+            (name, self._plugins[name])
+            for name in self._enabled_plugins
             if name in self._plugins
         ]
-        
+
         if not active_plugins:
             logger.warning("没有已启用的刮削器插件")
             return []
 
         # 按优先级降序排序
         active_plugins.sort(key=lambda x: x[1].priority, reverse=True)
-        
-        # 封装带超时的搜索任务
+
+        # 封装带超时和限速的搜索任务
         async def _wrapped_search(name, plugin):
             try:
-                # 设定单插件搜索超时，例如 10 秒
+                await self._rate_limiter.acquire(name)
                 return await asyncio.wait_for(
-                    plugin.search(title, year, media_type, language), 
-                    timeout=10.0
+                    plugin.search(title, year, media_type, language),
+                    timeout=self._search_timeout_seconds,
                 )
             except asyncio.TimeoutError:
                 logger.error(f"插件 {name} 搜索超时")
@@ -612,12 +628,16 @@ class ScraperManager:
 
         tasks = [_wrapped_search(name, plugin) for name, plugin in active_plugins]
         results_list = await asyncio.gather(*tasks)
-        
+
         # 合并结果
         all_results = []
         for res in results_list:
             all_results.extend(res)
-            
+
+        # 缓存搜索结果
+        if all_results:
+            self._search_cache.set(cache_key, all_results)
+
         return all_results
 
     async def rollback_search_media(self, title: str, year: Optional[int], media_type: MediaType, language: str) -> Tuple[List[ScraperSearchResult], MediaType]:
@@ -649,6 +669,7 @@ class ScraperManager:
         return [], current_type
        
     async def _call_with_timeout(self, provider: str, op: str, coro: Awaitable[Any]) -> Any:
+        await self._rate_limiter.acquire(provider)
         try:
             return await asyncio.wait_for(coro, timeout=self._timeout_seconds)
         except asyncio.TimeoutError:
@@ -713,9 +734,12 @@ class ScraperManager:
                 return "search_result", best_match
 
             if media_type == MediaType.TV_EPISODE and season is not None and episode is not None:
-                inflight_key = ("episode", provider, int(provider_id), int(season), int(episode), lang)
-                details_obj = await self._singleflight(
-                    inflight_key,
+                cache_key = self._cache_key("episode", provider, lang, int(provider_id), int(season), int(episode))
+                redis_key = self._redis_key("episode", provider, lang, int(provider_id), int(season), int(episode))
+                details_obj = await self._get_or_compute_cached_model(
+                    cache_key,
+                    redis_key,
+                    ScraperEpisodeDetail,
                     lambda: self._call_with_timeout(
                         provider,
                         "get_episode_details",

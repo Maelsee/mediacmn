@@ -15,7 +15,7 @@ from core.security import JWTAuthMiddleware
 from core.config import Settings, get_settings
 from core.logging import init_logging, logger
 from core.errors import register_exception_handlers
-from core.db import init_db
+from core.db import init_async_db
 from services.scraper import scraper_manager
 
 
@@ -34,7 +34,12 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         # --- 【启动阶段】 ---
         try:
-            # 建立连接池、加载配置、初始化单例
+            await init_async_db()
+            logger.info("✅ 数据库异步初始化完成")
+        except Exception as e:
+            logger.error(f"❌ 数据库初始化失败: {e}", exc_info=True)
+
+        try:
             await scraper_manager.startup()
             logger.info("✅ Scraper Manager 已经在系统启动阶段就绪")
         except Exception as e:
@@ -94,10 +99,8 @@ def create_app() -> FastAPI:
     from api.routes_storage_server import router as storage_server_router
     from api.routes_scan import router as scan_router  # 新的统一扫描路由
     from api.routes_tasks import router as tasks_router
-    # from api.routes_scraper import router as scraper_router
     from api.routes_playback import router as playback_router
     from api.routes_tmdb import router as tmdb_router
-    # from api.routes_collections import router as collections_router
     from api.routes_danmu import router as danmu_router
 
 
@@ -105,14 +108,12 @@ def create_app() -> FastAPI:
     api_router.include_router(health_router, prefix="/health", tags=["health"])
     api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
     api_router.include_router(media_router, prefix="/media", tags=["media"])
-    # api_router.include_router(collections_router, prefix="/collections", tags=["collections"])
     api_router.include_router(playback_router, prefix="/playback", tags=["playback"])
     api_router.include_router(tmdb_router, prefix="/tmdb", tags=["tmdb"])
     api_router.include_router(storage_config_router, prefix="/storage-config", tags=["storage-config"])
     api_router.include_router(storage_server_router, prefix="/storage-server", tags=["storage-server"])
     api_router.include_router(scan_router, prefix="/scan", tags=["scan"])  # 新的统一扫描路由
     api_router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])  # 任务生产者API
-    # api_router.include_router(scraper_router, prefix="/scraper", tags=["scraper"])
     api_router.include_router(danmu_router, prefix="/danmu", tags=["弹幕"])
         
     app.include_router(api_router, prefix="/api")
@@ -137,13 +138,6 @@ def create_app() -> FastAPI:
         return app.openapi_schema
 
     app.openapi = custom_openapi
-
-    # 初始化数据库（在开发环境自动创建表，生产环境建议使用 Alembic 迁移）
-    try:
-        init_db()
-        logger.info("database_initialized")
-    except Exception as e:
-        logger.error(f"database_init_failed: {e}")
 
     @app.get("/", tags=["root"])
     def root() -> dict[str, str]:

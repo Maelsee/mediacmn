@@ -148,7 +148,7 @@ async def _enqueue(
 
         # 5. 幂等键持久化（若有）
         if idem_key:
-            await store.set_idempotency(idem_key, task_id, ttl_seconds=60)
+            await store.set_idempotency(idem_key, task_id, ttl_seconds=3600)
             logger.debug(f"任务 {task_id} 绑定幂等键：{idem_key}")
 
         return task_id

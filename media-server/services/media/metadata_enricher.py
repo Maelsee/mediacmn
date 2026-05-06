@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # 类型别名：避免序列化/反序列化开销
 # MetadataResult 为 dict 而非 dataclass，消除 Enum 转换成本
-# MetadataResult = Dict[str, Any]  # 结构: {user_id, file_id, contract_type, contract_payload} 
+# MetadataResult = Dict[str, Any]  # 结构: {user_id, file_id, contract_type, contract_payload}
 class MetadataResult(TypedDict):
     user_id: int
     file_id: int
@@ -38,19 +38,26 @@ class MetadataResult(TypedDict):
 
 class MetadataEnricher:
     """元数据丰富器 - 使用插件化刮削器"""
-    
+
     def __init__(self):
 
         """
         初始化元数据丰富器
-        
+
         创建存储服务和文件名解析器实例
         """
         self.storage_service = storage_service
         self.media_parser = MediaParser()
-    
+
+    @staticmethod
+    def _title_length_ratio(a: str, b: str) -> float:
+        """计算两个标题的长度比率，防止短标题匹配长标题"""
+        if not a or not b:
+            return 0.0
+        return min(len(a), len(b)) / max(len(a), len(b))
+
     def _get_best_match(self,search_results: List[ScraperSearchResult],parsed_data: dict,) -> Optional[ScraperSearchResult]:  # parsed_data名称解析器结果：{title: str, year: Optional[int], language: Optional[str], country: Optional[str]}
-    
+
         """
         从搜索结果中选择最优匹配
         :param search_results: 插件返回的搜索结果列表
@@ -67,7 +74,7 @@ class MetadataEnricher:
         # -------------------------- 步骤1：过滤无效结果 --------------------------
         def _norm_title(text: str) -> str:
             s = (text or "").strip().lower()
-            return "".join(ch for ch in s if ch.isalnum() or "\u4e00" <= ch <= "\u9fff")
+            return "".join(ch for ch in s if ch.isalnum() or "一" <= ch <= "鿿")
 
         parsed_title = parsed_data["title"].strip()
         parsed_title_norm = _norm_title(parsed_title)
@@ -86,6 +93,10 @@ class MetadataEnricher:
                     title_matched = True
                     break
                 if parsed_title_norm and (parsed_title_norm in cand_norm or cand_norm in parsed_title_norm):
+                    # 长度比率检查：防止 "The" 匹配 "The Office"
+                    ratio = self._title_length_ratio(parsed_title_norm, cand_norm)
+                    if ratio < 0.4:
+                        continue  # 长度差异过大，跳过
                     title_matched = True
                     break
             if not title_matched:
@@ -99,8 +110,9 @@ class MetadataEnricher:
             filtered_results.append(result)
 
         # 若过滤后无结果，保留原搜索结果（避免过度过滤导致无匹配）
-        if not filtered_results or len(filtered_results) <=2 :
-            logger.info(f"过滤后候选结果过少，保留原搜索结果（共{len(search_results)}条）")
+        # 仅在过滤后完全没有候选时回退，不再因候选数<=2而回退
+        if not filtered_results:
+            logger.info(f"过滤后无候选结果，保留原搜索结果（共{len(search_results)}条）")
             filtered_results = search_results
 
         # -------------------------- 步骤2：给候选结果打分 --------------------------
@@ -113,7 +125,7 @@ class MetadataEnricher:
             result_vote_count = result.vote_count or 0  # 投票数（默认0）
             result_popularity = result.popularity or 0.0  # 流行度（默认0）
 
-            # 2.1 标题精确匹配（权重30：核心维度，使用归一化后的全等匹配）
+            # 2.1 标题精确匹配（权重35：核心维度，使用归一化后的全等匹配）
             title_exact_match = False
             for candidate in [result.title, result.original_name]:
                 if not candidate:
@@ -122,33 +134,33 @@ class MetadataEnricher:
                     title_exact_match = True
                     break
             if title_exact_match:
-                score += 30
+                score += 35
 
-            # 2.2 年份匹配（权重25：核心维度，区分同名称不同版本）
+            # 2.2 年份匹配（权重20：核心维度，区分同名称不同版本，含±1年容差）
             parsed_year = parsed_data.get("year")
             if parsed_year and result_year:
                 year_diff = abs(parsed_year - result_year)
                 if year_diff == 0:  # 年份完全一致
-                    score += 25
-                elif 1 <= year_diff <= 2:  # 年份差距1-2年（兼容解析误差）
+                    score += 20
+                elif year_diff == 1:  # ±1年容差（多季番剧）
                     score += 10
 
-            # 2.3 地区匹配（权重15：辅助维度，优先本地版本）
+            # 2.3 地区匹配（权重10：辅助维度，优先本地版本）
             if parsed_country and parsed_country.strip() in [c.strip() for c in result.origin_country]:
-                score += 15
+                score += 10
 
-            # 2.4 语言匹配（权重15：辅助维度，优先原始语言匹配）
+            # 2.4 语言匹配（权重10：辅助维度，优先原始语言匹配）
             parsed_lang = parsed_data.get("language")
             if parsed_lang and result_lang:
                 # 支持前缀匹配（如zh-CN匹配zh，en-US匹配en）
                 parsed_lang_prefix = parsed_lang.split("-")[0].strip()
                 result_lang_prefix = result_lang.split("-")[0].strip()
                 if parsed_lang_prefix == result_lang_prefix:
-                    score += 15
+                    score += 10
 
-            # 2.5 评分与投票数（权重10：可靠性维度，避免低投票高评分的异常结果）
-            # 公式：(评分/10)*5 + (min(投票数, 100)/100)*5 → 评分和投票各占5分，投票数上限100（避免极端值）
-            vote_score = (result_vote_avg / 10) * 5 + (min(result_vote_count, 100) / 100) * 5
+            # 2.5 评分与投票数（权重5：可靠性维度，避免低投票高评分的异常结果）
+            # 公式：(评分/10)*2.5 + (min(投票数, 100)/100)*2.5 -> 评分和投票各占2.5分，投票数上限100（避免极端值）
+            vote_score = (result_vote_avg / 10) * 2.5 + (min(result_vote_count, 100) / 100) * 2.5
             score += round(vote_score, 1)  # 保留1位小数，避免分数膨胀
 
             # 2.6 流行度（权重5：热度维度，优先高热度结果）
@@ -161,10 +173,20 @@ class MetadataEnricher:
             # logger.info(f"结果打分：title={result.title}, id={result.id}, 总分={round(score,1)}")
 
         # -------------------------- 步骤3：排序并选择最优结果 --------------------------
-        # 排序规则：1.总分降序 → 2.投票数降序（同分下优先高投票） → 3.流行度降序（再同分优先高热度）
+        # 排序规则：1.总分降序 -> 2.投票数降序（同分下优先高投票） -> 3.流行度降序（再同分优先高热度）
         scored_results.sort(
             key=lambda x: (-x[1], -x[0].vote_count or 0, -x[0].popularity or 0.0)
         )
+
+        # 最低分阈值：低于30分视为无匹配
+        if scored_results and scored_results[0][1] < 30:
+            logger.info(f"最优匹配分数过低 ({scored_results[0][1]})，视为无匹配")
+            try:
+                from services.media.metrics import record_match
+                asyncio.create_task(record_match(parsed_data.get("title", ""), scored_results[0][1], False))
+            except Exception:
+                pass
+            return None
 
         # 取排序后的第一个结果作为最优匹配
         best_match = scored_results[0][0]
@@ -172,7 +194,32 @@ class MetadataEnricher:
             f"最优匹配结果：title={best_match.title}, id={best_match.id}, "
             f"总分={scored_results[0][1]}, 来源={best_match.provider}"
         )
+        try:
+            from services.media.metrics import record_match
+            asyncio.create_task(record_match(parsed_data.get("title", ""), scored_results[0][1], True))
+        except Exception:
+            pass
         return best_match
+
+    async def _record_failed_parse(self, file_asset: FileAsset, error_message: str):
+        """记录失败的解析到数据库，用于后续人工审核"""
+        try:
+            import json
+            from core.db import AsyncSessionLocal
+            from models.media_models import FailedParse
+            async with AsyncSessionLocal() as session:
+                fp = FailedParse(
+                    user_id=file_asset.user_id,
+                    file_path=file_asset.full_path,
+                    file_asset_id=file_asset.id,
+                    guessit_result=json.dumps({"path": file_asset.full_path}, ensure_ascii=False),
+                    error_message=error_message[:500],
+                    search_attempts=1,
+                )
+                session.add(fp)
+                await session.commit()
+        except Exception as e:
+            logger.error(f"记录失败解析异常: {e}")
 
     def _get_parent_dir_key(self, file_asset: FileAsset) -> str:
         """
@@ -195,6 +242,51 @@ class MetadataEnricher:
         counter = Counter(filtered)
         return counter.most_common(1)[0][0]
 
+    async def _try_alias_search(self, title: str, year: Optional[int],
+                                 corrected_type: MediaType, language: str
+                                 ) -> tuple[List[ScraperSearchResult], str]:
+        """尝试通过别名搜索元数据，返回 (搜索结果, 使用的别名标题)"""
+        try:
+            from utils.title_alias_service import title_alias_service
+            aliases = title_alias_service.get_aliases(title)
+            for alias_title in aliases:
+                alias_results, _ = await scraper_manager.rollback_search_media(
+                    title=alias_title,
+                    year=year,
+                    media_type=corrected_type,
+                    language=language,
+                )
+                if alias_results:
+                    logger.info(f"通过别名 '{alias_title}' 找到结果")
+                    return alias_results, alias_title
+        except Exception as e:
+            logger.error(f"别名搜索失败: {e}")
+        return [], title
+
+    async def _try_ai_parse(self, file_path: str, path_info: dict,
+                             corrected_type: MediaType, language: str,
+                             season: Optional[int] = None
+                             ) -> tuple[List[ScraperSearchResult], Optional[str], Optional[int], dict]:
+        """尝试通过 AI 解析文件路径，返回 (搜索结果, 标题, 年份, AI解析结果)"""
+        try:
+            from utils.ai_media_parser import ai_media_parser
+            ai_result = await ai_media_parser.parse(file_path, path_info)
+            if ai_result and ai_result.get("title"):
+                logger.info(f"AI 解析结果: {ai_result}")
+                ai_title = ai_result["title"]
+                ai_year = ai_result.get("year")
+                search_results, _ = await scraper_manager.rollback_search_media(
+                    title=ai_title,
+                    year=ai_year if season and season < 2 else None,
+                    media_type=corrected_type,
+                    language=language,
+                )
+                if search_results:
+                    return search_results, ai_title, ai_year, ai_result
+        except Exception as e:
+            logger.error(f"AI 兜底解析失败: {e}")
+        return [], None, None, path_info
+
     async def enrich_media_file(self, file_asset: FileAsset, language: str = '') -> MetadataResult:
         """
         丰富单个媒体文件元数据（参数改为FileAsset）
@@ -208,10 +300,10 @@ class MetadataEnricher:
             season = path_info.get("season")
             episode = path_info.get("episode")
             year = path_info.get("year")
-            country = path_info.get("country")  
+            country = path_info.get("country")
             corrected_type = MediaType.MOVIE if path_info.get("type") == "movie" else MediaType.TV_EPISODE
 
-            logger.info(f"🔍 搜索参数：title='{title}', 年份={year}, 语言={language}, 类型={corrected_type.value},季={season},集={episode}")
+            logger.info(f"搜索参数：title='{title}', 年份={year}, 语言={language}, 类型={corrected_type.value},季={season},集={episode}")
             search_results, corrected_type = await scraper_manager.rollback_search_media(
                 title=title,
                 year=year if season and season<2 else None,
@@ -232,8 +324,34 @@ class MetadataEnricher:
                 country = path_info.get("country") or country
 
             if not search_results:
+                # 尝试别名搜索
+                alias_results, alias_title = await self._try_alias_search(
+                    title, year, corrected_type, language
+                )
+                if alias_results:
+                    search_results = alias_results
+                    title = alias_title
+
+            if not search_results:
+                # AI 兜底解析
+                ai_results, ai_title, ai_year, ai_path_info = await self._try_ai_parse(
+                    file_asset.full_path, path_info, corrected_type, language, season
+                )
+                if ai_results:
+                    search_results = ai_results
+                    title = ai_title
+                    year = ai_year
+                    path_info = ai_path_info
+
+            if not search_results:
                 err_msg = f"未找到元数据: title='{title}' 年份={year}"
                 logger.warning(err_msg)
+                try:
+                    from services.media.metrics import record_enrich
+                    asyncio.create_task(record_enrich(False, 0))
+                    asyncio.create_task(self._record_failed_parse(file_asset, err_msg))
+                except Exception:
+                    pass
                 return {
                     "user_id": file_asset.user_id,
                     "file_id": file_asset.id,
@@ -250,6 +368,12 @@ class MetadataEnricher:
             if not best_match:
                 err_msg = f"无最优匹配结果: title='{title}' 年份={year}"
                 logger.warning(err_msg)
+                try:
+                    from services.media.metrics import record_enrich
+                    asyncio.create_task(record_enrich(False, 0))
+                    asyncio.create_task(self._record_failed_parse(file_asset, err_msg))
+                except Exception:
+                    pass
                 return {
                     "user_id": file_asset.user_id,
                     "file_id": file_asset.id,
@@ -261,7 +385,7 @@ class MetadataEnricher:
                 }
 
             logger.info(
-                "🏆 最佳匹配：title='%s', 年份=%s, ID=%s" % (
+                "最佳匹配：title='%s', 年份=%s, ID=%s" % (
                     getattr(best_match, "title", None),
                     getattr(best_match, "year", None),
                     getattr(best_match, "id", None),
@@ -274,23 +398,22 @@ class MetadataEnricher:
                     best_match=best_match,
                     language=language,
                 )
-                # logger.info(f"🔍 组级系列搜索结果：{series_detail}")
+                # logger.info(f"组级系列搜索结果：{series_detail}")
                 if series_detail and series_detail.number_of_seasons:
                     season = 1 if season > series_detail.number_of_seasons else season
-                    logger.info(f"🔍 系列搜索最大季数：{series_detail.number_of_seasons}，使用季数：{season}")
+                    logger.info(f"系列搜索最大季数：{series_detail.number_of_seasons}，使用季数：{season}")
                     # 剧集类型：获取季级详情
                     season_detail: Optional[ScraperSeasonDetail] = await scraper_manager.get_season_details_cached(
                         best_match=best_match,
                         language=language,
                         season=season,
                     )
-                    # logger.info(f"🔍 季级系列搜索结果：{season_detail}")
+                    # logger.info(f"季级系列搜索结果：{season_detail}")
                     if season_detail and season_detail.episode_count:
                         episode = 1 if episode > season_detail.episode_count else episode
-                        logger.info(f"🔍 季级系列搜索最大集数：{season_detail.episode_count}，使用集数：{episode}")
-                    
-             
-            
+                        logger.info(f"季级系列搜索最大集数：{season_detail.episode_count}，使用集数：{episode}")
+
+
             # 获取元数据详情
             contract_type, details_obj = await scraper_manager.get_detail(
                 best_match=best_match,
@@ -299,9 +422,14 @@ class MetadataEnricher:
                 season=season,
                 episode=episode,
             )
-            logger.info(f"✅ 获取详情成功: contract_type={contract_type},  季={season}, 集={episode}")
+            logger.info(f"获取详情成功: contract_type={contract_type},  季={season}, 集={episode}")
 
             # -------------------------- 4. 返回结果 --------------------------
+            try:
+                from services.media.metrics import record_enrich
+                asyncio.create_task(record_enrich(True, 0))
+            except Exception:
+                pass
             return {
                 "user_id": file_asset.user_id,
                 "file_id": file_asset.id,
@@ -318,6 +446,12 @@ class MetadataEnricher:
         except Exception as e:
             err_msg = f"元数据丰富失败: file_id={file_asset.id}, 错误={str(e)}"
             logger.exception(err_msg)
+            try:
+                from services.media.metrics import record_enrich
+                asyncio.create_task(record_enrich(False, 0))
+                asyncio.create_task(self._record_failed_parse(file_asset, str(e)))
+            except Exception:
+                pass
             return {
                 "user_id": file_asset.user_id,
                 "file_id": file_asset.id,
@@ -399,8 +533,8 @@ class MetadataEnricher:
         agg_season = self._most_common_non_empty(seasons)
 
         corrected_type = MediaType.TV_EPISODE
-        logger.info(f"剧集文件信息: agg_title={agg_title}, agg_year={agg_year}, agg_country={agg_country}, agg_season={agg_season}")    
-        
+        logger.info(f"剧集文件信息: agg_title={agg_title}, agg_year={agg_year}, agg_country={agg_country}, agg_season={agg_season}")
+
         if not agg_title:
             for fa in episode_files:
                 results.append({
@@ -415,7 +549,7 @@ class MetadataEnricher:
             return results
 
         logger.info(
-            f"📦 组级搜索: title='{agg_title}', 年份={agg_year}, 语言={language}, 类型={corrected_type.value}, 组大小={len(episode_files)}"
+            f"组级搜索: title='{agg_title}', 年份={agg_year}, 语言={language}, 类型={corrected_type.value}, 组大小={len(episode_files)}"
         )
         search_results, _ = await scraper_manager.rollback_search_media(
             title=agg_title,
@@ -423,6 +557,26 @@ class MetadataEnricher:
             media_type=corrected_type,
             language=language,
         )
+
+        if not search_results:
+            # 尝试别名搜索
+            alias_results, alias_title = await self._try_alias_search(
+                agg_title, agg_year, corrected_type, language
+            )
+            if alias_results:
+                search_results = alias_results
+                agg_title = alias_title
+
+        if not search_results:
+            # AI 兜底解析（使用第一个文件的路径作为参考）
+            first_path = episode_files[0].full_path if episode_files else ""
+            ai_results, ai_title, ai_year, _ = await self._try_ai_parse(
+                first_path, {"title": agg_title, "year": agg_year}, corrected_type, language, agg_season
+            )
+            if ai_results:
+                search_results = ai_results
+                agg_title = ai_title
+                agg_year = ai_year
 
         if not search_results:
             err_msg = f"未找到元数据: title='{agg_title}' 年份={agg_year}"
@@ -462,27 +616,27 @@ class MetadataEnricher:
             return results
 
         logger.info(
-            f"🏆 组级最佳匹配：title='{best_match.title}', 年份={best_match.year}, ID={getattr(best_match, 'id', None)}"
+            f"组级最佳匹配：title='{best_match.title}', 年份={best_match.year}, ID={getattr(best_match, 'id', None)}"
         )
 
         season_number = agg_season or 1
-        logger.info(f"🔍 组级搜索季数：{season_number}，解析季数：{agg_season}")
+        logger.info(f"组级搜索季数：{season_number}，解析季数：{agg_season}")
         try:
             series_detail: Optional[ScraperSeriesDetail] = await scraper_manager.get_series_details_cached(
                 best_match=best_match,
                 language=language,
             )
-            # logger.info(f"🔍 组级系列搜索结果：{series_detail}")
+            # logger.info(f"组级系列搜索结果：{series_detail}")
             if series_detail and series_detail.number_of_seasons:
                 season_number = 1 if season_number > series_detail.number_of_seasons else season_number
-                logger.info(f"🔍 组级系列搜索最大季数：{series_detail.number_of_seasons}，使用季数：{season_number}")
+                logger.info(f"组级系列搜索最大季数：{series_detail.number_of_seasons}，使用季数：{season_number}")
 
             season_detail: Optional[ScraperSeasonDetail] = await scraper_manager.get_season_details_cached(
                 best_match=best_match,
                 language=language,
                 season=season_number,
             )
-            # logger.info(f"🔍 组级季搜索结果：{season_detail}")
+            # logger.info(f"组级季搜索结果：{season_detail}")
         except Exception as e:
             logger.error(f"获取系列/季详情失败: {e}", exc_info=True)
             series_detail = None
@@ -702,6 +856,6 @@ class MetadataEnricher:
         async for item in self.iter_enrich_multiple_files(file_ids=file_ids, user_id=user_id, max_concurrency=max_concurrency):
             results.append(item)
         return results
-        
+
 # 全局元数据丰富器实例
 metadata_enricher = MetadataEnricher()

@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlmodel import Session, select
-from sqlmodel import and_
+from sqlmodel import select, and_
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from core.db import get_session
+from core.db import get_async_session
 from core.security import get_current_subject
-from models.media_models import PlaybackHistory, FileAsset, MediaCore, MovieExt, SeriesExt, EpisodeExt, SeasonExt, Artwork
+from models.media_models import PlaybackHistory, FileAsset, MediaCore, MovieExt, EpisodeExt, Artwork
 
 router = APIRouter()
 
@@ -29,16 +29,18 @@ class ProgressReport(BaseModel):
 
 
 @router.post("/progress")
-def report_progress(
+async def report_progress(
     payload: ProgressReport,
     current_subject: str = Depends(get_current_subject),
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
     user_id = int(current_subject)
-    fa = db.exec(select(FileAsset).where(and_(FileAsset.id == payload.file_id, FileAsset.user_id == user_id))).first()
+    result = await db.exec(select(FileAsset).where(and_(FileAsset.id == payload.file_id, FileAsset.user_id == user_id)))
+    fa = result.first()
     if not fa:
         raise HTTPException(status_code=404, detail={"code": "file_not_found"})
-    rec = db.exec(select(PlaybackHistory).where(and_(PlaybackHistory.user_id == user_id, PlaybackHistory.file_asset_id == fa.id))).first()
+    result = await db.exec(select(PlaybackHistory).where(and_(PlaybackHistory.user_id == user_id, PlaybackHistory.file_asset_id == fa.id)))
+    rec = result.first()
     if rec is None:
         rec = PlaybackHistory(user_id=user_id, file_asset_id=fa.id)
     rec.core_id = payload.core_id or fa.core_id
@@ -60,19 +62,20 @@ def report_progress(
     if payload.status == "completed":
         rec.finished_at = now
     db.add(rec)
-    db.commit()
-    db.refresh(rec)
+    await db.commit()
+    await db.refresh(rec)
     return {"success": True}
 
 
 @router.get("/progress/{file_id}")
-def read_progress(
+async def read_progress(
     file_id: int,
     current_subject: str = Depends(get_current_subject),
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
     user_id = int(current_subject)
-    rec = db.exec(select(PlaybackHistory).where(and_(PlaybackHistory.user_id == user_id, PlaybackHistory.file_asset_id == file_id))).first()
+    result = await db.exec(select(PlaybackHistory).where(and_(PlaybackHistory.user_id == user_id, PlaybackHistory.file_asset_id == file_id)))
+    rec = result.first()
     if not rec:
         return {"position_ms": 0, "duration_ms": None}
     return {
@@ -93,41 +96,44 @@ class RecentCardItem(BaseModel):
 
 
 @router.get("/recent", response_model=List[RecentCardItem])
-def recent_list(
+async def recent_list(
     limit: int = Query(20, ge=1, le=200),
     page: Optional[int] = Query(None, ge=1),
     page_size: Optional[int] = Query(None, ge=1, le=200),
     sort: str = Query("updated_desc"),
     dedup: str = Query("series", description="去重维度：core|series|episode"),
     current_subject: str = Depends(get_current_subject),
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
     user_id = int(current_subject)
     order_clause = PlaybackHistory.updated_at.desc() if sort != "updated_asc" else PlaybackHistory.updated_at.asc()
     base_limit = max(200, (page or 1) * (page_size or limit) * 3)
-    rows = db.exec(
+    result = await db.exec(
         select(PlaybackHistory)
         .where(PlaybackHistory.user_id == user_id)
         .order_by(order_clause)
         .limit(base_limit)
-    ).all()
+    )
+    rows = result.all()
     seen: set[int] = set()
     all_items: List[RecentCardItem] = []
     for r in rows:
         file_id = r.file_asset_id
         core_id = r.core_id
-        
-        fa = db.exec(
+
+        result = await db.exec(
             select(FileAsset).where(
                 and_(FileAsset.id == file_id, FileAsset.user_id == user_id)
             )
-        ).first()
+        )
+        fa = result.first()
         if not core_id:
             continue
 
-        core = db.exec(
+        result = await db.exec(
             select(MediaCore).where(and_(MediaCore.user_id == user_id, MediaCore.id == core_id))
-        ).first()
+        )
+        core = result.first()
         if not core:
             continue
 
@@ -135,19 +141,21 @@ def recent_list(
         key: int
         if fa.core_id == core.id:
             # 电影
-            me = db.exec(
+            result = await db.exec(
                 select(MovieExt).where(
                     and_(MovieExt.user_id == user_id, MovieExt.core_id == core.id)
                 )
-            ).first()
+            )
+            me = result.first()
             if me:
                 cover_url = getattr(me, "backdrop_path", None) or getattr(me, "poster_path", None)
             if not cover_url:
-                art = db.exec(
+                result = await db.exec(
                     select(Artwork).where(
                         and_(Artwork.user_id == user_id, Artwork.core_id == core.id, Artwork.type == "poster")
                     ).order_by(Artwork.preferred.desc())
-                ).first()
+                )
+                art = result.first()
                 cover_url = getattr(art, "remote_url", None) if art else None
             name = core.title
             if dedup == "episode":
@@ -159,27 +167,28 @@ def recent_list(
 
         else:
             # 系列的集
-            ep_ext = None    
-            ep_ext = db.exec(
+            result = await db.exec(
                     select(EpisodeExt).where(
                         and_(EpisodeExt.user_id == user_id, EpisodeExt.core_id == fa.core_id)
                     )
-                ).first()
+                )
+            ep_ext = result.first()
 
-            name = core.title  
-            if ep_ext :
+            name = core.title
+            if ep_ext:
                 sn = getattr(ep_ext, "season_number", None)
                 en = getattr(ep_ext, "episode_number", None)
                 et = getattr(ep_ext, "title", None) or ""
                 name = f"{core.title} 第{sn}季 第{en}集 {et}".strip()
-                cover_url = getattr(ep_ext, "still_path", None) 
+                cover_url = getattr(ep_ext, "still_path", None)
                 if not cover_url:
                     base_core_id = ep_ext.season_core_id or core.id
-                    art = db.exec(
+                    result = await db.exec(
                         select(Artwork).where(
                             and_(Artwork.user_id == user_id, Artwork.core_id == base_core_id, Artwork.type == "backdrop")
                         ).order_by(Artwork.preferred.desc())
-                    ).first()
+                    )
+                    art = result.first()
                     cover_url = getattr(art, "remote_url", None) if art else None
             series_id = getattr(ep_ext, "series_core_id", None) if ep_ext else core.id
             if dedup == "episode":
@@ -208,20 +217,22 @@ def recent_list(
     end = start + size
     return all_items[start:end]
 
+
 @router.delete("/progress/{file_id}")
-def delete_progress(
+async def delete_progress(
     file_id: int,
     current_subject: str = Depends(get_current_subject),
-    db: Session = Depends(get_session),
+    db: AsyncSession = Depends(get_async_session),
 ):
     user_id = int(current_subject)
-    rec = db.exec(
+    result = await db.exec(
         select(PlaybackHistory).where(
             and_(PlaybackHistory.user_id == user_id, PlaybackHistory.file_asset_id == file_id)
         )
-    ).first()
+    )
+    rec = result.first()
     if not rec:
         raise HTTPException(status_code=404, detail={"code": "progress_not_found"})
-    db.delete(rec)
-    db.commit()
+    await db.delete(rec)
+    await db.commit()
     return {"success": True}

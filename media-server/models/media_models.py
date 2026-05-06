@@ -407,3 +407,20 @@ class PlaybackHistory(SQLModel, table=True):
     finished_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=get_utc_now_factory())
     updated_at: datetime = Field(default_factory=get_utc_now_factory())
+
+
+# ==================== 失败解析记录 ====================
+class FailedParse(SQLModel, table=True):
+    """记录解析/搜索失败的文件路径，用于后续人工审核或自动重试"""
+    __tablename__ = "failed_parse"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True, foreign_key="users.id", description="所属用户ID")
+    file_path: str = Field(description="原始文件路径")
+    file_asset_id: Optional[int] = Field(default=None, index=True, foreign_key="file_asset.id", description="关联的文件资产ID")
+    guessit_result: Optional[str] = Field(default=None, description="GuessIt 解析结果 JSON")
+    ai_result: Optional[str] = Field(default=None, description="AI 解析结果 JSON")
+    error_message: Optional[str] = Field(default=None, description="错误信息")
+    search_attempts: int = Field(default=0, description="搜索尝试次数")
+    resolved: bool = Field(default=False, index=True, description="是否已解决")
+    created_at: datetime = Field(default_factory=get_utc_now_factory())

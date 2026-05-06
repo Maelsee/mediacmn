@@ -614,3 +614,42 @@ async def manual_match(
         skipped=skipped,
         errors=errors,
     )
+
+
+@router.get("/metrics/enricher")
+async def get_enricher_metrics(
+    current_user: str = Depends(get_current_subject),
+):
+    """获取元数据丰富器性能指标"""
+    from services.media.metrics import get_metrics_summary
+    return await get_metrics_summary()
+
+
+@router.get("/failed-parses")
+async def list_failed_parses(
+    limit: int = Query(50, ge=1, le=500),
+    resolved: Optional[bool] = Query(None),
+    current_user: str = Depends(get_current_subject),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """查询失败解析记录"""
+    from models.media_models import FailedParse
+    user_id = int(current_user)
+    stmt = select(FailedParse).where(FailedParse.user_id == user_id)
+    if resolved is not None:
+        stmt = stmt.where(FailedParse.resolved == resolved)
+    stmt = stmt.order_by(FailedParse.created_at.desc()).limit(limit)
+    result = await db.exec(stmt)
+    rows = result.all()
+    return [
+        {
+            "id": r.id,
+            "file_path": r.file_path,
+            "file_asset_id": r.file_asset_id,
+            "error_message": r.error_message,
+            "search_attempts": r.search_attempts,
+            "resolved": r.resolved,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]

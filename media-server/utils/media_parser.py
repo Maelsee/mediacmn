@@ -297,6 +297,16 @@ class MediaParser:
             if m:
                 season = int(m.group("s"))
 
+        # 从目录段提取季数：中文/英文标题后紧跟数字，如 "庆余年2" → season 2
+        if season is None:
+            parts = re.split(r"[\\/]+", s)
+            for seg in reversed(parts[:-1]):
+                seg = seg.strip()
+                m = re.search(r"[一-鿿A-Za-z]{2,}(?P<s>\d{1,2})\s*$", seg)
+                if m:
+                    season = int(m.group("s"))
+                    break
+
         return season, episode
 
     def _extract_year_hint_from_path(self, filepath: str) -> Optional[int]:
